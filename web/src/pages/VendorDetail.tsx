@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useMeta } from '../lib/meta';
-import { useStaff } from '../components/StaffShell';
 import { DynamicSection } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { ApprovalTimeline } from '../components/Timeline';
@@ -11,20 +10,19 @@ import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import type { ChecklistItem, DocRequirement, VendorFull } from '../lib/types';
 
-type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean };
+type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
   const { id } = useParams();
   const meta = useMeta();
-  const me = useStaff()!;
   const [d, setD] = useState<Detail>();
   const [tab, setTab] = useState('basic');
   const [action, setAction] = useState<Action>();
   const [erp, setErp] = useState<unknown>();
   const [flash, setFlash] = useState<{ kind: 'success' | 'error'; text: string }>();
 
-  const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`, { session: 'staff' }).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
+  const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
   useEffect(() => { load(); }, [load]);
   if (!d) return <div className="page"><div className="spinner" /></div>;
   const v = d.vendor;
@@ -33,11 +31,11 @@ export function VendorDetail() {
   const openErrors = d.checklist.filter((c) => !c.ok);
 
   async function resend() {
-    try { await api(`/staff/vendors/${id}/invite`, { session: 'staff', method: 'POST' }); setFlash({ kind: 'success', text: 'Invite re-sent. See Mailbox.' }); load(); }
+    try { await api(`/staff/vendors/${id}/invite`, { method: 'POST' }); setFlash({ kind: 'success', text: 'Invitation re-sent.' }); load(); }
     catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
   async function exportErp() {
-    try { setErp(await api(`/staff/vendors/${id}/erp-export`, { session: 'staff' })); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+    try { setErp(await api(`/staff/vendors/${id}/erp-export`)); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
 
   return (
@@ -49,8 +47,8 @@ export function VendorDetail() {
           <p className="muted"><span className="mono">{v.code}</span> · {meta.vendorTypes.find((t) => t.value === v.vendorType)?.label} · {v.contactFirstName} {v.contactLastName} ({v.contactEmail}, {v.contactMobile}) · created {fmtDate(v.createdAt)} by {v.createdBy?.name}</p>
         </div>
         <div className="head-actions">
-          {me.role === 'ADMIN' && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && <button className="btn btn-secondary" onClick={resend}>Resend invite</button>}
-          {v.status === 'APPROVED' && <button className="btn btn-secondary" onClick={exportErp}>ERP export</button>}
+          {d.canInvite && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && <button className="btn btn-secondary" onClick={resend}>Resend invite</button>}
+          {v.status === 'APPROVED' && d.canExport && <button className="btn btn-secondary" onClick={exportErp}>ERP export</button>}
         </div>
       </header>
       {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
@@ -74,7 +72,7 @@ export function VendorDetail() {
           </div>
           <div className="pad">
             {meta.formSchema.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={v.profile} readOnly />)}
-            {tab === 'documents' && <DocumentsPanel requirements={d.docRequirements} documents={v.documents} session="staff" />}
+            {tab === 'documents' && <DocumentsPanel requirements={d.docRequirements} documents={v.documents} />}
             {tab === 'history' && (
               <ul className="audit">
                 {v.audit?.map((a) => (
@@ -98,8 +96,8 @@ export function VendorDetail() {
             )}
           </div>
           {v.status !== 'INVITED' && <div className="card pad"><Checklist items={d.checklist} sections={meta.formSchema} onJump={setTab} /></div>}
-          {me.role === 'ADMIN' && v.inviteLink && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && (
-            <div className="card pad"><h3 className="card-title">Vendor portal link</h3><p className="small muted">Open in another browser/tab to act as the vendor.</p><a className="small break" href={new URL(v.inviteLink).pathname} target="_blank" rel="noreferrer">{v.inviteLink}</a></div>
+          {v.inviteLink && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && (
+            <div className="card pad"><h3 className="card-title">Vendor portal link <span className="tag-dev">dev</span></h3><p className="small muted">Shown only in development. Open it in another tab to act as the vendor.</p><a className="small break" href={new URL(v.inviteLink).pathname} target="_blank" rel="noreferrer">{v.inviteLink}</a></div>
           )}
         </aside>
       </div>
@@ -129,7 +127,7 @@ function DecisionModal({ action, vendorId, onClose, onDone }: { action: Action; 
   async function submit() {
     setBusy(true); setError(undefined);
     try {
-      const r = await api(`/staff/vendors/${vendorId}/decision`, { session: 'staff', body: { action, remarks } });
+      const r = await api(`/staff/vendors/${vendorId}/decision`, { body: { action, remarks } });
       onDone(r.status === 'APPROVED' ? 'Final approval done — vendor is active.' : r.nextLevel ? `Approved. Moved to ${r.nextLevel}.` : action === 'SEND_BACK' ? 'Sent back to the vendor.' : 'Vendor rejected.');
     } catch (e: any) { setError(e.message); setBusy(false); }
   }

@@ -1,29 +1,21 @@
 /**
- * Approval workflow: levels run in order. Change this array to add/remove levels
- * or re-order them. `appliesTo` optionally restricts a level to certain vendor types
- * (e.g. an extra compliance level only for IMPORT vendors).
+ * Default approval workflow (a template). Levels reference ROLE KEYS, which each tenant
+ * maps to its own role records. Phase 2 moves this into per-tenant, editable configuration.
  */
-import type { Role, VendorType } from '../db/schema.js';
+import type { VendorType } from '../db/schema.js';
 
 export interface WorkflowLevel {
-  role: Role;
+  roleKey: string;
   label: string;
   appliesTo?: VendorType[];
 }
 
 export const workflowLevels: WorkflowLevel[] = [
-  { role: 'TAX_MANAGER', label: 'Tax Review' },
-  { role: 'FINANCE_MANAGER', label: 'Finance & Risk Review' },
-  { role: 'MDM_MANAGER', label: 'Master Data Approval' },
+  { roleKey: 'TAX_MANAGER', label: 'Tax Review' },
+  { roleKey: 'FINANCE_MANAGER', label: 'Finance & Risk Review' },
+  { roleKey: 'MDM_MANAGER', label: 'Master Data Approval' },
 ];
 
 export function levelsFor(vendorType: VendorType): WorkflowLevel[] {
   return workflowLevels.filter((l) => !l.appliesTo || l.appliesTo.includes(vendorType));
 }
-
-export const roleLabels: Record<Role, string> = {
-  ADMIN: 'Vendor Admin (Buyer)',
-  TAX_MANAGER: 'Tax Accounts Manager',
-  FINANCE_MANAGER: 'Finance Manager',
-  MDM_MANAGER: 'Master Data Manager',
-};

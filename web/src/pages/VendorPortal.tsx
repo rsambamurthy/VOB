@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
-import { api, ApiError, decodeToken, tokens } from '../lib/api';
+import { useNavigate } from 'react-router-dom';
+import { api, ApiError } from '../lib/api';
+import { applyBranding } from '../lib/session';
+import { monogram } from '../lib/format';
 import { useMeta } from '../lib/meta';
 import { DynamicSection } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
-import type { ChecklistItem, DocRequirement, FieldDef, Profile, VendorFull } from '../lib/types';
-import { BRAND } from '../brand';
+import type { Branding, ChecklistItem, DocRequirement, FieldDef, Profile, VendorFull } from '../lib/types';
 
-type Me = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string };
+type Me = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding } };
 type VerifyResult = { status: string; message: string };
 
 /** Fields that get an online "Verify" button: field key -> [check kind, fields to send]. */
@@ -24,7 +25,6 @@ const VERIFY: Record<string, { kind: string; label: string; from: (p: Profile) =
 export function VendorPortal() {
   const meta = useMeta();
   const nav = useNavigate();
-  const session = decodeToken(tokens.get('vendor'));
   const [me, setMe] = useState<Me>();
   const [profile, setProfile] = useState<Profile>({});
   const [tab, setTab] = useState('basic');
@@ -38,8 +38,8 @@ export function VendorPortal() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api<Me>('/vendor', { session: 'vendor' });
-      setMe(r); setProfile(r.vendor.profile);
+      const r = await api<Me>('/vendor');
+      setMe(r); setProfile(r.vendor.profile); applyBranding(r.buyer.branding);
       setVerifs((r.vendor.profile._verifications ?? {}) as Record<string, VerifyResult>);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
@@ -58,7 +58,6 @@ export function VendorPortal() {
     return m;
   }, [me, revealed]);
 
-  if (!session || session.kind !== 'vendor') return <Navigate to="/vendor/expired" replace />;
   if (!me) return <div className="center-page"><div className="spinner" /></div>;
   const v = me.vendor;
   const editable = me.editable;
@@ -74,7 +73,7 @@ export function VendorPortal() {
     if (!dirty.has(section) || section === 'documents') { setRevealed((r) => new Set(r).add(section)); return true; }
     setSaving(true);
     try {
-      const r = await api<{ checklist: ChecklistItem[]; docRequirements: DocRequirement[] }>(`/vendor/profile/${section}`, { session: 'vendor', method: 'PUT', body: profile[section] ?? {} });
+      const r = await api<{ checklist: ChecklistItem[]; docRequirements: DocRequirement[] }>(`/vendor/profile/${section}`, { method: 'PUT', body: profile[section] ?? {} });
       setMe((m) => m && { ...m, checklist: r.checklist, docRequirements: r.docRequirements, vendor: { ...m.vendor, profile, status: m.vendor.status === 'INVITED' ? 'IN_PROGRESS' : m.vendor.status } });
       setDirty((d) => { const n = new Set(d); n.delete(section); return n; });
       setRevealed((rv) => new Set(rv).add(section));
@@ -92,17 +91,17 @@ export function VendorPortal() {
 
   async function upload(docType: string, file: File) {
     const fd = new FormData(); fd.append('docType', docType); fd.append('file', file);
-    try { await api('/vendor/documents', { session: 'vendor', body: fd }); await load(); setRevealed((r) => new Set(r).add('documents')); }
+    try { await api('/vendor/documents', { body: fd }); await load(); setRevealed((r) => new Set(r).add('documents')); }
     catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
   async function remove(id: string) {
-    try { await api(`/vendor/documents/${id}`, { session: 'vendor', method: 'DELETE' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+    try { await api(`/vendor/documents/${id}`, { method: 'DELETE' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
   async function runVerify(f: FieldDef) {
     const cfg = VERIFY[f.key];
     await save(tab, true);
     try {
-      const r = await api<VerifyResult>(`/vendor/verify/${cfg.kind}`, { session: 'vendor', body: cfg.from(profile) });
+      const r = await api<VerifyResult>(`/vendor/verify/${cfg.kind}`, { body: cfg.from(profile) });
       setVerifs((x) => ({ ...x, [cfg.kind]: r }));
     } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
@@ -110,7 +109,7 @@ export function VendorPortal() {
     setConfirmSubmit(false);
     for (const s of [...dirty]) if (!(await save(s, true))) return;
     try {
-      await api('/vendor/submit', { session: 'vendor', method: 'POST' });
+      await api('/vendor/submit', { method: 'POST' });
       setFlash({ kind: 'success', text: 'Submitted for review. We’ll email you when there’s an update.' });
       await load();
     } catch (e: any) {
@@ -136,11 +135,14 @@ export function VendorPortal() {
   return (
     <div className="vendor-app">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">{BRAND.mark}</span><span>{BRAND.name}</span><span className="muted small hide-sm">· Vendor portal</span></div>
+        <div className="brand">
+          {me.buyer.branding.logoUrl ? <img src={me.buyer.branding.logoUrl} alt="" className="brand-logo" /> : <span className="brand-mark">{monogram(me.buyer.branding.productName)}</span>}
+          <span>{me.buyer.name}</span><span className="muted small hide-sm">· Supplier portal</span>
+        </div>
         <div className="topbar-right">
           <span className="hide-sm">{v.name}</span><StatusBadge status={v.status} />
           <button className="btn btn-ghost btn-sm" onClick={() => setShowGuide(true)}>Help</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => { tokens.clear('vendor'); nav('/vendor/expired'); }}>Sign out</button>
+          <button className="btn btn-ghost btn-sm" onClick={async () => { await api('/vendor-auth/logout', { method: 'POST' }).catch(() => {}); nav('/vendor/expired'); }}>Sign out</button>
         </div>
       </header>
 
@@ -167,7 +169,7 @@ export function VendorPortal() {
               {meta.formSchema.filter((s) => s.key === tab).map((s) => (
                 <DynamicSection key={s.key} section={s} profile={profile} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} />
               ))}
-              {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} session="vendor" editable={editable} onUpload={upload} onDelete={remove} />}
+              {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={editable} onUpload={upload} onDelete={remove} />}
             </div>
             {editable && (
               <div className="form-foot">

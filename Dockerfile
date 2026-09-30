@@ -16,6 +16,8 @@ COPY --from=build /app/server/package.json server/
 COPY --from=build /app/web/package.json web/
 RUN npm ci --omit=dev -w server && npm cache clean --force
 COPY --from=build /app/server/dist server/dist
+COPY --from=build /app/server/drizzle server/drizzle
 COPY --from=build /app/web/dist web/dist
 EXPOSE 4000
+ENV MIGRATE_ON_START=true
 CMD ["node", "server/dist/index.js"]

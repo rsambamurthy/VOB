@@ -1,35 +1,40 @@
-import { NavLink, Outlet, Navigate, useNavigate } from 'react-router-dom';
-import { decodeToken, tokens } from '../lib/api';
-import { useMeta } from '../lib/meta';
-import { BRAND } from '../brand';
-
-export function useStaff() {
-  const p = decodeToken(tokens.get('staff'));
-  if (!p || p.kind !== 'staff' || p.exp * 1000 < Date.now()) return null;
-  return p as { userId: string; role: 'ADMIN' | 'TAX_MANAGER' | 'FINANCE_MANAGER' | 'MDM_MANAGER'; name: string; email: string };
-}
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useSession } from '../lib/session';
+import { monogram } from '../lib/format';
 
 export function StaffShell() {
-  const me = useStaff();
-  const meta = useMeta();
+  const { me, can, signOut } = useSession();
   const nav = useNavigate();
-  if (!me) return <Navigate to="/login" replace />;
-  const initials = me.name.split(' ').map((s) => s[0]).join('').slice(0, 2);
+  if (!me) return null;
+  const product = me.tenant.branding.productName ?? 'VendorGate';
+  const initials = me.user.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
+  const admin = can('users.manage') || can('tenant.settings') || can('audit.view');
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark" aria-hidden>{BRAND.mark}</span><span>{BRAND.name}</span></div>
-        <nav>
-          <NavLink to="/staff/vendors" end>Vendors</NavLink>
-          <NavLink to="/staff/queue">My approvals</NavLink>
-          <NavLink to="/staff/mailbox">Mailbox <span className="tag">demo</span></NavLink>
+        <div className="brand">
+          {me.tenant.branding.logoUrl ? <img src={me.tenant.branding.logoUrl} alt="" className="brand-logo" /> : <span className="brand-mark" aria-hidden>{monogram(product)}</span>}
+          <span className="brand-text"><span>{product}</span><span className="brand-tenant">{me.tenant.name}</span></span>
+        </div>
+        <nav aria-label="Main">
+          {can('vendors.view') && <NavLink to="/staff/vendors" end>Vendors</NavLink>}
+          {can('vendors.view') && <NavLink to="/staff/queue">My approvals</NavLink>}
+          {admin && <div className="nav-section">Administration</div>}
+          {can('users.manage') && <NavLink to="/staff/admin/users">Users</NavLink>}
+          {can('users.manage') && <NavLink to="/staff/admin/roles">Roles</NavLink>}
+          {can('tenant.settings') && <NavLink to="/staff/admin/workspace">Workspace</NavLink>}
+          {can('audit.view') && <NavLink to="/staff/admin/audit">Audit log</NavLink>}
+          {me.devMailbox && <NavLink to="/staff/mailbox">Mailbox <span className="tag">dev</span></NavLink>}
         </nav>
         <div className="sidebar-foot">
-          <div className="me"><span className="avatar" aria-hidden>{initials}</span><div><div className="me-name">{me.name}</div><div className="me-role">{meta.roleLabels[me.role]}</div></div></div>
-          <button className="btn btn-ghost btn-sm" onClick={() => { tokens.clear('staff'); nav('/login'); }}>Switch user</button>
+          <NavLink to="/staff/account" className="me">
+            <span className="avatar" aria-hidden>{initials}</span>
+            <div><div className="me-name">{me.user.name}</div><div className="me-role">{me.roles.map((r) => r.name).join(', ') || 'No role'}</div></div>
+          </NavLink>
+          <button className="btn btn-ghost btn-sm" onClick={async () => { await signOut(); nav('/login'); }}>Sign out</button>
         </div>
       </aside>
-      <main className="main"><Outlet /></main>
+      <main className="main" id="main"><Outlet /></main>
     </div>
   );
 }

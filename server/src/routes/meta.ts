@@ -1,22 +1,22 @@
 import { Router } from 'express';
-import { asc, desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { env } from '../lib/env.js';
+import { requireStaff, staffCtx } from '../auth/session.js';
 import { formSchema, documentRequirements, vendorTypes, onboardingGuide } from '../config/formSchema.js';
-import { workflowLevels, roleLabels } from '../config/workflow.js';
+import { workflowLevels } from '../config/workflow.js';
 
 export const metaRouter = Router();
 
+/** Onboarding form definition. (Phase 2: becomes per-tenant configuration.) */
 metaRouter.get('/', ah(async (_req, res) => {
-  // Staff list is exposed only for the prototype's login picker.
-  const { users: u } = schema;
-  const users = await db.select({ name: u.name, email: u.email, role: u.role }).from(u).orderBy(asc(u.role));
-  res.json({ formSchema, documentRequirements, vendorTypes, onboardingGuide, workflowLevels, roleLabels, users });
+  res.json({ formSchema, documentRequirements, vendorTypes, onboardingGuide, workflowLevels: workflowLevels.map(({ label }) => ({ label })) });
 }));
 
-/** Prototype mailbox — lets you see invites, OTPs and notifications without an email provider. */
-metaRouter.get('/outbox', ah(async (_req, res) => {
-  if (!env.devShowOtp) throw new HttpError(404, 'Mailbox is disabled (DEV_SHOW_OTP=false)');
-  res.json(await db.select().from(schema.emailOutbox).orderBy(desc(schema.emailOutbox.createdAt)).limit(100));
+/** Dev-only mailbox, scoped to the signed-in user's workspace. Disabled when DEV_SHOW_OTP=false. */
+metaRouter.get('/outbox', requireStaff(), ah(async (req, res) => {
+  if (!env.devShowOtp) throw new HttpError(404, 'Mailbox is disabled');
+  const { tenant } = staffCtx(req);
+  res.json(await db.select().from(schema.emailOutbox).where(eq(schema.emailOutbox.tenantId, tenant.id)).orderBy(desc(schema.emailOutbox.createdAt)).limit(100));
 }));

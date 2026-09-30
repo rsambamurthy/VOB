@@ -1,28 +1,27 @@
 import { useRef, useState } from 'react';
 import type { DocRequirement, DocumentRow } from '../lib/types';
-import { docUrl, type Session } from '../lib/api';
+import { docUrl } from '../lib/api';
 import { fmtSize, fmtDate } from '../lib/format';
 
 interface Props {
   requirements: DocRequirement[];
   documents: DocumentRow[];
-  session: Session;
   editable?: boolean;
   onUpload?: (docType: string, file: File) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
 }
 
-export function DocumentsPanel({ requirements, documents, session, editable, onUpload, onDelete }: Props) {
+export function DocumentsPanel({ requirements, documents, editable, onUpload, onDelete }: Props) {
   return (
     <div className="doc-list">
       {requirements.map((r) => (
-        <DocRow key={r.type} req={r} files={documents.filter((d) => d.docType === r.type)} session={session} editable={editable} onUpload={onUpload} onDelete={onDelete} />
+        <DocRow key={r.type} req={r} files={documents.filter((d) => d.docType === r.type)} editable={editable} onUpload={onUpload} onDelete={onDelete} />
       ))}
     </div>
   );
 }
 
-function DocRow({ req, files, session, editable, onUpload, onDelete }: { req: DocRequirement; files: DocumentRow[] } & Omit<Props, 'requirements' | 'documents'>) {
+function DocRow({ req, files, editable, onUpload, onDelete }: { req: DocRequirement; files: DocumentRow[] } & Omit<Props, 'requirements' | 'documents'>) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
@@ -42,7 +41,7 @@ function DocRow({ req, files, session, editable, onUpload, onDelete }: { req: Do
         {files.map((f) => (
           <div key={f.id} className="doc-file">
             <span className="file-icon" aria-hidden>{f.mimeType === 'application/pdf' ? 'PDF' : 'IMG'}</span>
-            <a href={docUrl(f.id, session)} target="_blank" rel="noreferrer">{f.fileName}</a>
+            <a href={docUrl(f.id)} target="_blank" rel="noreferrer">{f.fileName}</a>
             <span className="muted small">{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</span>
             {editable && onDelete && <button type="button" className="link-btn danger small" onClick={() => onDelete(f.id)}>Remove</button>}
           </div>

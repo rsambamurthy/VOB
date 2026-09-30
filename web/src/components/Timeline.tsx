@@ -16,7 +16,7 @@ export function ApprovalTimeline({ steps, meta }: { steps: Step[]; meta: Meta })
                 <div className="tl-marker" aria-hidden>{s.level}</div>
                 <div className="tl-body">
                   <div className="tl-top"><strong>{s.label}</strong><StepBadge status={s.status} /></div>
-                  <div className="muted small">{meta.roleLabels[s.role]}{s.actedBy ? ` · ${s.actedBy.name}` : ''}{s.actedAt ? ` · ${fmtDateTime(s.actedAt)}` : ''}</div>
+                  <div className="muted small">{s.roleName}{s.actedBy ? ` · ${s.actedBy.name}` : ''}{s.actedAt ? ` · ${fmtDateTime(s.actedAt)}` : ''}</div>
                   {s.remarks && <div className="tl-remarks">“{s.remarks}”</div>}
                 </div>
               </li>

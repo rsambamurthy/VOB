@@ -15,7 +15,7 @@ export function Mailbox() {
   return (
     <div className="page">
       <header className="page-head"><div><h1>Mailbox</h1><p className="muted">Every email the system would send. Stand-in for a real email provider while prototyping.</p></div></header>
-      <Alert kind="info">To play the vendor, open an <strong>Invitation</strong> email and click its link. The sign-in code will also appear here.</Alert>
+      <Alert kind="info">Development only: emails for this workspace are captured here instead of being sent. Open a vendor <strong>invitation</strong> to play the supplier, or a staff invitation / reset email to test sign-up.</Alert>
       <div className="card mailbox">
         {!mails ? <div className="pad"><div className="spinner" /></div> : mails.length === 0 ? <Empty>No emails yet.</Empty> : (
           <>
@@ -31,9 +31,7 @@ export function Mailbox() {
                 <h3>{current.subject}</h3>
                 <div className="muted small">To: {current.to} · {fmtDateTime(current.createdAt)}</div>
                 <pre className="mail-body">{current.body}</pre>
-                {current.link && (current.link.includes('/onboard/')
-                  ? <Link className="btn btn-primary" to={new URL(current.link).pathname} target="_blank">Open vendor portal ↗</Link>
-                  : <Link className="btn btn-secondary" to={new URL(current.link).pathname}>Open</Link>)}
+                {current.link && <Link className="btn btn-primary" to={new URL(current.link).pathname} target="_blank">{current.link.includes('/onboard/') ? 'Open vendor portal ↗' : 'Open link ↗'}</Link>}
               </article>
             )}
           </>

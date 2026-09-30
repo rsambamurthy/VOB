@@ -1,94 +1,136 @@
-# VendorGate: Vendor Onboarding Prototype
+# VendorGate — Vendor Onboarding Platform
 
-This is a working prototype of a vendor onboarding and approval system. It follows the flow in the Integrata "Vendor Onboarding: A Walkthrough" video and fills in the gaps the video left open.
+A multi-tenant SaaS for supplier onboarding: buyer companies invite vendors, and vendors complete a self-service profile (KYC, bank, tax, risk, documents) that goes through a configurable multi-level approval flow before export to the ERP.
 
-**Stack:** React + TypeScript (Vite) · Node + Express + TypeScript · PostgreSQL via Drizzle ORM
+**Stack:** React + TypeScript (Vite) · Node + Express + TypeScript · PostgreSQL + Drizzle ORM · Vitest
 
-## What it does
+## Build status
 
-| Step | Who | What happens |
+| Phase | Scope | Status |
 |---|---|---|
-| 1 | Buyer admin | Creates the vendor (name, type, contact) and sends an invite email |
-| 2 | Vendor | Opens the invite link and signs in with an **email OTP** (no password) |
-| 3 | Vendor | Fills in **Basic Info, Bank, Tax and Financial Risk** tabs and uploads **Documents**. A live **Required Fields checklist** blocks submission until everything is valid |
-| 4 | Vendor | Runs **online checks** on GSTIN, PAN, CIN and bank account (penny-drop). These are *mocked* in the prototype |
-| 5 | Reviewers | **Tax → Finance & Risk → Master Data**, in order. Each reviewer can **Approve**, **Send back** (with remarks the vendor sees) or **Reject** |
-| 6 | Vendor | When sent back, fixes the form and resubmits. The review starts a new cycle and history is kept |
-| 7 | Master data | An approved vendor can be exported as an **Oracle EBS supplier payload** (the same shape as `ERPVendorsData`) |
+| 0. Prototype | Invite → OTP portal → profile + documents → 3-level approval → Oracle-shaped export | ✅ |
+| **1. Platform foundation** | Multi-tenant workspaces, staff accounts (password, invite, reset, lockout), TOTP 2FA + recovery codes, workspace-enforced 2FA, tenant-defined roles & permissions, cookie sessions, CSRF / rate limits / security headers, audit log, SQL migrations, automated tests | ✅ |
+| 2. Admin configuration | Per-tenant fields, documents, approval rules, SLAs, delegation — editable in the UI | ⏳ next |
+| 3. Integrations | Email/SMS providers, S3 storage, live KYC APIs, AI document extraction, job queue | ⏳ |
+| 4. Vendor lifecycle | Change requests + re-approval, document expiry, re-KYC, block/unblock | ⏳ |
+| 5. Reports & ERP | Funnel, TAT, ageing, Excel; ERP push adapters | ⏳ |
+| 6. Hardening | Field-level encryption, DPDP, E2E tests, CI, deployment | ⏳ |
 
-**Beyond the video:** send-back and rejection paths, audit history, a GSTIN checksum check and a GSTIN↔PAN cross-check, IBAN mod-97, IFSC/SWIFT/TAN/CIN/Udyam formats, conditional fields (for example Indian vs foreign vendor), duplicate-vendor check, and guards so two reviewers can't action the same step.
+## Quick start (Windows / macOS / Linux)
 
-## Run it locally
-
-Prerequisites: Node 20+ and Docker (or any Postgres 14+).
+Prerequisites: **Node 20+** and **Docker Desktop** (running), or your own Postgres 14+.
 
 ```bash
 npm install
-npm run db:up                      # starts Postgres in Docker (or point server/.env at your own)
-cp server/.env.example server/.env
-npm run db:setup                   # creates tables + loads demo data
-npm run dev                        # API on :4000, web on http://localhost:5173
+npm run db:up                                   # Postgres in Docker on port 5433
+copy server\.env.example server\.env            # macOS/Linux: cp server/.env.example server/.env
+npm run db:setup                                # creates tables (migrations) + demo data
+npm run dev                                     # web → http://localhost:5173, API → :4000
 ```
 
-### Demo walkthrough
+If `db:setup` fails right after `db:up`, wait about 10 seconds for Postgres to start and run it again.
+`db:setup` **wipes and reloads** the demo data, so only run it on a dev database.
 
-1. Open http://localhost:5173 and pick **Anita Rao (Vendor Admin)**.
-2. **+ New vendor** creates a vendor and sends the invite.
-3. **Mailbox** (sidebar) opens the invitation, then **Open vendor portal**. It opens in a new tab so the vendor and staff sessions stay separate. The OTP is shown on screen in prototype mode.
-4. Fill in the tabs and upload documents (any PDF/JPG/PNG), then **Submit for review**.
-5. **Switch user** to **Suresh Iyer (Tax)** and open **My approvals** to approve. Then do the same as **Meera Nair (Finance)** and **Vikram Shah (Master Data)**.
-6. On the approved vendor, **ERP export** shows the Oracle payload.
+### Demo sign-in
 
-The seeded data covers each stage: one approved vendor (VND-00001), one waiting for Finance (VND-00002), one invited (VND-00003) and one foreign vendor in progress (VND-00004).
+Every demo user's password is **`Demo@12345`**.
 
-**Test GSTIN tip:** a valid test GSTIN is `27` + a valid PAN + `1Z` + a check character. The form tells you when the checksum is wrong. `27AAPFU0939F1ZV` with PAN `AAPFU0939F` works.
+| Workspace ID | Email | Role |
+|---|---|---|
+| `acme` | admin@acme.test | Administrator (users, roles, workspace, audit) |
+| `acme` | vendoradmin@acme.test | Vendor Admin (creates/invites vendors) |
+| `acme` | tax@acme.test | Tax Accounts Manager (approval level 1) |
+| `acme` | finance@acme.test | Finance Manager (approval level 2) |
+| `acme` | mdm@acme.test | Master Data Manager (level 3, ERP export) |
+| `globex` | admin@globex.test | Administrator of a *separate* company — can't see anything in `acme` |
 
-## Tests
+**Things to try**
+
+1. Sign in as `admin@acme.test` → **Users** → **Invite user** → open **Mailbox** (dev only) → open the invitation *in a private window* (it signs you in as the new user) and set a password.
+2. **My account** → turn on two-factor authentication with any authenticator app, sign out and back in.
+3. **Workspace** → change the brand colour / portal name; the vendor portal and emails pick it up. Tick **Require 2FA** to force every user to enrol.
+4. **Vendors** → **New vendor** → Mailbox → *Open vendor portal* → complete the profile → approve as tax → finance → mdm.
+5. Sign in to `globex` and confirm none of Acme's vendors or users are visible.
+
+## Creating a customer workspace
 
 ```bash
-npm test -w server        # validator unit tests (GSTIN checksum, PAN, IFSC, IBAN…)
-npm run smoke             # full API flow: invite → OTP → fill → submit → send back → resubmit → 3 approvals → ERP export
-                          # (needs `npm run dev` running)
+npm run tenant:create -- --slug initech --name "Initech Ltd" --admin-name "Bill Lumbergh" --admin-email bill@initech.com
 ```
 
-## Where to change things
+This creates the workspace with the default roles and prints (and emails) the first administrator's invitation link.
 
-| To change… | Edit |
+## Security model (Phase 1)
+
+- **Tenancy:** shared database; every business table has `tenant_id`, and every query filters by the tenant of the signed-in session. Cross-tenant access returns 404. This is covered by `tests/tenancy.test.ts`.
+- **Sessions:** random token in an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production); the database stores only its SHA-256 hash, so sessions can be revoked. Staff (`vg_s`) and vendor (`vg_v`) sessions use separate cookies.
+- **CSRF:** every state-changing API call must send `X-Requested-With`. Browsers can't add that header cross-site without CORS, which is never enabled.
+- **Passwords:** bcrypt cost 12. Minimum 10 characters, three of four character classes, and a common-password block. Accounts lock for 15 minutes after 5 failures. Resets revoke all sessions.
+- **2FA:** TOTP (RFC 6238). The secret is encrypted with AES-256-GCM under `ENCRYPTION_KEY`. You get 10 single-use recovery codes, stored hashed. Sessions rotate after 2FA. Admins can reset a user's 2FA.
+- **Rate limits:** login/2FA 20 per 15 minutes per IP; reset/invite/OTP 10 per 15 minutes; the whole API 300 per minute.
+- **Headers:** Helmet with a strict CSP, `frame-ancestors 'none'`, and `nosniff` on document downloads.
+- **Audit:** logins, failures, lockouts, 2FA changes, user/role/setting changes and every vendor action are recorded with actor and IP.
+- **Production guard rails:** the server refuses to start with `NODE_ENV=production` unless `ENCRYPTION_KEY` is set and `DEV_SHOW_OTP=false`.
+
+## Scripts
+
+| Command | What it does |
 |---|---|
-| Fields, tabs, dropdown values, required rules, show/hide conditions | `server/src/config/formSchema.ts`. The UI and validation both read from this file, so there's no frontend change |
-| Required documents and when they apply | `documentRequirements` in the same file |
-| Approval levels and their order (optionally per vendor type) | `server/src/config/workflow.ts` |
-| Format checks | `server/src/lib/validators.ts` |
-| Online verification (GSTN, NSDL PAN, penny-drop, MCA) | `server/src/lib/verification.ts` (currently mocked) |
-| ERP field mapping | `server/src/lib/erpMapper.ts` |
-| Product name | `web/src/brand.ts` |
+| `npm run dev` | API + web with hot reload |
+| `npm test` | 29 automated tests covering validators, auth, 2FA, tenant isolation, permissions and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
+| `npm run db:setup` | Drop, migrate, reseed (dev only) |
+| `npm run -w server db:migrate` | Apply pending migrations (use this in production) |
+| `npm run -w server db:generate` | Create a new migration after editing `server/src/db/schema.ts` |
+| `npm run tenant:create -- …` | Provision a customer workspace |
 
-## Production gaps (deliberately stubbed)
+**Test database (one-time):**
 
-| Area | Prototype | Replace with |
+```bash
+docker compose exec db psql -U vendor -d vendor_onboarding -c "create database vendor_onboarding_test"
+npm test
+```
+
+## Where things live
+
+```
+server/src/
+  app.ts                 Express app (security middleware, routes)
+  auth/session.ts        cookie sessions, CSRF guard, requireStaff(permission)
+  lib/permissions.ts     permission list + default roles for new workspaces
+  lib/crypto.ts          token hashing, AES-GCM encryption
+  config/formSchema.ts   onboarding fields & documents (becomes per-tenant in Phase 2)
+  config/workflow.ts     default approval levels (by role key)
+  services/              tenants, users, workflowEngine
+  routes/                staffAuth, vendorAuth, admin, staff (vendors), vendorPortal, documents
+  db/schema.ts           tables  ·  drizzle/  SQL migrations
+server/tests/            Vitest + Supertest suites
+web/src/
+  lib/session.tsx        signed-in user, permissions, branding
+  pages/auth/            sign-in, 2FA, forgot/reset, accept invite
+  pages/admin/           users, roles, workspace, audit log
+  pages/                 vendors, vendor detail, account, vendor portal
+```
+
+## Still stubbed (planned phases)
+
+| Area | Now | Phase |
 |---|---|---|
-| Staff login | Pick a user, no password | SSO (Azure AD / Google) or password + MFA |
-| Email | Stored in `email_outbox` and shown in Mailbox | SES / SendGrid / SMTP in `lib/mailer.ts`, then set `DEV_SHOW_OTP=false` |
-| Verification | Deterministic mock | A GSP / KYC provider (e.g. Karza, Signzy, Surepass) or direct GSTN/NSDL APIs |
-| File storage | Local `uploads/` folder | S3 / Azure Blob, with virus scanning |
-| AI document extraction | Not included | OCR / LLM extraction to pre-fill fields from GST and PAN certificates |
-| ERP push | JSON export | Oracle integration (REST/SOAP) or a file drop |
-| Sensitive data | Plain columns | Encrypt bank account / PAN at rest; mask by role |
+| Email / SMS delivery | Recorded in `email_outbox`, shown in the dev Mailbox | 3 |
+| KYC verification | Deterministic mock | 3 |
+| File storage | Local `uploads/` folder | 3 |
+| AI document extraction | Not yet | 3 |
+| Form fields & workflow | Code config shared by all tenants | 2 |
+| PAN / bank encryption at rest | Plain columns | 6 |
 
 ## Deploy
 
-`Dockerfile` builds a single container that serves the API and the web app on port 4000. Set `DATABASE_URL`, `JWT_SECRET` and `APP_BASE_URL`, then run `npm run db:push -w server` once against the database. This works on Railway, Render, Fly or any container host.
+The `Dockerfile` builds one container (API + web) on port 4000. Set these variables:
 
-## Project layout
+- `NODE_ENV=production`
+- `DATABASE_URL`
+- `APP_BASE_URL`
+- `ENCRYPTION_KEY`
+- `DEV_SHOW_OTP=false`
+- `TRUST_PROXY=true` (behind a load balancer)
 
-```
-server/
-  src/config/     formSchema.ts (fields), workflow.ts (approval levels)
-  src/db/         schema.ts (Drizzle tables), seed.ts
-  src/lib/        validators, profileEngine (checklist), workflowEngine, verification (mock), erpMapper, auth, mailer
-  src/routes/     auth (staff + vendor OTP), staff, vendorPortal, documents, meta
-  scripts/smoke.ts
-web/
-  src/pages/      StaffLogin, VendorList, VendorDetail, Mailbox, VendorLogin, VendorPortal
-  src/components/ DynamicSection (renders forms from config), Checklist, DocumentsPanel, Timeline
-```
+Run `npm run -w server db:migrate` once against the database, or set `MIGRATE_ON_START=true`.
