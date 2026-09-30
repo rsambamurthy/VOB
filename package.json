@@ -1,0 +1,17 @@
+{
+  "name": "vendor-onboarding",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "db:setup": "npm run -w server db:push && npm run -w server db:seed",
+    "dev": "concurrently -n api,web -c magenta,cyan \"npm run -w server dev\" \"npm run -w web dev\"",
+    "build": "npm run -w server build && npm run -w web build",
+    "start": "npm run -w server start",
+    "smoke": "npm run -w server smoke"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
