@@ -19,6 +19,7 @@ import { staffRouter } from './routes/staff.js';
 import { adminRouter } from './routes/admin.js';
 import { vendorRouter } from './routes/vendorPortal.js';
 import { documentsRouter } from './routes/documents.js';
+import { configRouter } from './routes/config.js';
 
 export function createApp() {
   const app = express();
@@ -51,6 +52,7 @@ export function createApp() {
   app.use('/api/admin', adminRouter);
   app.use('/api/vendor', vendorRouter);
   app.use('/api/documents', documentsRouter);
+  app.use('/api', configRouter);
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));
 
   // In production the API also serves the built web app.

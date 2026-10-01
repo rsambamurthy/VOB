@@ -15,6 +15,7 @@ export function Account() {
       <header className="page-head"><div><h1>My account</h1><p className="muted">{me.user.email} · {me.tenant.name} ({me.tenant.slug})</p></div></header>
       {me.mfaSetupRequired && <Alert kind="warning"><strong>{me.tenant.name}</strong> requires two-factor authentication. Set it up below to continue.</Alert>}
       <MfaCard enabled={me.user.mfaEnabled} required={!!me.tenant.settings.requireMfa} onChange={refresh} autoStart={params.get('setup') === '1'} />
+      {!me.mfaSetupRequired && <OutOfOfficeCard />}
       {!me.mfaSetupRequired && <PasswordCard />}
       {!me.mfaSetupRequired && <SessionsCard />}
     </div>
@@ -130,4 +131,46 @@ function browserName(ua?: string) {
   const b = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
   const os = /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : '';
   return `${b}${os ? ` on ${os}` : ''}`;
+}
+
+interface Deleg { id: string; toUserId: string; toName?: string; startsAt: string; endsAt: string; reason?: string }
+function OutOfOfficeCard() {
+  const [data, setData] = useState<{ mine: Deleg[]; covering: { id: string; name: string; startsAt: string; endsAt: string }[]; colleagues: { id: string; name: string; email: string }[] }>();
+  const today = new Date(); const inAWeek = new Date(Date.now() + 7 * 86_400_000);
+  const local = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  const [f, setF] = useState({ toUserId: '', startsAt: local(today), endsAt: local(inAWeek), reason: '' });
+  const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
+  const load = () => api('/me/delegations').then(setData);
+  useEffect(() => { load(); }, []);
+  async function add(e: React.FormEvent) {
+    e.preventDefault(); setMsg(undefined);
+    try { await api('/me/delegations', { body: { ...f, startsAt: new Date(f.startsAt).toISOString(), endsAt: new Date(f.endsAt).toISOString() } }); setMsg({ kind: 'success', text: 'Out-of-office set. Your delegate can now act on your approvals during that time.' }); load(); }
+    catch (err: any) { setMsg({ kind: 'error', text: err.message }); }
+  }
+  return (
+    <section className="card pad section-card">
+      <h3>Out of office</h3>
+      <p className="muted small">While you’re away, a colleague can approve, send back or reject everything waiting for you. Your own access is unchanged.</p>
+      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {data?.covering.map((c) => <Alert key={c.id} kind="info">You’re covering for <strong>{c.name}</strong> until {fmtDateTime(c.endsAt)}. Their approvals appear in your queue.</Alert>)}
+      {data?.mine.length ? (
+        <ul className="plain-list">
+          {data.mine.map((d) => (
+            <li key={d.id}><strong>{d.toName}</strong><span className="muted small">{fmtDateTime(d.startsAt)} → {fmtDateTime(d.endsAt)}{d.reason ? ` · ${d.reason}` : ''}</span>
+              <button className="link-btn small danger" onClick={async () => { await api(`/me/delegations/${d.id}`, { method: 'DELETE' }); load(); }}>End</button></li>
+          ))}
+        </ul>
+      ) : null}
+      <form onSubmit={add} className="field-grid">
+        <div className="field"><label htmlFor="oo-to">Delegate to</label>
+          <select id="oo-to" value={f.toUserId} onChange={(e) => setF({ ...f, toUserId: e.target.value })} required>
+            <option value="">Choose a colleague…</option>{data?.colleagues.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></div>
+        <div className="field"><label htmlFor="oo-from">From</label><input id="oo-from" type="datetime-local" value={f.startsAt} onChange={(e) => setF({ ...f, startsAt: e.target.value })} required /></div>
+        <div className="field"><label htmlFor="oo-until">Until</label><input id="oo-until" type="datetime-local" value={f.endsAt} onChange={(e) => setF({ ...f, endsAt: e.target.value })} required /></div>
+        <div className="field"><label htmlFor="oo-why">Reason (optional)</label><input id="oo-why" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="Annual leave" /></div>
+        <div className="field-wide"><button className="btn btn-secondary">Set out of office</button></div>
+      </form>
+    </section>
+  );
 }

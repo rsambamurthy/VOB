@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { FieldDef, Profile, SectionDef } from '../lib/types';
-import { conditionHolds, isRequired } from '../lib/meta';
+import { conditionHolds, isRequired } from '../lib/conditions';
 
 interface Props {
   section: SectionDef;
@@ -8,15 +8,17 @@ interface Props {
   onChange?: (field: string, value: string) => void;
   errors?: Record<string, string>;        // "section.field" -> message
   readOnly?: boolean;
+  vendorType?: string;
   extra?: (field: FieldDef) => ReactNode; // e.g. a "Verify" button next to GSTIN
 }
 
-export function DynamicSection({ section, profile, onChange, errors = {}, readOnly, extra }: Props) {
+export function DynamicSection({ section, profile, onChange, errors = {}, readOnly, extra, vendorType }: Props) {
   const values = profile[section.key] ?? {};
+  const ctx = { profile, vendor: { vendorType } };
   return (
     <div className="section-groups">
       {section.groups.map((g) => {
-        const fields = g.fields.filter((f) => conditionHolds(f.showIf, profile));
+        const fields = g.fields.filter((f) => conditionHolds(f.showIf, ctx));
         if (!fields.length) return null;
         return (
           <fieldset key={g.key} className="group">
@@ -25,7 +27,7 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
               {fields.map((f) => {
                 const id = `${section.key}.${f.key}`;
                 const value = values[f.key] === undefined || values[f.key] === null ? '' : String(values[f.key]);
-                const req = isRequired(f.required, profile);
+                const req = isRequired(f.required, ctx);
                 const err = errors[id];
                 const wide = f.type === 'textarea' || f.type === 'radio' && f.label.length > 45;
                 return (

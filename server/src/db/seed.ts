@@ -3,6 +3,7 @@
  * in different stages. Used by `npm run db:reset`. All demo users share DEMO_PASSWORD.
  */
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { db, pool, schema } from '../lib/db.js';
@@ -11,16 +12,32 @@ import { gstinCheckChar } from '../lib/validators.js';
 import { hashPassword } from '../lib/password.js';
 import { DEFAULT_ROLES } from '../lib/permissions.js';
 import type { Role, Tenant, User } from './schema.js';
+import { seedInitialConfig } from '../services/config.js';
+import { defaultConfig } from '../config/defaultTemplate.js';
+import type { OnboardingConfig } from '../config/types.js';
 
 export const DEMO_PASSWORD = 'Demo@12345';
-const { tenants, users, roles, userRoles, vendors, approvalSteps, auditLogs, emailOutbox } = schema;
+const { tenants, users, roles, userRoles, vendors, approvalSteps, auditLogs, emailOutbox, documents } = schema;
+
+/** Writes a tiny placeholder PDF per document so seeded vendors look complete. */
+function placeholderDocs(tenantId: string, vendorId: string, types: string[]) {
+  fs.mkdirSync(env.uploadDir, { recursive: true });
+  return types.map((docType) => {
+    const storagePath = `seed-${crypto.randomUUID()}.pdf`;
+    const body = `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n% demo ${docType}`;
+    fs.writeFileSync(path.join(env.uploadDir, storagePath), body);
+    return { tenantId, vendorId, docType, fileName: `${docType.toLowerCase()}.pdf`, mimeType: 'application/pdf', size: body.length, storagePath };
+  });
+}
+const FULL_DOCS = ['PAN_CARD', 'GST_CERT', 'CANCELLED_CHEQUE', 'INCORPORATION_CERT', 'MSME_CERT', 'FINANCIALS'];
 const token = () => crypto.randomBytes(24).toString('base64url');
 const gstin = (state: string, pan: string) => { const b = `${state}${pan}1Z`; return b + gstinCheckChar(b); };
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000);
 
-async function makeTenant(slug: string, name: string, branding: Tenant['branding']) {
+async function makeTenant(slug: string, name: string, branding: Tenant['branding'], extraRoles: { key: string; name: string; description: string; permissions: string[] }[] = [], config: OnboardingConfig = defaultConfig) {
   const [t] = await db.insert(tenants).values({ slug, name, branding, settings: {} }).returning();
-  const rs = await db.insert(roles).values(DEFAULT_ROLES.map((r) => ({ tenantId: t.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, isSystem: r.key === 'ADMIN' }))).returning();
+  const rs = await db.insert(roles).values([...DEFAULT_ROLES, ...extraRoles].map((r) => ({ tenantId: t.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, isSystem: r.key === 'ADMIN' }))).returning();
+  await seedInitialConfig(t.id, config);
   return { tenant: t, role: (k: string) => rs.find((r) => r.key === k)! };
 }
 
@@ -51,13 +68,21 @@ export async function seed() {
   const hash = await hashPassword(DEMO_PASSWORD);
 
   /* ---- Workspace 1: acme ---- */
-  const { tenant: acme, role } = await makeTenant('acme', 'Acme Industries Ltd', { productName: 'VendorGate', primaryColor: '#6d1a73' });
+  // Acme demonstrates a rule-based level: an extra Compliance Review only for import (foreign) vendors.
+  const acmeConfig = structuredClone(defaultConfig);
+  acmeConfig.workflow.levels.splice(1, 0, {
+    id: 'compliance', label: 'Compliance Review', roleKey: 'COMPLIANCE', slaHours: 72,
+    rule: { match: 'all', conditions: [{ field: 'vendor.vendorType', op: 'eq', value: 'IMPORT' }] },
+  });
+  const { tenant: acme, role } = await makeTenant('acme', 'Acme Industries Ltd', { productName: 'VendorGate', primaryColor: '#6d1a73' },
+    [{ key: 'COMPLIANCE', name: 'Compliance Officer', description: 'Extra checks for foreign vendors', permissions: ['vendors.view'] }], acmeConfig);
   const admin = await makeUser(acme, 'Anita Rao', 'admin@acme.test', [role('ADMIN')], hash);
   await makeUser(acme, 'Deepak Menon', 'vendoradmin@acme.test', [role('VENDOR_ADMIN')], hash);
   const tax = await makeUser(acme, 'Suresh Iyer', 'tax@acme.test', [role('TAX_MANAGER')], hash);
   const fin = await makeUser(acme, 'Meera Nair', 'finance@acme.test', [role('FINANCE_MANAGER')], hash);
   const mdm = await makeUser(acme, 'Vikram Shah', 'mdm@acme.test', [role('MDM_MANAGER')], hash);
   await makeUser(acme, 'Farah Khan', 'farah@acme.test', [role('VIEWER')], hash, 'INVITED');
+  await makeUser(acme, 'Joseph Mathew', 'compliance@acme.test', [role('COMPLIANCE')], hash);
 
   const [approved] = await db.insert(vendors).values({
     tenantId: acme.id, code: 'VND-00001', name: 'Precision Valves Pvt Ltd', vendorType: 'DOMESTIC', contactFirstName: 'Rahul', contactLastName: 'Deshmukh',
@@ -79,8 +104,8 @@ export async function seed() {
   }).returning();
   await db.insert(approvalSteps).values([
     { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 1, roleId: role('TAX_MANAGER').id, label: 'Tax Review', status: 'APPROVED', remarks: 'OK', actedById: tax.id, actedAt: daysAgo(1) },
-    { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 2, roleId: role('FINANCE_MANAGER').id, label: 'Finance & Risk Review', status: 'PENDING' },
-    { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 3, roleId: role('MDM_MANAGER').id, label: 'Master Data Approval', status: 'WAITING' },
+    { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 2, roleId: role('FINANCE_MANAGER').id, label: 'Finance & Risk Review', status: 'PENDING', slaHours: 48, activatedAt: daysAgo(1), dueAt: new Date(Date.now() + 86_400_000) },
+    { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 3, roleId: role('MDM_MANAGER').id, label: 'Master Data Approval', status: 'WAITING', slaHours: 24 },
   ]);
 
   const [invited] = await db.insert(vendors).values({
@@ -98,6 +123,7 @@ export async function seed() {
     },
   }).returning();
 
+  await db.insert(documents).values([...placeholderDocs(acme.id, approved.id, FULL_DOCS), ...placeholderDocs(acme.id, review.id, FULL_DOCS)]);
   for (const v of [approved, review, invited, foreign]) {
     await db.insert(auditLogs).values({ tenantId: acme.id, vendorId: v.id, actor: admin.name, action: 'VENDOR_CREATED', createdAt: v.createdAt });
   }
@@ -117,7 +143,7 @@ export async function seed() {
   });
 
   console.log(`\nDemo workspaces ready. Password for every demo user: ${DEMO_PASSWORD}`);
-  console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test');
+  console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test, compliance@acme.test');
   console.log('  Workspace "globex": admin@globex.test\n');
 }
 

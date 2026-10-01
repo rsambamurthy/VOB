@@ -3,6 +3,7 @@ import { db, schema } from '../lib/db.js';
 import { DEFAULT_ROLES } from '../lib/permissions.js';
 import { HttpError } from '../lib/http.js';
 import { createStaffUser } from './users.js';
+import { seedInitialConfig } from './config.js';
 import type { TenantBranding } from '../db/schema.js';
 
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
@@ -15,6 +16,7 @@ export async function createTenant(input: { slug: string; name: string; adminNam
   const [tenant] = await db.insert(schema.tenants).values({ slug, name: input.name.trim(), branding: input.branding ?? {}, settings: {} }).returning();
   const createdRoles = await db.insert(schema.roles).values(DEFAULT_ROLES.map((r) => ({ tenantId: tenant.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, isSystem: r.key === 'ADMIN' }))).returning();
   const admin = createdRoles.find((r) => r.key === 'ADMIN')!;
+  await seedInitialConfig(tenant.id);
   const { user, inviteLink } = await createStaffUser(tenant, { name: input.adminName, email: input.adminEmail, roleIds: [admin.id] }, 'The VendorGate team');
   return { tenant, admin: user, inviteLink, roles: createdRoles };
 }

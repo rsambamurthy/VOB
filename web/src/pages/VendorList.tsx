@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { useMeta } from '../lib/meta';
+import { VENDOR_TYPES } from '../lib/meta';
 import { useSession } from '../lib/session';
 import { Alert, Empty, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, statusLabel } from '../lib/format';
@@ -11,7 +11,6 @@ const STATUSES: VendorStatus[] = ['INVITED', 'IN_PROGRESS', 'UNDER_REVIEW', 'SEN
 
 export function VendorList({ mine = false }: { mine?: boolean }) {
   const { me, can } = useSession();
-  const meta = useMeta();
   const nav = useNavigate();
   const [data, setData] = useState<{ vendors: VendorSummary[]; counts: Record<string, number>; myQueue: number }>();
   const [q, setQ] = useState('');
@@ -68,10 +67,10 @@ export function VendorList({ mine = false }: { mine?: boolean }) {
                 {data.vendors.map((v) => (
                   <tr key={v.id} onClick={() => nav(`/staff/vendors/${v.id}`)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && nav(`/staff/vendors/${v.id}`)}>
                     <td><div className="strong">{v.name}</div><div className="muted small mono">{v.code}</div></td>
-                    <td>{meta.vendorTypes.find((t) => t.value === v.vendorType)?.label}</td>
+                    <td>{VENDOR_TYPES.find((t) => t.value === v.vendorType)?.label}</td>
                     <td><div>{v.contactFirstName} {v.contactLastName}</div><div className="muted small">{v.contactEmail}</div></td>
                     <td><StatusBadge status={v.status} /></td>
-                    <td>{v.pendingStep ? <span className={v.pendingStep.mine ? 'you' : ''}>{v.pendingStep.label}{v.pendingStep.mine ? ' (you)' : ''}</span> : v.status === 'SENT_BACK' || v.status === 'IN_PROGRESS' || v.status === 'INVITED' ? <span className="muted">Vendor</span> : <span className="muted">—</span>}</td>
+                    <td>{v.pendingStep ? <span className={v.pendingStep.mine ? 'you' : ''}>{v.pendingStep.label}{v.pendingStep.assignee ? ` · ${v.pendingStep.assignee}` : ''}{v.pendingStep.mine ? ' (you)' : ''}{v.pendingStep.overdue && <span className="badge badge-rejected sm">Overdue</span>}</span> : v.status === 'SENT_BACK' || v.status === 'IN_PROGRESS' || v.status === 'INVITED' ? <span className="muted">Vendor</span> : <span className="muted">—</span>}</td>
                     <td className="muted">{fmtDate(v.updatedAt)}</td>
                   </tr>
                 ))}
@@ -86,7 +85,6 @@ export function VendorList({ mine = false }: { mine?: boolean }) {
 }
 
 function CreateVendor({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const meta = useMeta();
   const [f, setF] = useState({ name: '', vendorType: 'DOMESTIC', contactFirstName: '', contactLastName: '', contactEmail: '', contactMobile: '', notify: true });
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -108,7 +106,7 @@ function CreateVendor({ onClose, onCreated }: { onClose: () => void; onCreated: 
         {error && <div className="field-wide"><Alert kind="error">{error}</Alert></div>}
         <div className="field"><label htmlFor="cv-name">Vendor name<span className="req"> *</span></label><input id="cv-name" required value={f.name} onChange={set('name')} autoFocus /></div>
         <div className="field"><label htmlFor="cv-type">Vendor type<span className="req"> *</span></label>
-          <select id="cv-type" value={f.vendorType} onChange={set('vendorType')}>{meta.vendorTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+          <select id="cv-type" value={f.vendorType} onChange={set('vendorType')}>{VENDOR_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
         <div className="field"><label htmlFor="cv-fn">Contact first name<span className="req"> *</span></label><input id="cv-fn" required value={f.contactFirstName} onChange={set('contactFirstName')} /></div>
         <div className="field"><label htmlFor="cv-ln">Contact last name<span className="req"> *</span></label><input id="cv-ln" required value={f.contactLastName} onChange={set('contactLastName')} /></div>
         <div className="field"><label htmlFor="cv-em">Contact email<span className="req"> *</span></label><input id="cv-em" type="email" required value={f.contactEmail} onChange={set('contactEmail')} /></div>

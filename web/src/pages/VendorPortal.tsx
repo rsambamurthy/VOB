@@ -3,15 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { applyBranding } from '../lib/session';
 import { monogram } from '../lib/format';
-import { useMeta } from '../lib/meta';
 import { DynamicSection } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
-import type { Branding, ChecklistItem, DocRequirement, FieldDef, Profile, VendorFull } from '../lib/types';
+import type { Branding, ChecklistItem, DocRequirement, FieldDef, Profile, SectionDef, VendorFull } from '../lib/types';
 
-type Me = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding } };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding } };
 type VerifyResult = { status: string; message: string };
 
 /** Fields that get an online "Verify" button: field key -> [check kind, fields to send]. */
@@ -23,7 +22,6 @@ const VERIFY: Record<string, { kind: string; label: string; from: (p: Profile) =
 };
 
 export function VendorPortal() {
-  const meta = useMeta();
   const nav = useNavigate();
   const [me, setMe] = useState<Me>();
   const [profile, setProfile] = useState<Profile>({});
@@ -61,7 +59,8 @@ export function VendorPortal() {
   if (!me) return <div className="center-page"><div className="spinner" /></div>;
   const v = me.vendor;
   const editable = me.editable;
-  const tabs = [...meta.formSchema.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' }];
+  const cfg = me.config;
+  const tabs = [...cfg.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' }];
   const sectionErrors = (k: string) => me.checklist.filter((c) => c.section === k && !c.ok && c.severity === 'error').length;
 
   function change(section: string, field: string, value: string) {
@@ -113,7 +112,7 @@ export function VendorPortal() {
       setFlash({ kind: 'success', text: 'Submitted for review. We’ll email you when there’s an update.' });
       await load();
     } catch (e: any) {
-      setRevealed(new Set([...meta.formSchema.map((s) => s.key), 'documents']));
+      setRevealed(new Set([...cfg.sections.map((s) => s.key), 'documents']));
       setFlash({ kind: 'error', text: e.message });
       await load();
     }
@@ -166,8 +165,8 @@ export function VendorPortal() {
               })}
             </div>
             <div className="pad">
-              {meta.formSchema.filter((s) => s.key === tab).map((s) => (
-                <DynamicSection key={s.key} section={s} profile={profile} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} />
+              {cfg.sections.filter((s) => s.key === tab).map((s) => (
+                <DynamicSection key={s.key} section={s} profile={profile} vendorType={v.vendorType} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} />
               ))}
               {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={editable} onUpload={upload} onDelete={remove} />}
             </div>
@@ -183,16 +182,16 @@ export function VendorPortal() {
           <aside className="side-col">
             {editable ? (
               <div className="card pad">
-                <Checklist items={me.checklist} sections={meta.formSchema} onJump={(s) => { setRevealed((r) => new Set(r).add(s)); goTo(s); }} />
+                <Checklist items={me.checklist} sections={cfg.sections} onJump={(s) => { setRevealed((r) => new Set(r).add(s)); goTo(s); }} />
                 <button className="btn btn-primary btn-block" onClick={() => setConfirmSubmit(true)} disabled={saving}>Submit for review</button>
                 {blocking > 0 && <p className="small muted center">You can submit once all required items are done.</p>}
               </div>
             ) : (
-              <div className="card pad"><h3 className="card-title">Approval progress</h3><ApprovalTimeline steps={v.steps} meta={meta} /></div>
+              <div className="card pad"><h3 className="card-title">Approval progress</h3><ApprovalTimeline steps={v.steps} levels={cfg.levels} /></div>
             )}
             <div className="card pad">
               <h3 className="card-title">How onboarding works</h3>
-              <ol className="guide-mini">{meta.onboardingGuide.map((g) => <li key={g.title}>{g.title.replace(/^Step \d+: /, '')}</li>)}</ol>
+              <ol className="guide-mini">{cfg.guide.map((g) => <li key={g.title}>{g.title.replace(/^Step \d+: /, '')}</li>)}</ol>
               <button className="link-btn small" onClick={() => setShowGuide(true)}>Read the full guide</button>
             </div>
           </aside>
@@ -201,7 +200,7 @@ export function VendorPortal() {
 
       {showGuide && (
         <Modal title="Vendor onboarding guide" onClose={() => setShowGuide(false)}>
-          {meta.onboardingGuide.map((g) => <div key={g.title} className="guide-step"><h4>{g.title}</h4><p>{g.body}</p></div>)}
+          {cfg.guide.map((g) => <div key={g.title} className="guide-step"><h4>{g.title}</h4><p>{g.body}</p></div>)}
         </Modal>
       )}
       {confirmSubmit && (
@@ -209,7 +208,7 @@ export function VendorPortal() {
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmSubmit(false)}>Keep editing</button><button className="btn btn-primary" disabled={blocking > 0 && dirty.size === 0} onClick={submit}>Submit</button></>}>
           {blocking > 0
             ? <Alert kind="warning">{blocking} required item(s) still need attention — see the checklist. {dirty.size > 0 && 'You have unsaved changes; submitting will save them and re-check.'}</Alert>
-            : <p>Your details will be reviewed by: <strong>{meta.workflowLevels.map((l) => l.label).join(' → ')}</strong>. You won’t be able to edit while it’s under review.</p>}
+            : <p>Your details will be reviewed by: <strong>{cfg.levels.join(' → ')}</strong>. You won’t be able to edit while it’s under review.</p>}
         </Modal>
       )}
     </div>

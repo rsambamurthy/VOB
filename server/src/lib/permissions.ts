@@ -10,6 +10,7 @@ export const PERMISSIONS = {
   'users.manage': 'Invite users, assign roles, disable accounts',
   'tenant.settings': 'Edit workspace name, branding and security settings',
   'config.manage': 'Edit onboarding fields, documents and approval flow',
+  'approvals.manage': 'Reassign approval steps and see every queue',
   'reports.view': 'View dashboards and reports',
   'audit.view': 'View the audit log',
 } as const;

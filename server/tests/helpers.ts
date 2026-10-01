@@ -38,3 +38,11 @@ export async function lastLinkTo(to: string) {
 
 export const pathOf = (link: string) => new URL(link).pathname;
 export const tokenOf = (link: string) => new URL(link).pathname.split('/').pop()!;
+
+/** The auth tests turn on enforced 2FA for globex; reset that so other files can sign in with a password. */
+export async function globexAdmin() {
+  const t = await db.query.tenants.findFirst({ where: eq(schema.tenants.slug, 'globex') });
+  await db.update(schema.tenants).set({ settings: {} }).where(eq(schema.tenants.id, t!.id));
+  await db.update(schema.users).set({ mfaEnabled: false, mfaSecretEnc: null }).where(eq(schema.users.email, 'admin@globex.test'));
+  return login('admin@globex.test', 'globex');
+}

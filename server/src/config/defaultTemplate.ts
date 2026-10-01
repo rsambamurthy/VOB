@@ -1,4 +1,8 @@
 /**
+ * DEFAULT TEMPLATE for a new workspace's onboarding configuration.
+ * Each tenant gets a copy (version 1) and edits it in Admin → Configuration; after that the
+ * tenant's published config in the database is what the app uses, not this file.
+ *
  * Config-driven definition of the vendor profile.
  *
  * Everything the vendor fills in — tabs, groups, fields, dropdown values, required
@@ -9,58 +13,16 @@
  * Field values are stored in Vendor.profile as { [sectionKey]: { [fieldKey]: value } }.
  * Conditions reference other fields as "section.field", e.g. "basic.supplierCountry".
  */
-import type { ValidatorName } from '../lib/validators.js';
-
-export type FieldType = 'text' | 'textarea' | 'select' | 'radio' | 'number' | 'email' | 'tel' | 'date' | 'url';
-
-export interface Condition {
-  field: string; // "section.field"
-  equals?: string;
-  notEquals?: string;
-  in?: string[];
-}
-
-export interface FieldDef {
-  key: string;
-  label: string;
-  type: FieldType;
-  required?: boolean | Condition; // true, or required only when the condition holds
-  showIf?: Condition;             // hidden (and not validated) unless the condition holds
-  options?: string[];
-  validator?: ValidatorName;
-  placeholder?: string;
-  help?: string;
-  readOnlyForVendor?: boolean;    // set by the buyer at invite time
-}
-
-export interface GroupDef {
-  key: string;
-  label: string;
-  fields: FieldDef[];
-}
-
-export interface SectionDef {
-  key: string;
-  label: string;
-  groups: GroupDef[];
-}
-
-export interface DocumentRequirement {
-  type: string;
-  label: string;
-  required?: boolean | Condition;
-  showIf?: Condition;
-  help?: string;
-}
+import type { Condition, DocumentRequirement, OnboardingConfig, SectionDef } from './types.js';
 
 const COUNTRIES = ['India', 'United Arab Emirates', 'United States', 'United Kingdom', 'Germany', 'Singapore', 'Kuwait', 'Saudi Arabia', 'China', 'Japan', 'Other'];
-const INDIA = { field: 'basic.supplierCountry', equals: 'India' };
-const NOT_INDIA = { field: 'basic.supplierCountry', notEquals: 'India' };
-const BANK_INDIA = { field: 'bank.bankCountry', equals: 'India' };
-const BANK_NOT_INDIA = { field: 'bank.bankCountry', notEquals: 'India' };
+const INDIA: Condition = { field: 'basic.supplierCountry', op: 'eq', value: 'India' };
+const NOT_INDIA: Condition = { field: 'basic.supplierCountry', op: 'neq', value: 'India' };
+const BANK_INDIA: Condition = { field: 'bank.bankCountry', op: 'eq', value: 'India' };
+const BANK_NOT_INDIA: Condition = { field: 'bank.bankCountry', op: 'neq', value: 'India' };
 const YES_NO = ['Yes', 'No'];
 
-export const formSchema: SectionDef[] = [
+const sections: SectionDef[] = [
   {
     key: 'basic',
     label: 'Basic Information',
@@ -71,7 +33,7 @@ export const formSchema: SectionDef[] = [
         fields: [
           { key: 'vendorName', label: 'Vendor Name', type: 'text', required: true },
           { key: 'tradingName', label: 'Trading Name', type: 'text' },
-          { key: 'proprietorName', label: 'Proprietor Name', type: 'text', showIf: { field: 'basic.entityType', equals: 'Individual / Proprietorship' } },
+          { key: 'proprietorName', label: 'Proprietor Name', type: 'text', showIf: { field: 'basic.entityType', op: 'eq', value: 'Individual / Proprietorship' } },
           {
             key: 'entityType', label: 'Type of Entity', type: 'select', required: true,
             options: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership', 'Partnership Firm', 'Individual / Proprietorship', 'Hindu Undivided Family (HUF)', 'Association of Persons', 'Trust', 'Government Organisation'],
@@ -92,8 +54,8 @@ export const formSchema: SectionDef[] = [
         fields: [
           { key: 'yearEstablished', label: 'Year of Establishment', type: 'number', validator: 'year' },
           { key: 'msmeRegistered', label: 'Registered as MSME (Udyam)?', type: 'radio', options: YES_NO, required: INDIA, showIf: INDIA },
-          { key: 'udyamNumber', label: 'Udyam Registration Number', type: 'text', validator: 'udyam', placeholder: 'UDYAM-MH-01-0000001', required: { field: 'basic.msmeRegistered', equals: 'Yes' }, showIf: { field: 'basic.msmeRegistered', equals: 'Yes' } },
-          { key: 'msmeCategory', label: 'MSME Category', type: 'select', options: ['Micro', 'Small', 'Medium'], showIf: { field: 'basic.msmeRegistered', equals: 'Yes' } },
+          { key: 'udyamNumber', label: 'Udyam Registration Number', type: 'text', validator: 'udyam', placeholder: 'UDYAM-MH-01-0000001', required: { field: 'basic.msmeRegistered', op: 'eq', value: 'Yes' }, showIf: { field: 'basic.msmeRegistered', op: 'eq', value: 'Yes' } },
+          { key: 'msmeCategory', label: 'MSME Category', type: 'select', options: ['Micro', 'Small', 'Medium'], showIf: { field: 'basic.msmeRegistered', op: 'eq', value: 'Yes' } },
         ],
       },
       {
@@ -157,8 +119,8 @@ export const formSchema: SectionDef[] = [
         label: 'Indirect Tax (GST)',
         fields: [
           { key: 'hasGst', label: 'Do you hold a GST number?', type: 'radio', options: YES_NO, required: INDIA, showIf: INDIA },
-          { key: 'gstin', label: 'GSTIN', type: 'text', validator: 'gstin', required: { field: 'tax.hasGst', equals: 'Yes' }, showIf: { field: 'tax.hasGst', equals: 'Yes' }, placeholder: '27AAPFU0939F1ZV' },
-          { key: 'gstClassification', label: 'GST Classification', type: 'select', options: ['Regular', 'Composition', 'SEZ Unit', 'SEZ Developer', 'Input Service Distributor'], required: { field: 'tax.hasGst', equals: 'Yes' }, showIf: { field: 'tax.hasGst', equals: 'Yes' } },
+          { key: 'gstin', label: 'GSTIN', type: 'text', validator: 'gstin', required: { field: 'tax.hasGst', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.hasGst', op: 'eq', value: 'Yes' }, placeholder: '27AAPFU0939F1ZV' },
+          { key: 'gstClassification', label: 'GST Classification', type: 'select', options: ['Regular', 'Composition', 'SEZ Unit', 'SEZ Developer', 'Input Service Distributor'], required: { field: 'tax.hasGst', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.hasGst', op: 'eq', value: 'Yes' } },
           { key: 'vatNumber', label: 'VAT Registration Number', type: 'text', showIf: NOT_INDIA },
         ],
       },
@@ -168,11 +130,11 @@ export const formSchema: SectionDef[] = [
         fields: [
           { key: 'pan', label: 'PAN', type: 'text', validator: 'pan', required: INDIA, showIf: INDIA, placeholder: 'AAPFU0939F' },
           { key: 'tan', label: 'TAN', type: 'text', validator: 'tan', showIf: INDIA, placeholder: 'MUMA12345B' },
-          { key: 'cin', label: 'CIN / LLPIN', type: 'text', validator: 'cin', showIf: { field: 'basic.entityType', in: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership'] }, required: { field: 'basic.entityType', equals: 'Company (Pvt / Public Ltd)' } },
+          { key: 'cin', label: 'CIN / LLPIN', type: 'text', validator: 'cin', showIf: { field: 'basic.entityType', op: 'in', value: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership'] }, required: { field: 'basic.entityType', op: 'eq', value: 'Company (Pvt / Public Ltd)' } },
           { key: 'concessionalTds', label: 'Do you hold a lower / nil TDS certificate (Sec. 197)?', type: 'radio', options: YES_NO, showIf: INDIA },
-          { key: 'tdsCertNumber', label: 'Certificate Number', type: 'text', required: { field: 'tax.concessionalTds', equals: 'Yes' }, showIf: { field: 'tax.concessionalTds', equals: 'Yes' } },
-          { key: 'tdsRate', label: 'Concessional Rate (%)', type: 'number', required: { field: 'tax.concessionalTds', equals: 'Yes' }, showIf: { field: 'tax.concessionalTds', equals: 'Yes' } },
-          { key: 'tdsValidTill', label: 'Valid Till', type: 'date', required: { field: 'tax.concessionalTds', equals: 'Yes' }, showIf: { field: 'tax.concessionalTds', equals: 'Yes' } },
+          { key: 'tdsCertNumber', label: 'Certificate Number', type: 'text', required: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' } },
+          { key: 'tdsRate', label: 'Concessional Rate (%)', type: 'number', required: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' } },
+          { key: 'tdsValidTill', label: 'Valid Till', type: 'date', required: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' } },
         ],
       },
       {
@@ -208,43 +170,49 @@ export const formSchema: SectionDef[] = [
         label: 'Credit Rating & Declarations',
         fields: [
           { key: 'hasRating', label: 'Do you have an external credit rating?', type: 'radio', options: YES_NO, required: true },
-          { key: 'ratingAgency', label: 'Rating Agency', type: 'select', options: ['CRISIL', 'ICRA', 'CARE', 'India Ratings', 'Acuité', "Moody's", 'S&P', 'Fitch', 'Other'], required: { field: 'risk.hasRating', equals: 'Yes' }, showIf: { field: 'risk.hasRating', equals: 'Yes' } },
-          { key: 'rating', label: 'Rating', type: 'text', required: { field: 'risk.hasRating', equals: 'Yes' }, showIf: { field: 'risk.hasRating', equals: 'Yes' } },
+          { key: 'ratingAgency', label: 'Rating Agency', type: 'select', options: ['CRISIL', 'ICRA', 'CARE', 'India Ratings', 'Acuité', "Moody's", 'S&P', 'Fitch', 'Other'], required: { field: 'risk.hasRating', op: 'eq', value: 'Yes' }, showIf: { field: 'risk.hasRating', op: 'eq', value: 'Yes' } },
+          { key: 'rating', label: 'Rating', type: 'text', required: { field: 'risk.hasRating', op: 'eq', value: 'Yes' }, showIf: { field: 'risk.hasRating', op: 'eq', value: 'Yes' } },
           { key: 'bankruptcy5y', label: 'Has your organisation declared bankruptcy / insolvency in the last 5 years?', type: 'radio', options: YES_NO, required: true },
-          { key: 'bankruptcyDetails', label: 'Please give details', type: 'textarea', required: { field: 'risk.bankruptcy5y', equals: 'Yes' }, showIf: { field: 'risk.bankruptcy5y', equals: 'Yes' } },
+          { key: 'bankruptcyDetails', label: 'Please give details', type: 'textarea', required: { field: 'risk.bankruptcy5y', op: 'eq', value: 'Yes' }, showIf: { field: 'risk.bankruptcy5y', op: 'eq', value: 'Yes' } },
           { key: 'litigation', label: 'Any material litigation pending against the organisation?', type: 'radio', options: YES_NO, required: true },
-          { key: 'litigationDetails', label: 'Litigation details', type: 'textarea', required: { field: 'risk.litigation', equals: 'Yes' }, showIf: { field: 'risk.litigation', equals: 'Yes' } },
+          { key: 'litigationDetails', label: 'Litigation details', type: 'textarea', required: { field: 'risk.litigation', op: 'eq', value: 'Yes' }, showIf: { field: 'risk.litigation', op: 'eq', value: 'Yes' } },
         ],
       },
     ],
   },
 ];
 
-export const documentRequirements: DocumentRequirement[] = [
+const documents: DocumentRequirement[] = [
   { type: 'PAN_CARD', label: 'PAN Card', required: INDIA, showIf: INDIA },
-  { type: 'GST_CERT', label: 'GST Registration Certificate', required: { field: 'tax.hasGst', equals: 'Yes' }, showIf: { field: 'tax.hasGst', equals: 'Yes' } },
+  { type: 'GST_CERT', label: 'GST Registration Certificate', required: { field: 'tax.hasGst', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.hasGst', op: 'eq', value: 'Yes' } },
   { type: 'CANCELLED_CHEQUE', label: 'Cancelled Cheque / Bank Letter', required: true },
-  { type: 'INCORPORATION_CERT', label: 'Certificate of Incorporation', required: { field: 'basic.entityType', in: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership'] }, showIf: { field: 'basic.entityType', in: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership'] } },
-  { type: 'MSME_CERT', label: 'Udyam (MSME) Certificate', required: { field: 'basic.msmeRegistered', equals: 'Yes' }, showIf: { field: 'basic.msmeRegistered', equals: 'Yes' } },
-  { type: 'LOWER_TDS_CERT', label: 'Lower / Nil TDS Certificate', required: { field: 'tax.concessionalTds', equals: 'Yes' }, showIf: { field: 'tax.concessionalTds', equals: 'Yes' } },
-  { type: 'TRC', label: 'Tax Residency Certificate', required: { field: 'tax.hasTrc', equals: 'Yes' }, showIf: NOT_INDIA },
-  { type: 'NO_PE_CERT', label: 'No-PE Declaration', required: { field: 'tax.holdsNoPe', equals: 'Yes' }, showIf: NOT_INDIA },
+  { type: 'INCORPORATION_CERT', label: 'Certificate of Incorporation', required: { field: 'basic.entityType', op: 'in', value: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership'] }, showIf: { field: 'basic.entityType', op: 'in', value: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership'] } },
+  { type: 'MSME_CERT', label: 'Udyam (MSME) Certificate', required: { field: 'basic.msmeRegistered', op: 'eq', value: 'Yes' }, showIf: { field: 'basic.msmeRegistered', op: 'eq', value: 'Yes' } },
+  { type: 'LOWER_TDS_CERT', label: 'Lower / Nil TDS Certificate', required: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' } },
+  { type: 'TRC', label: 'Tax Residency Certificate', required: { field: 'tax.hasTrc', op: 'eq', value: 'Yes' }, showIf: NOT_INDIA },
+  { type: 'NO_PE_CERT', label: 'No-PE Declaration', required: { field: 'tax.holdsNoPe', op: 'eq', value: 'Yes' }, showIf: NOT_INDIA },
   { type: 'FORM_10F', label: 'Form 10F', showIf: NOT_INDIA },
   { type: 'FINANCIALS', label: 'Latest Audited Financial Statements', help: 'Recommended for turnover above ₹5 crore' },
   { type: 'OTHER', label: 'Other Supporting Document' },
 ];
 
-/** Buyer-side fields captured when the vendor is created (video: "Vendor Registration Details"). */
-export const vendorTypes = [
-  { value: 'DOMESTIC', label: 'Domestic' },
-  { value: 'IMPORT', label: 'Import (foreign)' },
-  { value: 'GOVERNMENT', label: 'Government' },
-] as const;
-
-export const onboardingGuide = [
+const guide = [
   { title: 'Step 1: Initial email', body: 'You receive an email from us with a secure link to the vendor onboarding portal. Open it and sign in with the one-time code sent to your registered email.' },
   { title: 'Step 2: Enter vendor details', body: 'Complete each tab — Basic Information, Bank Details, Tax Details and Financial Risk Evaluation. You can save and come back at any time.' },
   { title: 'Step 3: Upload documents', body: 'Upload the documents listed in the Documents tab. Required documents change with your answers (e.g. GST certificate only if you hold a GSTIN).' },
   { title: 'Step 4: Submit for review', body: 'The Required Fields checklist must be fully green before you can submit. Our Tax, Finance and Master Data teams review in turn.' },
   { title: 'Step 5: Corrections or approval', body: 'If a reviewer needs changes the form is sent back to you with remarks. Once all levels approve, you are activated as a vendor.' },
 ];
+
+export const defaultConfig: OnboardingConfig = {
+  sections,
+  documents,
+  workflow: {
+    levels: [
+      { id: 'tax', label: 'Tax Review', roleKey: 'TAX_MANAGER', slaHours: 48 },
+      { id: 'finance', label: 'Finance & Risk Review', roleKey: 'FINANCE_MANAGER', slaHours: 48 },
+      { id: 'mdm', label: 'Master Data Approval', roleKey: 'MDM_MANAGER', slaHours: 24 },
+    ],
+  },
+  guide,
+};

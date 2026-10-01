@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { useMeta } from '../lib/meta';
+import { useConfig, VENDOR_TYPES } from '../lib/meta';
 import { DynamicSection } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { ApprovalTimeline } from '../components/Timeline';
@@ -10,23 +10,24 @@ import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import type { ChecklistItem, DocRequirement, VendorFull } from '../lib/types';
 
-type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean };
+type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
   const { id } = useParams();
-  const meta = useMeta();
+  const { config } = useConfig();
   const [d, setD] = useState<Detail>();
   const [tab, setTab] = useState('basic');
   const [action, setAction] = useState<Action>();
   const [erp, setErp] = useState<unknown>();
+  const [reassigning, setReassigning] = useState(false);
   const [flash, setFlash] = useState<{ kind: 'success' | 'error'; text: string }>();
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
   useEffect(() => { load(); }, [load]);
-  if (!d) return <div className="page"><div className="spinner" /></div>;
+  if (!d || !config) return <div className="page"><div className="spinner" /></div>;
   const v = d.vendor;
-  const tabs = [...meta.formSchema.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' }, { key: 'history', label: 'History' }];
+  const tabs = [...config.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' }, { key: 'history', label: 'History' }];
   const verifications = (v.profile._verifications ?? {}) as Record<string, { status: string; message: string; checkedAt: string }>;
   const openErrors = d.checklist.filter((c) => !c.ok);
 
@@ -44,7 +45,7 @@ export function VendorDetail() {
       <header className="page-head">
         <div>
           <h1>{v.name} <StatusBadge status={v.status} /></h1>
-          <p className="muted"><span className="mono">{v.code}</span> · {meta.vendorTypes.find((t) => t.value === v.vendorType)?.label} · {v.contactFirstName} {v.contactLastName} ({v.contactEmail}, {v.contactMobile}) · created {fmtDate(v.createdAt)} by {v.createdBy?.name}</p>
+          <p className="muted"><span className="mono">{v.code}</span> · {VENDOR_TYPES.find((t) => t.value === v.vendorType)?.label} · {v.contactFirstName} {v.contactLastName} ({v.contactEmail}, {v.contactMobile}) · created {fmtDate(v.createdAt)} by {v.createdBy?.name}</p>
         </div>
         <div className="head-actions">
           {d.canInvite && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && <button className="btn btn-secondary" onClick={resend}>Resend invite</button>}
@@ -71,7 +72,7 @@ export function VendorDetail() {
             {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'active' : ''} onClick={() => setTab(t.key)}>{t.label}</button>)}
           </div>
           <div className="pad">
-            {meta.formSchema.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={v.profile} readOnly />)}
+            {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={v.profile} vendorType={v.vendorType} readOnly />)}
             {tab === 'documents' && <DocumentsPanel requirements={d.docRequirements} documents={v.documents} />}
             {tab === 'history' && (
               <ul className="audit">
@@ -84,7 +85,7 @@ export function VendorDetail() {
           </div>
         </div>
         <aside className="side-col">
-          <div className="card pad"><h3 className="card-title">Approval flow</h3><ApprovalTimeline steps={v.steps} meta={meta} /></div>
+          <div className="card pad"><div className="row-between card-title"><h3>Approval flow</h3>{d.canReassign && <button className="link-btn small" onClick={() => setReassigning(true)}>Reassign</button>}</div><ApprovalTimeline steps={v.steps} levels={config.workflow.levels.map((l) => l.label)} /></div>
           <div className="card pad">
             <h3 className="card-title">Verifications</h3>
             {Object.keys(verifications).length === 0 ? <p className="muted small">The vendor has not run any online checks.</p> : (
@@ -95,13 +96,14 @@ export function VendorDetail() {
               </ul>
             )}
           </div>
-          {v.status !== 'INVITED' && <div className="card pad"><Checklist items={d.checklist} sections={meta.formSchema} onJump={setTab} /></div>}
+          {v.status !== 'INVITED' && <div className="card pad"><Checklist items={d.checklist} sections={config.sections} onJump={setTab} /></div>}
           {v.inviteLink && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && (
             <div className="card pad"><h3 className="card-title">Vendor portal link <span className="tag-dev">dev</span></h3><p className="small muted">Shown only in development. Open it in another tab to act as the vendor.</p><a className="small break" href={new URL(v.inviteLink).pathname} target="_blank" rel="noreferrer">{v.inviteLink}</a></div>
           )}
         </aside>
       </div>
 
+      {reassigning && <ReassignModal vendorId={v.id} step={v.steps.find((s) => s.status === 'PENDING')!} onClose={() => setReassigning(false)} onDone={(m) => { setReassigning(false); setFlash({ kind: 'success', text: m }); load(); }} />}
       {action && <DecisionModal action={action} vendorId={v.id} onClose={() => setAction(undefined)} onDone={(msg) => { setAction(undefined); setFlash({ kind: 'success', text: msg }); load(); }} />}
       {erp !== undefined && (
         <Modal title="ERP export — Oracle supplier payload" wide onClose={() => setErp(undefined)}
@@ -136,6 +138,34 @@ function DecisionModal({ action, vendorId, onClose, onDone }: { action: Action; 
       {error && <Alert kind="error">{error}</Alert>}
       <div className="field"><label htmlFor="remarks">Remarks{action !== 'APPROVE' && <span className="req"> *</span>}</label>
         <textarea id="remarks" rows={4} value={remarks} onChange={(e) => setRemarks(e.target.value)} autoFocus /><div className="field-help">{cfg.hint}</div></div>
+    </Modal>
+  );
+}
+
+function ReassignModal({ vendorId, step, onClose, onDone }: { vendorId: string; step: VendorFull['steps'][number]; onClose: () => void; onDone: (msg: string) => void }) {
+  const [people, setPeople] = useState<{ id: string; name: string; email: string; holdsRole: boolean }[]>();
+  const [choice, setChoice] = useState<string>(step.assigneeName ? '' : '__role');
+  const [error, setError] = useState<string>();
+  useEffect(() => { api(`/staff/vendors/${vendorId}/assignable`).then(setPeople).catch((e) => setError(e.message)); }, [vendorId]);
+  async function save() {
+    try {
+      const r = await api(`/staff/vendors/${vendorId}/steps/${step.id}/assign`, { body: { userId: choice === '__role' ? null : choice } });
+      onDone(`${step.label} is now with ${r.assignee}.`);
+    } catch (e: any) { setError(e.message); }
+  }
+  return (
+    <Modal title={`Reassign: ${step.label}`} onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={!choice} onClick={save}>Reassign</button></>}>
+      {error && <Alert kind="error">{error}</Alert>}
+      <p className="small muted">Currently: {step.assigneeName ? `assigned to ${step.assigneeName}` : `everyone with the ${step.roleName} role`}. The new owner is emailed straight away.</p>
+      {!people ? <div className="spinner" /> : (
+        <div className="check-list">
+          <label className="check-item"><input type="radio" name="asg" checked={choice === '__role'} onChange={() => setChoice('__role')} /><span><strong>Everyone with the {step.roleName} role</strong></span></label>
+          {people.map((p) => (
+            <label key={p.id} className="check-item"><input type="radio" name="asg" checked={choice === p.id} onChange={() => setChoice(p.id)} /><span><strong>{p.name}</strong>{p.holdsRole && <span className="chip">{step.roleName}</span>}<span className="muted small block">{p.email}</span></span></label>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 }

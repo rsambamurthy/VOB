@@ -8,7 +8,7 @@ export function StaffShell() {
   if (!me) return null;
   const product = me.tenant.branding.productName ?? 'VendorGate';
   const initials = me.user.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
-  const admin = can('users.manage') || can('tenant.settings') || can('audit.view');
+  const admin = can('users.manage') || can('tenant.settings') || can('audit.view') || can('config.manage');
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -22,6 +22,7 @@ export function StaffShell() {
           {admin && <div className="nav-section">Administration</div>}
           {can('users.manage') && <NavLink to="/staff/admin/users">Users</NavLink>}
           {can('users.manage') && <NavLink to="/staff/admin/roles">Roles</NavLink>}
+          {can('config.manage') && <NavLink to="/staff/admin/config">Configuration</NavLink>}
           {can('tenant.settings') && <NavLink to="/staff/admin/workspace">Workspace</NavLink>}
           {can('audit.view') && <NavLink to="/staff/admin/audit">Audit log</NavLink>}
           {me.devMailbox && <NavLink to="/staff/mailbox">Mailbox <span className="tag">dev</span></NavLink>}

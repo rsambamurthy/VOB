@@ -1,20 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { generateSync } from 'otplib';
-import { client, login, lastLinkTo, tokenOf } from './helpers.js';
+import { client, login, lastLinkTo, tokenOf, globexAdmin } from './helpers.js';
 import { db, schema } from '../src/lib/db.js';
 import { createTenant } from '../src/services/tenants.js';
-
-async function globexAdmin() {
-  // globex may have MFA enforced by the auth tests; create a fresh admin via the service path instead.
-  const t = await db.query.tenants.findFirst({ where: eq(schema.tenants.slug, 'globex') });
-  await db.update(schema.tenants).set({ settings: {} }).where(eq(schema.tenants.id, t!.id));
-  await db.update(schema.users).set({ mfaEnabled: false, mfaSecretEnc: null }).where(eq(schema.users.email, 'admin@globex.test'));
-  const c = client();
-  const r = await c.post('/api/auth/login', { workspace: 'globex', email: 'admin@globex.test', password: 'Demo@12345' });
-  if (r.body.mfaRequired) throw new Error('unexpected MFA');
-  return c;
-}
 
 describe('tenant isolation', () => {
   test('each workspace only sees its own vendors', async () => {

@@ -1,9 +1,9 @@
-import type { Meta, Step } from '../lib/types';
+import type { Step } from '../lib/types';
 import { StepBadge } from './ui';
 import { fmtDateTime } from '../lib/format';
 
-export function ApprovalTimeline({ steps, meta }: { steps: Step[]; meta: Meta }) {
-  if (!steps.length) return <p className="muted small">Not submitted yet. Approval levels: {meta.workflowLevels.map((l) => l.label).join(' → ')}.</p>;
+export function ApprovalTimeline({ steps, levels = [] }: { steps: Step[]; levels?: string[] }) {
+  if (!steps.length) return <p className="muted small">Not submitted yet.{levels.length > 0 && <> Approval levels: {levels.join(' → ')}.</>}</p>;
   const cycles = [...new Set(steps.map((s) => s.cycle))].sort((a, b) => b - a);
   return (
     <div className="timeline">
@@ -16,7 +16,8 @@ export function ApprovalTimeline({ steps, meta }: { steps: Step[]; meta: Meta })
                 <div className="tl-marker" aria-hidden>{s.level}</div>
                 <div className="tl-body">
                   <div className="tl-top"><strong>{s.label}</strong><StepBadge status={s.status} /></div>
-                  <div className="muted small">{s.roleName}{s.actedBy ? ` · ${s.actedBy.name}` : ''}{s.actedAt ? ` · ${fmtDateTime(s.actedAt)}` : ''}</div>
+                  <div className="muted small">{s.assigneeName ? `Assigned to ${s.assigneeName}` : s.roleName}{s.actedBy ? ` · ${s.actedBy.name}` : ''}{s.actedAt ? ` · ${fmtDateTime(s.actedAt)}` : ''}</div>
+                  {s.status === 'PENDING' && s.dueAt && <div className={`small ${s.overdue ? 'overdue' : 'muted'}`}>{s.overdue ? 'Overdue — was due ' : 'Due '}{fmtDateTime(s.dueAt)}</div>}
                   {s.remarks && <div className="tl-remarks">“{s.remarks}”</div>}
                 </div>
               </li>

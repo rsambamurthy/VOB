@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { and, asc, count, desc, eq, ilike, inArray, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import type { VendorStatus } from '../db/schema.js';
 import { ah, HttpError } from '../lib/http.js';
@@ -11,11 +11,22 @@ import { audit } from '../lib/audit.js';
 import { sendMail } from '../lib/mailer.js';
 import { env } from '../lib/env.js';
 import { buildChecklist, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
-import { decide } from '../services/workflowEngine.js';
+import { assignableUsers, decide, reassign } from '../services/workflowEngine.js';
+import { canAct, coveringFor } from '../services/approvers.js';
+import { getConfig } from '../services/config.js';
 import { toOracleSupplier } from '../lib/erpMapper.js';
 import { validators } from '../lib/validators.js';
 
-const { vendors, approvalSteps, documents, auditLogs } = schema;
+const { vendors, approvalSteps, documents, auditLogs, userRoles } = schema;
+
+/** Pending steps the user can act on: own role / own assignment, plus anyone they're covering for. */
+async function actionableStepFilter(tenantId: string, userId: string) {
+  const people = [userId, ...(await coveringFor(tenantId, userId))];
+  const roleIds = [...new Set((await db.select({ id: userRoles.roleId }).from(userRoles).where(inArray(userRoles.userId, people))).map((r) => r.id))];
+  const byRole = roleIds.length ? and(isNull(approvalSteps.assigneeUserId), inArray(approvalSteps.roleId, roleIds)) : undefined;
+  const byAssignee = inArray(approvalSteps.assigneeUserId, people);
+  return and(eq(approvalSteps.tenantId, tenantId), eq(approvalSteps.status, 'PENDING'), byRole ? or(byRole, byAssignee) : byAssignee)!;
+}
 export const staffRouter = Router();
 
 const findVendor = (tenantId: string, id: string) => db.query.vendors.findFirst({ where: and(eq(vendors.tenantId, tenantId), eq(vendors.id, id)) });
@@ -38,11 +49,8 @@ staffRouter.get('/vendors', requireStaff('vendors.view'), ah(async (req, res) =>
   const filters: SQL[] = [eq(vendors.tenantId, s.tenant.id)];
   if (status) filters.push(eq(vendors.status, status as VendorStatus));
   if (q) filters.push(or(ilike(vendors.name, `%${q}%`), ilike(vendors.code, `%${q}%`), ilike(vendors.contactEmail, `%${q}%`))!);
-  const myRoleIds = [...s.roleIds];
-  const pendingForMe = myRoleIds.length
-    ? await db.selectDistinct({ id: approvalSteps.vendorId }).from(approvalSteps)
-      .where(and(eq(approvalSteps.tenantId, s.tenant.id), eq(approvalSteps.status, 'PENDING'), inArray(approvalSteps.roleId, myRoleIds)))
-    : [];
+  const pendingForMe = await db.selectDistinct({ id: approvalSteps.vendorId }).from(approvalSteps).where(await actionableStepFilter(s.tenant.id, s.user.id));
+  const mineIds = new Set(pendingForMe.map((p) => p.id));
   if (mine === 'true') {
     if (!pendingForMe.length) return res.json({ vendors: [], counts: {}, myQueue: 0 });
     filters.push(inArray(vendors.id, pendingForMe.map((p) => p.id)));
@@ -50,11 +58,11 @@ staffRouter.get('/vendors', requireStaff('vendors.view'), ah(async (req, res) =>
   const rows = await db.query.vendors.findMany({
     where: and(...filters), orderBy: desc(vendors.updatedAt), limit: 500,
     columns: { profile: false, inviteToken: false },
-    with: { steps: { where: eq(approvalSteps.status, 'PENDING'), columns: { label: true, roleId: true } }, createdBy: { columns: { name: true } } },
+    with: { steps: { where: eq(approvalSteps.status, 'PENDING'), columns: { label: true, roleId: true, dueAt: true }, with: { assignee: { columns: { name: true } } } }, createdBy: { columns: { name: true } } },
   });
   const counts = await db.select({ status: vendors.status, n: count() }).from(vendors).where(eq(vendors.tenantId, s.tenant.id)).groupBy(vendors.status);
   res.json({
-    vendors: rows.map(({ steps, ...v }) => ({ ...v, pendingStep: steps[0] ? { label: steps[0].label, mine: s.roleIds.has(steps[0].roleId) } : null })),
+    vendors: rows.map(({ steps, ...v }) => ({ ...v, pendingStep: steps[0] ? { label: steps[0].label, mine: mineIds.has(v.id), dueAt: steps[0].dueAt, overdue: !!steps[0].dueAt && steps[0].dueAt < new Date(), assignee: steps[0].assignee?.name ?? null } : null })),
     counts: Object.fromEntries(counts.map((c) => [c.status, c.n])),
     myQueue: pendingForMe.length,
   });
@@ -111,21 +119,23 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
     where: and(eq(vendors.tenantId, s.tenant.id), eq(vendors.id, req.params.id)),
     with: {
       documents: { orderBy: desc(documents.uploadedAt) },
-      steps: { orderBy: [desc(approvalSteps.cycle), asc(approvalSteps.level)], with: { actedBy: { columns: { name: true } }, role: { columns: { name: true } } } },
+      steps: { orderBy: [desc(approvalSteps.cycle), asc(approvalSteps.level)], with: { actedBy: { columns: { name: true } }, assignee: { columns: { name: true } }, role: { columns: { name: true } } } },
       audit: { orderBy: desc(auditLogs.createdAt), limit: 200 },
       createdBy: { columns: { name: true } },
     },
   });
   if (!v) throw new HttpError(404, 'Vendor not found');
   const profile = v.profile as Profile;
+  const config = await getConfig(s.tenant.id);
   const pending = v.steps.find((st) => st.status === 'PENDING' && st.cycle === v.reviewCycle);
   const { inviteToken, ...rest } = v;
   const canInvite = s.permissions.has('vendors.create');
   res.json({
-    vendor: { ...rest, steps: rest.steps.map(({ role, ...st }) => ({ ...st, roleName: role?.name })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
-    checklist: buildChecklist(profile, v.documents.map((d) => d.docType)),
-    docRequirements: visibleDocRequirements(profile),
-    canAct: !!pending && s.roleIds.has(pending.roleId),
+    vendor: { ...rest, steps: rest.steps.map(({ role, assignee, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
+    checklist: buildChecklist(config, profile, v.documents.map((d) => d.docType), v.vendorType),
+    docRequirements: visibleDocRequirements(config, profile, v.vendorType),
+    canAct: !!pending && await canAct(pending, s.user.id),
+    canReassign: !!pending && s.permissions.has('approvals.manage'),
     canInvite,
     canExport: s.permissions.has('vendors.export'),
   });
@@ -134,7 +144,22 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
 staffRouter.post('/vendors/:id/decision', requireStaff(), ah(async (req, res) => {
   const s = staffCtx(req);
   const { action, remarks } = z.object({ action: z.enum(['APPROVE', 'SEND_BACK', 'REJECT']), remarks: z.string().max(2000).default('') }).parse(req.body);
-  res.json(await decide(s.tenant.id, req.params.id, { id: s.user.id, name: s.user.name, roleIds: s.roleIds }, action, remarks, req.ip));
+  res.json(await decide(s.tenant.id, req.params.id, { id: s.user.id, name: s.user.name }, action, remarks, req.ip));
+}));
+
+staffRouter.get('/vendors/:id/assignable', requireStaff('approvals.manage'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v) throw new HttpError(404, 'Vendor not found');
+  const step = await db.query.approvalSteps.findFirst({ where: and(eq(approvalSteps.vendorId, v.id), eq(approvalSteps.status, 'PENDING')) });
+  if (!step) throw new HttpError(409, 'Nothing is pending');
+  res.json(await assignableUsers(s.tenant.id, step.roleId));
+}));
+
+staffRouter.post('/vendors/:id/steps/:stepId/assign', requireStaff('approvals.manage'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { userId } = z.object({ userId: z.string().nullable() }).parse(req.body);
+  res.json(await reassign(s.tenant.id, req.params.id, req.params.stepId, userId, { name: s.user.name }, req.ip));
 }));
 
 staffRouter.get('/vendors/:id/erp-export', requireStaff('vendors.export'), ah(async (req, res) => {

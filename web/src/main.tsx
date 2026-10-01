@@ -1,7 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { MetaProvider } from './lib/meta';
+import { ConfigProvider } from './lib/meta';
+import { ConfigEditor } from './pages/admin/config/ConfigEditor';
 import { RequireStaff, SessionProvider } from './lib/session';
 import { StaffShell } from './components/StaffShell';
 import { Login } from './pages/auth/Login';
@@ -23,7 +24,6 @@ import './styles.css';
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <MetaProvider>
         <SessionProvider>
           <Routes>
             <Route path="/" element={<Navigate to="/staff/vendors" replace />} />
@@ -31,7 +31,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/accept-invite/:token" element={<AcceptInvite />} />
-            <Route path="/staff" element={<RequireStaff><StaffShell /></RequireStaff>}>
+            <Route path="/staff" element={<RequireStaff><ConfigProvider><StaffShell /></ConfigProvider></RequireStaff>}>
               <Route index element={<Navigate to="vendors" replace />} />
               <Route path="vendors" element={<VendorList />} />
               <Route path="queue" element={<VendorList mine />} />
@@ -41,6 +41,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/roles" element={<Roles />} />
               <Route path="admin/workspace" element={<Workspace />} />
               <Route path="admin/audit" element={<Audit />} />
+              <Route path="admin/config" element={<ConfigEditor />} />
               <Route path="mailbox" element={<Mailbox />} />
             </Route>
             <Route path="/onboard/:token" element={<VendorLogin />} />
@@ -49,7 +50,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </SessionProvider>
-      </MetaProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );

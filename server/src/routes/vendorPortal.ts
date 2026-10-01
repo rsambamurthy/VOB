@@ -12,7 +12,7 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireVendor, vendorCtx } from '../auth/session.js';
 import { env } from '../lib/env.js';
 import { audit } from '../lib/audit.js';
-import { formSchema, documentRequirements } from '../config/formSchema.js';
+import { getPublished } from '../services/config.js';
 import { buildChecklist, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
 import { startReview } from '../services/workflowEngine.js';
 import { verify, type VerifyKind } from '../lib/verification.js';
@@ -53,11 +53,14 @@ vendorRouter.get('/', ah(async (req, res) => {
   const lastSendBack = v.steps.find((s) => s.status === 'SENT_BACK' && s.cycle === v.reviewCycle);
   const { inviteToken: _t, ...vendor } = v;
   const tenant = vendorCtx(req).tenant;
+  const { config } = await getPublished(tenant.id);
   res.json({
-    vendor: { ...vendor, steps: v.steps.filter((s) => s.cycle === v.reviewCycle).map(({ remarks: _r, ...s }) => s) }, // reviewers' remarks are internal, except send-back
+    // Reviewers' identities and remarks are internal; the vendor only sees level, label and status (plus send-back remarks).
+    vendor: { ...vendor, steps: v.steps.filter((s) => s.cycle === v.reviewCycle).map((s) => ({ id: s.id, cycle: s.cycle, level: s.level, label: s.label, status: s.status, actedAt: s.actedAt })) },
     sendBackRemarks: v.status === 'SENT_BACK' ? lastSendBack?.remarks : undefined,
-    checklist: buildChecklist(profile, v.documents.map((d) => d.docType)),
-    docRequirements: visibleDocRequirements(profile),
+    config: { sections: config.sections, guide: config.guide, levels: config.workflow.levels.map((l) => l.label) },
+    checklist: buildChecklist(config, profile, v.documents.map((d) => d.docType), v.vendorType),
+    docRequirements: visibleDocRequirements(config, profile, v.vendorType),
     editable: EDITABLE.includes(v.status),
     buyer: { name: tenant.name, branding: tenant.branding },
   });
@@ -67,14 +70,15 @@ vendorRouter.put('/profile/:section', ah(async (req, res) => {
   const v = await loadMine(req);
   assertEditable(v.status);
   const key = req.params.section;
-  if (!formSchema.some((s) => s.key === key)) throw new HttpError(400, 'Unknown section');
-  const data = sanitizeSection(key, z.record(z.unknown()).parse(req.body));
+  const { config } = await getPublished(v.tenantId);
+  if (!config.sections.some((s) => s.key === key)) throw new HttpError(400, 'Unknown section');
+  const data = sanitizeSection(config, key, z.record(z.unknown()).parse(req.body));
   const profile = { ...(v.profile as Profile), [key]: { ...((v.profile as Profile)[key] ?? {}), ...data } };
   await db.update(vendors).set({
     profile, status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status, name: key === 'basic' && data.vendorName ? String(data.vendorName) : v.name,
   }).where(eq(vendors.id, v.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'SECTION_SAVED', detail: { section: key }, ip: req.ip });
-  res.json({ checklist: buildChecklist(profile, v.documents.map((d) => d.docType)), docRequirements: visibleDocRequirements(profile) });
+  res.json({ checklist: buildChecklist(config, profile, v.documents.map((d) => d.docType), v.vendorType), docRequirements: visibleDocRequirements(config, profile, v.vendorType) });
 }));
 
 vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
@@ -83,7 +87,8 @@ vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
   try {
     assertEditable(v.status);
     const docType = String(req.body.docType ?? '');
-    if (!documentRequirements.some((d) => d.type === docType)) throw new HttpError(400, 'Unknown document type');
+    const { config } = await getPublished(v.tenantId);
+    if (!config.documents.some((d) => d.type === docType)) throw new HttpError(400, 'Unknown document type');
     const [doc] = await db.insert(documents).values({
       tenantId: v.tenantId, vendorId: v.id, docType, fileName: req.file.originalname, mimeType: req.file.mimetype, size: req.file.size, storagePath: req.file.filename,
     }).returning();
@@ -120,7 +125,8 @@ vendorRouter.post('/verify/:kind', ah(async (req, res) => {
 vendorRouter.post('/submit', ah(async (req, res) => {
   const v = await loadMine(req);
   assertEditable(v.status);
-  const checklist = buildChecklist(v.profile as Profile, v.documents.map((d) => d.docType));
+  const { config } = await getPublished(v.tenantId);
+  const checklist = buildChecklist(config, v.profile as Profile, v.documents.map((d) => d.docType), v.vendorType);
   if (!isSubmittable(checklist)) {
     throw new HttpError(422, 'Please complete all required fields before submitting', checklist.filter((c) => !c.ok && c.severity === 'error'));
   }

@@ -8,6 +8,7 @@ import { requireStaff, revokeUserSessions, staffCtx } from '../auth/session.js';
 import { ALL_PERMISSIONS, PERMISSIONS } from '../lib/permissions.js';
 import { audit } from '../lib/audit.js';
 import { createStaffUser, sendStaffInvite } from '../services/users.js';
+import { rolesInUse } from '../services/config.js';
 
 const { users, roles, userRoles, auditLogs, tenants, approvalSteps } = schema;
 export const adminRouter = Router();
@@ -142,6 +143,7 @@ adminRouter.delete('/roles/:id', requireStaff('users.manage'), ah(async (req, re
   if (role.isSystem) throw new HttpError(409, 'The Administrator role can’t be deleted');
   const [{ n: members }] = await db.select({ n: count() }).from(userRoles).where(eq(userRoles.roleId, role.id));
   if (members > 0) throw new HttpError(409, `Remove this role from its ${members} user(s) first`);
+  if ((await rolesInUse(s.tenant.id)).has(role.key)) throw new HttpError(409, 'This role is used in the approval flow. Remove it from Configuration → Approval flow first.');
   const [{ n: steps }] = await db.select({ n: count() }).from(approvalSteps).where(eq(approvalSteps.roleId, role.id));
   if (steps > 0) throw new HttpError(409, 'This role has approval history and can’t be deleted. Rename it instead.');
   await db.delete(roles).where(eq(roles.id, role.id));

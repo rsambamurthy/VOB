@@ -4,15 +4,12 @@ import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { env } from '../lib/env.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
-import { formSchema, documentRequirements, vendorTypes, onboardingGuide } from '../config/formSchema.js';
-import { workflowLevels } from '../config/workflow.js';
+import { vendorTypes } from '../config/types.js';
 
 export const metaRouter = Router();
 
-/** Onboarding form definition. (Phase 2: becomes per-tenant configuration.) */
-metaRouter.get('/', ah(async (_req, res) => {
-  res.json({ formSchema, documentRequirements, vendorTypes, onboardingGuide, workflowLevels: workflowLevels.map(({ label }) => ({ label })) });
-}));
+/** Static, tenant-independent lookups. Tenant config lives at /api/config. */
+metaRouter.get('/', (_req, res) => { res.json({ vendorTypes }); });
 
 /** Dev-only mailbox, scoped to the signed-in user's workspace. Disabled when DEV_SHOW_OTP=false. */
 metaRouter.get('/outbox', requireStaff(), ah(async (req, res) => {

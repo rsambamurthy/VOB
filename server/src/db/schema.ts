@@ -5,6 +5,7 @@
 import { pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import crypto from 'node:crypto';
+import type { OnboardingConfig } from '../config/types.js';
 
 const id = () => text('id').primaryKey().$defaultFn(() => crypto.randomUUID());
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -24,6 +25,7 @@ export const vendorStatusEnum = pgEnum('vendor_status', ['INVITED', 'IN_PROGRESS
 export const stepStatusEnum = pgEnum('step_status', ['WAITING', 'PENDING', 'APPROVED', 'REJECTED', 'SENT_BACK', 'CANCELLED']);
 export const sessionKindEnum = pgEnum('session_kind', ['STAFF', 'VENDOR']);
 export const tokenPurposeEnum = pgEnum('token_purpose', ['INVITE', 'PASSWORD_RESET']);
+export const configStatusEnum = pgEnum('config_status', ['DRAFT', 'PUBLISHED', 'ARCHIVED']);
 
 export type VendorType = (typeof vendorTypeEnum.enumValues)[number];
 export type VendorStatus = (typeof vendorStatusEnum.enumValues)[number];
@@ -121,6 +123,8 @@ export const vendors = pgTable('vendors', {
   profile: jsonb('profile').$type<Record<string, Record<string, unknown>>>().notNull().default({}),
   inviteToken: text('invite_token').notNull().unique(),
   reviewCycle: integer('review_cycle').notNull().default(0),
+  /** Config version in force when the vendor last submitted (for audit). */
+  configVersion: integer('config_version'),
   createdById: text('created_by_id').notNull().references(() => users.id),
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
@@ -160,6 +164,12 @@ export const approvalSteps = pgTable('approval_steps', {
   roleId: text('role_id').notNull().references(() => roles.id),
   label: text('label').notNull(),
   status: stepStatusEnum('status').notNull(),
+  /** Set when an admin reassigns the step to one person instead of the whole role. */
+  assigneeUserId: text('assignee_user_id').references(() => users.id),
+  slaHours: integer('sla_hours'),
+  activatedAt: timestamp('activated_at', { withTimezone: true }),
+  dueAt: timestamp('due_at', { withTimezone: true }),
+  remindedAt: timestamp('reminded_at', { withTimezone: true }),
   remarks: text('remarks'),
   actedById: text('acted_by_id').references(() => users.id),
   actedAt: timestamp('acted_at', { withTimezone: true }),
@@ -176,6 +186,33 @@ export const auditLogs = pgTable('audit_logs', {
   ip: text('ip'),
   createdAt: createdAt(),
 }, (t) => [index('audit_tenant_created_idx').on(t.tenantId, t.createdAt)]);
+
+/** Versioned onboarding configuration. One PUBLISHED and at most one DRAFT per tenant. */
+export const tenantConfigs = pgTable('tenant_configs', {
+  id: id(),
+  tenantId: tenantId(),
+  version: integer('version').notNull(),
+  status: configStatusEnum('status').notNull(),
+  config: jsonb('config').$type<OnboardingConfig>().notNull(),
+  note: text('note'),
+  updatedById: text('updated_by_id').references(() => users.id),
+  publishedById: text('published_by_id').references(() => users.id),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (t) => [uniqueIndex('tenant_configs_version_uq').on(t.tenantId, t.version), index('tenant_configs_status_idx').on(t.tenantId, t.status)]);
+
+/** Out-of-office: while active, the delegate can act on everything the delegator can approve. */
+export const delegations = pgTable('delegations', {
+  id: id(),
+  tenantId: tenantId(),
+  fromUserId: text('from_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  toUserId: text('to_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+  reason: text('reason'),
+  createdAt: createdAt(),
+}, (t) => [index('delegations_to_idx').on(t.tenantId, t.toUserId)]);
 
 /** Every outgoing email is recorded here (and, in dev, shown in the Mailbox screen). */
 export const emailOutbox = pgTable('email_outbox', {
@@ -207,7 +244,8 @@ export const vendorsRelations = relations(vendors, ({ one, many }) => ({
 export const documentsRelations = relations(documents, ({ one }) => ({ vendor: one(vendors, { fields: [documents.vendorId], references: [vendors.id] }) }));
 export const stepsRelations = relations(approvalSteps, ({ one }) => ({
   vendor: one(vendors, { fields: [approvalSteps.vendorId], references: [vendors.id] }),
-  actedBy: one(users, { fields: [approvalSteps.actedById], references: [users.id] }),
+  actedBy: one(users, { fields: [approvalSteps.actedById], references: [users.id], relationName: 'actedBy' }),
+  assignee: one(users, { fields: [approvalSteps.assigneeUserId], references: [users.id], relationName: 'assignee' }),
   role: one(roles, { fields: [approvalSteps.roleId], references: [roles.id] }),
 }));
 export const auditRelations = relations(auditLogs, ({ one }) => ({ vendor: one(vendors, { fields: [auditLogs.vendorId], references: [vendors.id] }) }));
@@ -216,3 +254,5 @@ export type Tenant = typeof tenants.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Vendor = typeof vendors.$inferSelect;
+export type ApprovalStep = typeof approvalSteps.$inferSelect;
+export type TenantConfig = typeof tenantConfigs.$inferSelect;

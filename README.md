@@ -10,8 +10,8 @@ A multi-tenant SaaS for supplier onboarding: buyer companies invite vendors, and
 |---|---|---|
 | 0. Prototype | Invite → OTP portal → profile + documents → 3-level approval → Oracle-shaped export | ✅ |
 | **1. Platform foundation** | Multi-tenant workspaces, staff accounts (password, invite, reset, lockout), TOTP 2FA + recovery codes, workspace-enforced 2FA, tenant-defined roles & permissions, cookie sessions, CSRF / rate limits / security headers, audit log, SQL migrations, automated tests | ✅ |
-| 2. Admin configuration | Per-tenant fields, documents, approval rules, SLAs, delegation — editable in the UI | ⏳ next |
-| 3. Integrations | Email/SMS providers, S3 storage, live KYC APIs, AI document extraction, job queue | ⏳ |
+| **2. Admin configuration** | Per-workspace form fields, documents and approval flow edited in the UI, with draft → publish, version history, restore and live preview. Rule-based approval levels (e.g. extra level for import vendors, Finance only above ₹5 cr), per-level deadlines (SLAs) with overdue reminders and escalation, reassigning a step to a person, and out-of-office delegation | ✅ |
+| 3. Integrations | Email/SMS providers, S3 storage, live KYC APIs, AI document extraction, job queue | ⏳ next |
 | 4. Vendor lifecycle | Change requests + re-approval, document expiry, re-KYC, block/unblock | ⏳ |
 | 5. Reports & ERP | Funnel, TAT, ageing, Excel; ERP push adapters | ⏳ |
 | 6. Hardening | Field-level encryption, DPDP, E2E tests, CI, deployment | ⏳ |
@@ -41,7 +41,8 @@ Every demo user's password is **`Demo@12345`**.
 | `acme` | vendoradmin@acme.test | Vendor Admin (creates/invites vendors) |
 | `acme` | tax@acme.test | Tax Accounts Manager (approval level 1) |
 | `acme` | finance@acme.test | Finance Manager (approval level 2) |
-| `acme` | mdm@acme.test | Master Data Manager (level 3, ERP export) |
+| `acme` | mdm@acme.test | Master Data Manager (final level, ERP export) |
+| `acme` | compliance@acme.test | Compliance Officer (extra level, import vendors only) |
 | `globex` | admin@globex.test | Administrator of a *separate* company — can't see anything in `acme` |
 
 **Things to try**
@@ -51,6 +52,12 @@ Every demo user's password is **`Demo@12345`**.
 3. **Workspace** → change the brand colour / portal name; the vendor portal and emails pick it up. Tick **Require 2FA** to force every user to enrol.
 4. **Vendors** → **New vendor** → Mailbox → *Open vendor portal* → complete the profile → approve as tax → finance → mdm.
 5. Sign in to `globex` and confirm none of Acme's vendors or users are visible.
+6. **Configuration** (admin):
+   - **Form fields:** add a group and a field, and make a follow-up field appear only when the first answer is "Yes". **Preview form** shows it working.
+   - **Documents:** add a document that is required only for certain answers, and tick **Track expiry**.
+   - **Approval flow:** add a rule such as *Finance only when Annual Turnover is more than 50000000*, then use **Test the flow** on the right to see which levels a sample vendor goes through.
+   - **Save draft → Publish**: the publish screen shows exactly what changed. **History** lets you preview or restore any earlier version.
+7. Open **Kaveri Steel Traders** (waiting for Finance) → **Reassign** to a specific person. As that person, use **My account → Out of office** to hand your approvals to a colleague. They appear in the colleague's **My approvals**.
 
 ## Creating a customer workspace
 
@@ -59,6 +66,17 @@ npm run tenant:create -- --slug initech --name "Initech Ltd" --admin-name "Bill 
 ```
 
 This creates the workspace with the default roles and prints (and emails) the first administrator's invitation link.
+
+## Onboarding configuration (Phase 2)
+
+Each workspace has its own **versioned** configuration: tabs → groups → fields, documents, approval levels and the portal guide.
+
+- **Draft → publish:** edits are saved to a draft; publishing validates it and makes it live in one step. Earlier versions are kept and can be previewed or restored into the draft.
+- **Validation:** the server checks every condition points at a real field, select/radio fields have options, every level's role exists, at least one level applies to all vendors, and no **built-in** field is deleted or re-keyed. Built-in fields are the ones the ERP export, verification and invites depend on; they can still be relabelled, moved and have their rules changed.
+- **Conditions:** *is, is not, is one of, is not one of, more/less than, at least/at most, is empty, is filled in*, on any field or on the vendor type. Fields and documents use one condition each for "required" and "show"; approval levels use *all of / any of* several conditions.
+- **Existing data:** answers to a deleted field are kept in the vendor record but no longer shown. Vendors already under review keep the approval steps they had when they submitted, and the config version used is recorded on the vendor.
+- **SLAs:** each level can have a deadline in hours. A background sweep (every 5 minutes) emails the approvers once when a step is overdue and escalates to everyone with the `approvals.manage` permission.
+- **Who can act on a step:** everyone holding the level's role, **or** one person if an admin reassigned it, **plus** anyone those people have delegated to during an active out-of-office window. The audit log marks delegate actions.
 
 ## Security model (Phase 1)
 
@@ -77,7 +95,7 @@ This creates the workspace with the default roles and prints (and emails) the fi
 | Command | What it does |
 |---|---|
 | `npm run dev` | API + web with hot reload |
-| `npm test` | 29 automated tests covering validators, auth, 2FA, tenant isolation, permissions and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
+| `npm test` | 35 automated tests covering validators, auth, 2FA, tenant isolation, permissions, configuration editing and publishing, rule-based approval flows, SLA escalation, reassignment, delegation and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
 | `npm run db:setup` | Drop, migrate, reseed (dev only) |
 | `npm run -w server db:migrate` | Apply pending migrations (use this in production) |
 | `npm run -w server db:generate` | Create a new migration after editing `server/src/db/schema.ts` |
@@ -98,8 +116,10 @@ server/src/
   auth/session.ts        cookie sessions, CSRF guard, requireStaff(permission)
   lib/permissions.ts     permission list + default roles for new workspaces
   lib/crypto.ts          token hashing, AES-GCM encryption
-  config/formSchema.ts   onboarding fields & documents (becomes per-tenant in Phase 2)
-  config/workflow.ts     default approval levels (by role key)
+  config/types.ts        config model, zod schema, semantic validation, built-in fields
+  config/defaultTemplate.ts  starting configuration for new workspaces
+  services/config.ts     draft / publish / versions (cached per tenant)
+  services/approvers.ts  who can act on a step (role, assignee, delegation)
   services/              tenants, users, workflowEngine
   routes/                staffAuth, vendorAuth, admin, staff (vendors), vendorPortal, documents
   db/schema.ts           tables  ·  drizzle/  SQL migrations
@@ -119,7 +139,6 @@ web/src/
 | KYC verification | Deterministic mock | 3 |
 | File storage | Local `uploads/` folder | 3 |
 | AI document extraction | Not yet | 3 |
-| Form fields & workflow | Code config shared by all tenants | 2 |
 | PAN / bank encryption at rest | Plain columns | 6 |
 
 ## Deploy
