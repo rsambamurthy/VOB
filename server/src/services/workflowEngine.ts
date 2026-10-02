@@ -9,6 +9,7 @@ import { logger } from '../lib/logger.js';
 import { ruleHolds, type Profile } from '../lib/conditions.js';
 import { getPublished } from './config.js';
 import { approverIds, directApprovers, emailsFor } from './approvers.js';
+import { defineJob } from '../jobs/queue.js';
 import type { WorkflowLevel } from '../config/types.js';
 
 const { vendors, approvalSteps, roles, users, userRoles, tenants } = schema;
@@ -169,3 +170,6 @@ export async function sweepOverdue(now = new Date()) {
   if (overdue.length) logger.info({ count: overdue.length }, 'SLA reminders sent');
   return overdue.length;
 }
+
+
+defineJob('sla.sweep', async () => { await sweepOverdue(); }, { retryLimit: 0, expireInSeconds: 240 });

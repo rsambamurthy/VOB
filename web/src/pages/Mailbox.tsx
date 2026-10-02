@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { Alert, Empty } from '../components/ui';
 import { fmtDateTime } from '../lib/format';
 
-interface Mail { id: string; to: string; subject: string; body: string; link?: string | null; createdAt: string }
+interface Mail { id: string; to: string; subject: string; body: string; link?: string | null; createdAt: string; status: 'TEST' | 'QUEUED' | 'SENT' | 'FAILED'; error?: string | null }
 
 export function Mailbox() {
   const [mails, setMails] = useState<Mail[]>();
@@ -22,14 +22,14 @@ export function Mailbox() {
             <ul className="mail-list">
               {mails.map((m) => (
                 <li key={m.id}><button className={open === m.id ? 'active' : ''} onClick={() => setOpen(m.id)}>
-                  <span className="strong">{m.subject}</span><span className="muted small">{m.to} · {fmtDateTime(m.createdAt)}</span>
+                  <span className="strong">{m.subject}</span><span className="muted small">{m.to} · {fmtDateTime(m.createdAt)} · <span className={`mail-st st-${m.status.toLowerCase()}`}>{m.status === 'TEST' ? 'not sent (test mode)' : m.status.toLowerCase()}</span></span>
                 </button></li>
               ))}
             </ul>
             {current && (
               <article className="mail-view">
                 <h3>{current.subject}</h3>
-                <div className="muted small">To: {current.to} · {fmtDateTime(current.createdAt)}</div>
+                <div className="muted small">To: {current.to} · {fmtDateTime(current.createdAt)}{current.error && <span className="diff-text"> · {current.error}</span>}</div>
                 <pre className="mail-body">{current.body}</pre>
                 {current.link && <Link className="btn btn-primary" to={new URL(current.link).pathname} target="_blank">{current.link.includes('/onboard/') ? 'Open vendor portal ↗' : 'Open link ↗'}</Link>}
               </article>

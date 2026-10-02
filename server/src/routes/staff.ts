@@ -14,6 +14,9 @@ import { buildChecklist, visibleDocRequirements, type Profile } from '../lib/pro
 import { assignableUsers, decide, reassign } from '../services/workflowEngine.js';
 import { canAct, coveringFor } from '../services/approvers.js';
 import { getConfig } from '../services/config.js';
+import { latestChecks, runKyc, type KycKind } from '../integrations/kyc/index.js';
+import { extractionsFor } from '../integrations/ai/index.js';
+import { publicCheck } from './vendorPortal.js';
 import { toOracleSupplier } from '../lib/erpMapper.js';
 import { validators } from '../lib/validators.js';
 
@@ -136,6 +139,8 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
     docRequirements: visibleDocRequirements(config, profile, v.vendorType),
     canAct: !!pending && await canAct(pending, s.user.id),
     canReassign: !!pending && s.permissions.has('approvals.manage'),
+    checks: (await latestChecks(v.id)).map((c) => ({ ...publicCheck(c), requestedBy: c.requestedBy, provider: c.provider })),
+    extractions: await extractionsFor(v.id, profile, config),
     canInvite,
     canExport: s.permissions.has('vendors.export'),
   });
@@ -169,4 +174,20 @@ staffRouter.get('/vendors/:id/erp-export', requireStaff('vendors.export'), ah(as
   if (v.status !== 'APPROVED') throw new HttpError(409, 'Only approved vendors can be exported to the ERP');
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'ERP_EXPORTED', ip: req.ip });
   res.json(toOracleSupplier(v, { orgId: typeof req.query.orgId === 'string' ? req.query.orgId : undefined }));
+}));
+
+/** Reviewers can re-run an online check against the vendor's current answers. */
+staffRouter.post('/vendors/:id/verify/:kind', requireStaff('vendors.view'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v) throw new HttpError(404, 'Vendor not found');
+  const kind = z.enum(['gstin', 'pan', 'bank', 'cin']).parse(req.params.kind) as KycKind;
+  const p = v.profile as Profile;
+  const input: Record<string, string> = kind === 'bank'
+    ? { accountNumber: String(p.bank?.accountNumber ?? ''), ifsc: String(p.bank?.ifsc ?? '') }
+    : { [kind]: String(p.tax?.[kind] ?? '') };
+  if (Object.values(input).some((x) => !x || x === 'undefined')) throw new HttpError(400, `The vendor hasn't entered ${kind === 'bank' ? 'bank account details' : `a ${kind.toUpperCase()}`} yet`);
+  const r = await runKyc(v, kind, input, s.user.name);
+  await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'VERIFICATION_RUN', detail: { kind, status: r.status }, ip: req.ip });
+  res.json(publicCheck(r));
 }));

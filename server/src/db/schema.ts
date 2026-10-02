@@ -26,12 +26,22 @@ export const stepStatusEnum = pgEnum('step_status', ['WAITING', 'PENDING', 'APPR
 export const sessionKindEnum = pgEnum('session_kind', ['STAFF', 'VENDOR']);
 export const tokenPurposeEnum = pgEnum('token_purpose', ['INVITE', 'PASSWORD_RESET']);
 export const configStatusEnum = pgEnum('config_status', ['DRAFT', 'PUBLISHED', 'ARCHIVED']);
+/** TEST = recorded only (test mode); QUEUED → SENT / FAILED for real providers */
+export const deliveryStatusEnum = pgEnum('delivery_status', ['TEST', 'QUEUED', 'SENT', 'FAILED']);
+export const extractionStatusEnum = pgEnum('extraction_status', ['PENDING', 'DONE', 'FAILED', 'SKIPPED']);
 
 export type VendorType = (typeof vendorTypeEnum.enumValues)[number];
 export type VendorStatus = (typeof vendorStatusEnum.enumValues)[number];
 
 export interface TenantBranding { productName?: string; primaryColor?: string; logoUrl?: string }
-export interface TenantSettings { requireMfa?: boolean; sessionHours?: number }
+export interface TenantSettings {
+  requireMfa?: boolean;
+  sessionHours?: number;
+  /** Let AI read uploaded documents and suggest form values (sends documents to the AI provider). */
+  aiExtraction?: boolean;
+  /** Where vendor sign-in codes go. */
+  vendorOtpChannel?: 'email' | 'sms' | 'both';
+}
 
 export const tenants = pgTable('tenants', {
   id: id(),
@@ -152,7 +162,65 @@ export const documents = pgTable('documents', {
   mimeType: text('mime_type').notNull(),
   size: integer('size').notNull(),
   storagePath: text('storage_path').notNull(),
+  /** Which storage driver holds the file (local / s3 / azure) — lets you switch drivers without breaking old files. */
+  storageDriver: text('storage_driver').notNull().default('local'),
+  sha256: text('sha256'),
+  /** CLEAN, SKIPPED (no scanner configured) */
+  scanStatus: text('scan_status').notNull().default('SKIPPED'),
   uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Online checks (GSTIN, PAN, bank penny-drop, CIN). Inputs are stored masked + hashed, never in full. */
+export const verifications = pgTable('verifications', {
+  id: id(),
+  tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  inputHash: text('input_hash').notNull(),
+  inputMasked: text('input_masked').notNull(),
+  status: text('status').notNull(),
+  provider: text('provider').notNull(),
+  test: boolean('test').notNull().default(false),
+  message: text('message').notNull(),
+  nameOnRecord: text('name_on_record'),
+  /** 0..1 similarity between the name on record and the vendor's legal name */
+  nameMatch: integer('name_match'),
+  data: jsonb('data').$type<Record<string, string>>(),
+  requestedBy: text('requested_by').notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('verifications_vendor_idx').on(t.vendorId, t.kind, t.createdAt)]);
+
+/** AI reading of an uploaded document: values found, and how they compare with what the vendor typed. */
+export const documentExtractions = pgTable('document_extractions', {
+  id: id(),
+  tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  documentId: text('document_id').notNull().references(() => documents.id, { onDelete: 'cascade' }),
+  status: extractionStatusEnum('status').notNull().default('PENDING'),
+  provider: text('provider').notNull(),
+  test: boolean('test').notNull().default(false),
+  docTypeDetected: text('doc_type_detected'),
+  fields: jsonb('fields').$type<{ fieldId: string; label: string; value: string; confidence: number }[]>().notNull().default([]),
+  summary: text('summary'),
+  error: text('error'),
+  appliedAt: timestamp('applied_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (t) => [index('extractions_vendor_idx').on(t.vendorId)]);
+
+export const smsLog = pgTable('sms_log', {
+  id: id(),
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+  to: text('to').notNull(),
+  body: text('body').notNull(),
+  purpose: text('purpose').notNull(),
+  status: deliveryStatusEnum('status').notNull(),
+  provider: text('provider').notNull(),
+  providerMessageId: text('provider_message_id'),
+  error: text('error'),
+  attempts: integer('attempts').notNull().default(0),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: createdAt(),
 });
 
 export const approvalSteps = pgTable('approval_steps', {
@@ -222,6 +290,12 @@ export const emailOutbox = pgTable('email_outbox', {
   subject: text('subject').notNull(),
   body: text('body').notNull(),
   link: text('link'),
+  status: deliveryStatusEnum('status').notNull().default('TEST'),
+  provider: text('provider').notNull().default('test'),
+  providerMessageId: text('provider_message_id'),
+  error: text('error'),
+  attempts: integer('attempts').notNull().default(0),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -241,7 +315,8 @@ export const vendorsRelations = relations(vendors, ({ one, many }) => ({
   steps: many(approvalSteps),
   audit: many(auditLogs),
 }));
-export const documentsRelations = relations(documents, ({ one }) => ({ vendor: one(vendors, { fields: [documents.vendorId], references: [vendors.id] }) }));
+export const documentsRelations = relations(documents, ({ one, many }) => ({ vendor: one(vendors, { fields: [documents.vendorId], references: [vendors.id] }), extractions: many(documentExtractions) }));
+export const extractionsRelations = relations(documentExtractions, ({ one }) => ({ document: one(documents, { fields: [documentExtractions.documentId], references: [documents.id] }) }));
 export const stepsRelations = relations(approvalSteps, ({ one }) => ({
   vendor: one(vendors, { fields: [approvalSteps.vendorId], references: [vendors.id] }),
   actedBy: one(users, { fields: [approvalSteps.actedById], references: [users.id], relationName: 'actedBy' }),
@@ -256,3 +331,4 @@ export type Role = typeof roles.$inferSelect;
 export type Vendor = typeof vendors.$inferSelect;
 export type ApprovalStep = typeof approvalSteps.$inferSelect;
 export type TenantConfig = typeof tenantConfigs.$inferSelect;
+export type DocumentRow = typeof documents.$inferSelect;

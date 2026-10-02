@@ -8,9 +8,11 @@ import { ApprovalTimeline } from '../components/Timeline';
 import { Checklist } from '../components/Checklist';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
-import type { ChecklistItem, DocRequirement, VendorFull } from '../lib/types';
+import type { Check, ChecklistItem, DocRequirement, Extraction, VendorFull } from '../lib/types';
+import { ChecksPanel } from '../components/Checks';
+import { ExtractionCard } from '../components/ExtractionCard';
 
-type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean };
+type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[] };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
@@ -21,6 +23,7 @@ export function VendorDetail() {
   const [action, setAction] = useState<Action>();
   const [erp, setErp] = useState<unknown>();
   const [reassigning, setReassigning] = useState(false);
+  const [checking, setChecking] = useState<string>();
   const [flash, setFlash] = useState<{ kind: 'success' | 'error'; text: string }>();
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
@@ -28,7 +31,7 @@ export function VendorDetail() {
   if (!d || !config) return <div className="page"><div className="spinner" /></div>;
   const v = d.vendor;
   const tabs = [...config.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' }, { key: 'history', label: 'History' }];
-  const verifications = (v.profile._verifications ?? {}) as Record<string, { status: string; message: string; checkedAt: string }>;
+  const mismatches = d.extractions.reduce((n, e) => n + e.suggestions.filter((s) => s.state === 'differs').length, 0);
   const openErrors = d.checklist.filter((c) => !c.ok);
 
   async function resend() {
@@ -74,6 +77,11 @@ export function VendorDetail() {
           <div className="pad">
             {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={v.profile} vendorType={v.vendorType} readOnly />)}
             {tab === 'documents' && <DocumentsPanel requirements={d.docRequirements} documents={v.documents} />}
+            {tab === 'documents' && d.extractions.filter((e) => e.status === 'DONE' || e.status === 'FAILED').map((e) => {
+              const doc = v.documents.find((x) => x.id === e.documentId);
+              if (!doc) return null;
+              return <ExtractionCard key={e.id} ex={e} readOnly docLabel={d.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType} />;
+            })}
             {tab === 'history' && (
               <ul className="audit">
                 {v.audit?.map((a) => (
@@ -88,13 +96,12 @@ export function VendorDetail() {
           <div className="card pad"><div className="row-between card-title"><h3>Approval flow</h3>{d.canReassign && <button className="link-btn small" onClick={() => setReassigning(true)}>Reassign</button>}</div><ApprovalTimeline steps={v.steps} levels={config.workflow.levels.map((l) => l.label)} /></div>
           <div className="card pad">
             <h3 className="card-title">Verifications</h3>
-            {Object.keys(verifications).length === 0 ? <p className="muted small">The vendor has not run any online checks.</p> : (
-              <ul className="verif">
-                {Object.entries(verifications).map(([k, r]) => (
-                  <li key={k}><span className={`vbadge v-${r.status.toLowerCase()}`}>{r.status === 'VERIFIED' ? '✓' : '!'}</span><span><strong>{k.toUpperCase()}</strong> — {r.message}<span className="muted small block">{fmtDateTime(r.checkedAt)}</span></span></li>
-                ))}
-              </ul>
-            )}
+            <ChecksPanel checks={d.checks} busy={checking} onRun={async (k) => {
+              setChecking(k);
+              try { const r = await api(`/staff/vendors/${v.id}/verify/${k}`, { method: 'POST' }); setFlash({ kind: r.status === 'VERIFIED' ? 'success' : 'error', text: `${k.toUpperCase()}: ${r.message}` }); await load(); }
+              catch (e: any) { setFlash({ kind: 'error', text: e.message }); } finally { setChecking(undefined); }
+            }} />
+            {mismatches > 0 && <p className="small diff-text">⚠ {mismatches} value{mismatches > 1 ? 's' : ''} on uploaded documents differ from the form — see the Documents tab.</p>}
           </div>
           {v.status !== 'INVITED' && <div className="card pad"><Checklist items={d.checklist} sections={config.sections} onJump={setTab} /></div>}
           {v.inviteLink && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && (

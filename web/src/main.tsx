@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ConfigProvider } from './lib/meta';
 import { ConfigEditor } from './pages/admin/config/ConfigEditor';
+import { Integrations } from './pages/admin/Integrations';
 import { RequireStaff, SessionProvider } from './lib/session';
 import { StaffShell } from './components/StaffShell';
 import { Login } from './pages/auth/Login';
@@ -42,6 +43,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/workspace" element={<Workspace />} />
               <Route path="admin/audit" element={<Audit />} />
               <Route path="admin/config" element={<ConfigEditor />} />
+              <Route path="admin/integrations" element={<Integrations />} />
               <Route path="mailbox" element={<Mailbox />} />
             </Route>
             <Route path="/onboard/:token" element={<VendorLogin />} />

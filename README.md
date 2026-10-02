@@ -11,8 +11,8 @@ A multi-tenant SaaS for supplier onboarding: buyer companies invite vendors, and
 | 0. Prototype | Invite → OTP portal → profile + documents → 3-level approval → Oracle-shaped export | ✅ |
 | **1. Platform foundation** | Multi-tenant workspaces, staff accounts (password, invite, reset, lockout), TOTP 2FA + recovery codes, workspace-enforced 2FA, tenant-defined roles & permissions, cookie sessions, CSRF / rate limits / security headers, audit log, SQL migrations, automated tests | ✅ |
 | **2. Admin configuration** | Per-workspace form fields, documents and approval flow edited in the UI, with draft → publish, version history, restore and live preview. Rule-based approval levels (e.g. extra level for import vendors, Finance only above ₹5 cr), per-level deadlines (SLAs) with overdue reminders and escalation, reassigning a step to a person, and out-of-office delegation | ✅ |
-| 3. Integrations | Email/SMS providers, S3 storage, live KYC APIs, AI document extraction, job queue | ⏳ next |
-| 4. Vendor lifecycle | Change requests + re-approval, document expiry, re-KYC, block/unblock | ⏳ |
+| **3. Integrations** | Postgres job queue with retries; branded HTML email (SMTP / SendGrid); SMS sign-in codes (MSG91 DLT / Twilio); S3 / R2 / Azure storage with content-type sniffing, script-PDF blocking and optional ClamAV; GSTIN / PAN / penny-drop / MCA checks (Surepass) with caching, limits, masking and name matching; Claude reading uploaded documents to suggest values and flag mismatches. All in **test mode** until keys are added | ✅ |
+| 4. Vendor lifecycle | Change requests + re-approval, document expiry, re-KYC, block/unblock | ⏳ next |
 | 5. Reports & ERP | Funnel, TAT, ageing, Excel; ERP push adapters | ⏳ |
 | 6. Hardening | Field-level encryption, DPDP, E2E tests, CI, deployment | ⏳ |
 
@@ -67,6 +67,25 @@ npm run tenant:create -- --slug initech --name "Initech Ltd" --admin-name "Bill 
 
 This creates the workspace with the default roles and prints (and emails) the first administrator's invitation link.
 
+## Integrations (Phase 3)
+
+Every integration starts in **test mode**: nothing leaves the server, and **Admin → Integrations** shows each one's status with a **How to go live** snippet. To switch one on, fill in its section of `server/.env` (see `.env.example`) and restart. The server refuses to start if you pick a provider without its keys.
+
+| Integration | Test mode | Live options | Notes |
+|---|---|---|---|
+| **Email** | Recorded in the Mailbox | `smtp` (SES, M365, Google, Zoho…) or `sendgrid` | Branded HTML with the workspace colour, logo and a button. Every message is logged with its status (sent / failed + error). Retries with backoff. |
+| **SMS** | Recorded in `sms_log` | `msg91` (India, DLT template) or `twilio` | Used for vendor sign-in codes. Each workspace chooses email, SMS (falling back to email) or both under Integrations. |
+| **Storage** | Server disk | `s3` (AWS, Cloudflare R2, MinIO, Wasabi) or `azure` | Files are private; downloads go through a 60-second signed URL after the permission check. Each document remembers its driver, so switching drivers doesn't break old files. |
+| **Upload safety** | Always on | `SCAN_PROVIDER=clamav` | The real file type is checked from its bytes (a renamed .exe is refused). PDFs with JavaScript or auto-run actions are refused. Optional ClamAV scan. Files are stored as `tenant/vendor/uuid.ext` with a SHA-256 hash. |
+| **GSTIN / PAN / bank / MCA** | Instant fake answers | `surepass` | Identical checks are re-used for 24 hours, with a daily limit per vendor. Only masked identifiers are stored. The name on record is compared with the vendor's legal name (a match below 70% is flagged). Reviewers can re-run checks. Endpoint paths are configurable; **confirm them against your Surepass sandbox before going live**. |
+| **AI document reading** | Echoes typed values | `anthropic` (Claude) | Reads GST, PAN, cheque, incorporation and Udyam documents. Values are format-checked (a misread GSTIN is dropped). The vendor chooses which suggestions to apply, and reviewers see where documents and answers differ. **Off until a workspace switches it on**, because documents are sent to the AI provider. |
+
+Background work (email, SMS, AI reading, the 5-minute SLA sweep) runs on a **Postgres job queue** (pg-boss, schema `pgboss`), so there's no Redis to run. With `JOBS_ENABLED=false`, jobs run in-process instead.
+
+Optional local services: `docker compose --profile scan up -d clamav` (virus scanning) and `docker compose --profile storage up -d minio` (S3-compatible storage to try `STORAGE_DRIVER=s3`).
+
+**Test-mode tips:** a PAN whose 9th character is `0`, a GSTIN whose 13th character is `0`, or a bank account ending in `0` returns "not found", so you can see the failure path.
+
 ## Onboarding configuration (Phase 2)
 
 Each workspace has its own **versioned** configuration: tabs → groups → fields, documents, approval levels and the portal guide.
@@ -95,7 +114,7 @@ Each workspace has its own **versioned** configuration: tabs → groups → fiel
 | Command | What it does |
 |---|---|
 | `npm run dev` | API + web with hot reload |
-| `npm test` | 35 automated tests covering validators, auth, 2FA, tenant isolation, permissions, configuration editing and publishing, rule-based approval flows, SLA escalation, reassignment, delegation and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
+| `npm test` | 49 automated tests covering email/SMS/storage/KYC/AI integrations, validators, auth, 2FA, tenant isolation, permissions, configuration editing and publishing, rule-based approval flows, SLA escalation, reassignment, delegation and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
 | `npm run db:setup` | Drop, migrate, reseed (dev only) |
 | `npm run -w server db:migrate` | Apply pending migrations (use this in production) |
 | `npm run -w server db:generate` | Create a new migration after editing `server/src/db/schema.ts` |
@@ -120,6 +139,8 @@ server/src/
   config/defaultTemplate.ts  starting configuration for new workspaces
   services/config.ts     draft / publish / versions (cached per tenant)
   services/approvers.ts  who can act on a step (role, assignee, delegation)
+  integrations/          email · sms · storage (+ scan) · kyc · ai — each with test + live drivers
+  jobs/queue.ts          Postgres job queue (pg-boss) with inline fallback
   services/              tenants, users, workflowEngine
   routes/                staffAuth, vendorAuth, admin, staff (vendors), vendorPortal, documents
   db/schema.ts           tables  ·  drizzle/  SQL migrations
@@ -135,10 +156,6 @@ web/src/
 
 | Area | Now | Phase |
 |---|---|---|
-| Email / SMS delivery | Recorded in `email_outbox`, shown in the dev Mailbox | 3 |
-| KYC verification | Deterministic mock | 3 |
-| File storage | Local `uploads/` folder | 3 |
-| AI document extraction | Not yet | 3 |
 | PAN / bank encryption at rest | Plain columns | 6 |
 
 ## Deploy

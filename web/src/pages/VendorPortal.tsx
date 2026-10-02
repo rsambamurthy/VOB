@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { applyBranding } from '../lib/session';
@@ -8,10 +8,11 @@ import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
-import type { Branding, ChecklistItem, DocRequirement, FieldDef, Profile, SectionDef, VendorFull } from '../lib/types';
+import type { Branding, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Profile, SectionDef, VendorFull } from '../lib/types';
+import { CheckBadge } from '../components/Checks';
+import { ExtractionCard } from '../components/ExtractionCard';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding } };
-type VerifyResult = { status: string; message: string };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding }; checks: Check[]; extractions: Extraction[] };
 
 /** Fields that get an online "Verify" button: field key -> [check kind, fields to send]. */
 const VERIFY: Record<string, { kind: string; label: string; from: (p: Profile) => Record<string, string> }> = {
@@ -27,21 +28,23 @@ export function VendorPortal() {
   const [profile, setProfile] = useState<Profile>({});
   const [tab, setTab] = useState('basic');
   const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [flash, setFlash] = useState<{ kind: 'success' | 'error' | 'info'; text: string }>();
   const [saving, setSaving] = useState(false);
-  const [verifs, setVerifs] = useState<Record<string, VerifyResult>>({});
   const [showGuide, setShowGuide] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const r = await api<Me>('/vendor');
-      setMe(r); setProfile(r.vendor.profile); applyBranding(r.buyer.branding);
-      setVerifs((r.vendor.profile._verifications ?? {}) as Record<string, VerifyResult>);
+      setMe(r); setProfile((p) => (Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
   useEffect(() => { load(); }, [load]);
+  const pending = me?.extractions.some((e) => e.status === 'PENDING');
+  useEffect(() => { if (!pending) return; const t = setInterval(load, 3000); return () => clearInterval(t); }, [pending, load]);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
@@ -96,12 +99,23 @@ export function VendorPortal() {
   async function remove(id: string) {
     try { await api(`/vendor/documents/${id}`, { method: 'DELETE' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
+  async function applyExtraction(id: string, fieldIds: string[]) {
+    for (const sec of [...dirty]) if (!(await save(sec, true))) return;
+    try {
+      const r = await api<{ applied: string[]; profile: Profile; checklist: ChecklistItem[] }>(`/vendor/extractions/${id}/apply`, { body: { fieldIds } });
+      setProfile(r.profile);
+      setFlash({ kind: 'success', text: `${r.applied.length} value${r.applied.length === 1 ? '' : 's'} copied into your form. Please check them before submitting.` });
+      await load();
+    } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+  }
+
   async function runVerify(f: FieldDef) {
     const cfg = VERIFY[f.key];
     await save(tab, true);
     try {
-      const r = await api<VerifyResult>(`/vendor/verify/${cfg.kind}`, { body: cfg.from(profile) });
-      setVerifs((x) => ({ ...x, [cfg.kind]: r }));
+      const r = await api<Check>(`/vendor/verify/${cfg.kind}`, { body: cfg.from(profile) });
+      setMe((m) => m && { ...m, checks: [r, ...m.checks.filter((c) => c.kind !== r.kind)] });
+      if (r.status !== 'VERIFIED') setFlash({ kind: r.status === 'ERROR' ? 'error' : 'info', text: `${r.message}` });
     } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
   async function submit() {
@@ -122,11 +136,11 @@ export function VendorPortal() {
   const extra = (f: FieldDef) => {
     const cfg = editable ? VERIFY[f.key] : undefined;
     if (!cfg) return null;
-    const r = verifs[cfg.kind];
+    const r = me?.checks.find((c) => c.kind === cfg.kind);
     return (
       <span className="verify">
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => runVerify(f)}>{cfg.label}</button>
-        {r && <span className={`vbadge v-${r.status.toLowerCase()}`} title={r.message}>{r.status === 'VERIFIED' ? '✓ Verified' : r.status === 'NOT_FOUND' ? 'Not found' : 'Invalid'}</span>}
+        {r && <CheckBadge c={r} compact />}
       </span>
     );
   };
@@ -153,6 +167,9 @@ export function VendorPortal() {
         {v.status === 'APPROVED' && <Alert kind="success">You’re approved and active as a vendor. 🎉</Alert>}
         {v.status === 'REJECTED' && <Alert kind="error">This registration was not approved. Check your email for the reason.</Alert>}
         {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
+        {editable && tab !== 'documents' && me.extractions.some((e) => e.status === 'DONE' && !e.appliedAt && e.suggestions.some((x) => x.state !== 'match')) && (
+          <Alert kind="info">✦ We read details from your uploaded documents. <button className="link-btn" onClick={() => goTo('documents')}>Review suggested values →</button></Alert>
+        )}
 
         <div className="detail-grid">
           <div className="card">
@@ -169,6 +186,11 @@ export function VendorPortal() {
                 <DynamicSection key={s.key} section={s} profile={profile} vendorType={v.vendorType} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} />
               ))}
               {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={editable} onUpload={upload} onDelete={remove} />}
+              {tab === 'documents' && editable && me.extractions.filter((e) => e.status !== 'SKIPPED' && v.documents.some((d) => d.id === e.documentId)).map((e) => {
+                const doc = v.documents.find((d) => d.id === e.documentId)!;
+                const label = me.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType;
+                return <ExtractionCard key={e.id} ex={e} docLabel={label} onApply={(ids) => applyExtraction(e.id, ids)} />;
+              })}
             </div>
             {editable && (
               <div className="form-foot">

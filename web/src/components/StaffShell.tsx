@@ -24,6 +24,7 @@ export function StaffShell() {
           {can('users.manage') && <NavLink to="/staff/admin/roles">Roles</NavLink>}
           {can('config.manage') && <NavLink to="/staff/admin/config">Configuration</NavLink>}
           {can('tenant.settings') && <NavLink to="/staff/admin/workspace">Workspace</NavLink>}
+          {can('tenant.settings') && <NavLink to="/staff/admin/integrations">Integrations</NavLink>}
           {can('audit.view') && <NavLink to="/staff/admin/audit">Audit log</NavLink>}
           {me.devMailbox && <NavLink to="/staff/mailbox">Mailbox <span className="tag">dev</span></NavLink>}
         </nav>

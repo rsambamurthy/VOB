@@ -9,5 +9,29 @@ services:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+
+  # Optional virus scanner: docker compose --profile scan up -d clamav   (first start downloads signatures, ~2 min)
+  clamav:
+    image: clamav/clamav:stable
+    profiles: ["scan"]
+    ports:
+      - "3310:3310"
+
+  # Optional S3-compatible storage for testing STORAGE_DRIVER=s3 locally:
+  #   docker compose --profile storage up -d minio   → console http://localhost:9001 (minio / minio-secret), create bucket "vendor-docs"
+  minio:
+    image: minio/minio
+    profiles: ["storage"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
 volumes:
   pgdata:
+  miniodata:

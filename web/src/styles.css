@@ -292,3 +292,21 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .card-title h3 { margin: 0; }
 @media (max-width: 1000px) { .form-editor, .workflow-editor { grid-template-columns: 1fr; } .section-list, .tester { position: static; } }
 .link-btn.small { font-size: 12.5px; font-weight: 500; }
+
+/* Phase 3: integrations */
+.int-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+.int-card { display: flex; flex-direction: column; gap: 10px; } .int-card h3 { margin: 0; } .int-card p { margin: 0; }
+.env-hint summary { cursor: pointer; color: var(--brand); } .code.light { background: var(--line-2); color: var(--ink); white-space: pre-wrap; font-size: 11.5px; }
+.vbadge.v-test { background: var(--line-2); color: var(--muted); } .vbadge.v-warn { background: var(--warn-bg); color: var(--warn); } .vbadge.v-error { background: var(--warn-bg); color: var(--warn); }
+.check-badge { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.verif-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .verif li { flex-direction: column; align-items: stretch; }
+.ai-card { border: 1px solid var(--brand-100); background: var(--brand-50); border-radius: var(--radius); padding: 12px 14px; margin-top: 12px; }
+.ai-card.has-diff { border-color: #f3dfae; background: #fffaf0; } .ai-card.pending { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.ai-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; } .ai-icon { color: var(--brand); }
+.ai-summary { margin: 0 0 6px; } .ai-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+.ai-table td { padding: 5px 6px; border-top: 1px solid rgba(0,0,0,.05); vertical-align: top; } .ai-table td:first-child { width: 24px; }
+.ai-table input { width: auto; accent-color: var(--brand); } .ai-table .st-match { opacity: .75; }
+.diff-text { color: #a4461a; font-weight: 500; }
+.spinner-sm { width: 14px; height: 14px; border: 2px solid var(--brand-100); border-top-color: var(--brand); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+.mail-st.st-failed { color: var(--err); font-weight: 600; } .mail-st.st-sent { color: var(--ok); }
+.check-item input, .check-item input[type=radio] { flex: none; width: 16px; height: 16px; }

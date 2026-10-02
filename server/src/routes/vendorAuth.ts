@@ -7,6 +7,8 @@ import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { env } from '../lib/env.js';
 import { sendMail } from '../lib/mailer.js';
+import { sendSms } from '../integrations/sms/index.js';
+import { logger } from '../lib/logger.js';
 import { audit } from '../lib/audit.js';
 import { createSession, destroySession } from '../auth/session.js';
 import { sensitiveLimiter, loginLimiter } from '../lib/rateLimits.js';
@@ -22,6 +24,7 @@ async function byInvite(token: string) {
   return { v, tenant };
 }
 const maskEmail = (e: string) => e.replace(/^(.{2}).*(@.*)$/, (_m, a, b) => `${a}•••${b}`);
+const maskMobile = (m: string) => { const d = m.replace(/\D/g, ''); return `••••••${d.slice(-4)}`; };
 
 vendorAuthRouter.get('/invite/:token', ah(async (req, res) => {
   const { v, tenant } = await byInvite(req.params.token);
@@ -35,8 +38,25 @@ vendorAuthRouter.post('/request-otp', sensitiveLimiter, ah(async (req, res) => {
   if (recent >= 3) throw new HttpError(429, 'Too many codes requested. Please wait a minute.');
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   await db.insert(otpCodes).values({ tenantId: tenant.id, vendorId: v.id, codeHash: await bcrypt.hash(code, 8), expiresAt: new Date(Date.now() + 10 * 60_000) });
-  await sendMail({ tenantId: tenant.id, to: v.contactEmail, subject: `Your ${tenant.name} vendor portal sign-in code`, body: `Your one-time code is ${code}. It expires in 10 minutes. Never share this code.` });
-  res.json({ sentTo: maskEmail(v.contactEmail), ...(env.devShowOtp ? { devOtp: code } : {}) });
+  const channel = tenant.settings.vendorOtpChannel ?? 'email';
+  const sentTo: string[] = [];
+  if (channel !== 'sms') {
+    await sendMail({ tenantId: tenant.id, to: v.contactEmail, subject: `Your ${tenant.name} vendor portal sign-in code`, body: `Your one-time code is ${code}. It expires in 10 minutes. Never share this code.` });
+    sentTo.push(maskEmail(v.contactEmail));
+  }
+  if (channel !== 'email') {
+    try {
+      await sendSms({ tenantId: tenant.id, to: v.contactMobile, purpose: 'otp', vars: { otp: code, var1: code }, body: `${code} is your ${tenant.name} supplier portal code. Valid 10 min. Do not share.` });
+      sentTo.push(maskMobile(v.contactMobile));
+    } catch (err) {
+      logger.warn({ err }, 'OTP SMS failed');
+      if (channel === 'sms') {
+        await sendMail({ tenantId: tenant.id, to: v.contactEmail, subject: `Your ${tenant.name} vendor portal sign-in code`, body: `Your one-time code is ${code}. It expires in 10 minutes.` });
+        sentTo.push(maskEmail(v.contactEmail));
+      }
+    }
+  }
+  res.json({ sentTo: sentTo.join(' and '), ...(env.devShowOtp ? { devOtp: code } : {}) });
 }));
 
 vendorAuthRouter.post('/verify-otp', loginLimiter, ah(async (req, res) => {

@@ -22,7 +22,7 @@ export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
-  tenant: { id: string; slug: string; name: string; branding: Branding; settings: { requireMfa?: boolean; sessionHours?: number } };
+  tenant: { id: string; slug: string; name: string; branding: Branding; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both' } };
   roles: { id: string; key: string; name: string }[];
   permissions: Permission[];
   mfaSetupRequired: boolean;
@@ -46,4 +46,15 @@ export interface VendorSummary {
 }
 export interface VendorFull extends VendorSummary {
   profile: Profile; documents: DocumentRow[]; steps: Step[]; audit?: AuditRow[]; inviteLink?: string;
+}
+
+export interface Check {
+  id: string; kind: 'gstin' | 'pan' | 'bank' | 'cin'; status: 'VERIFIED' | 'NOT_FOUND' | 'INVALID_FORMAT' | 'ERROR';
+  message: string; inputMasked: string; nameOnRecord: string | null; nameMatch: number | null; test: boolean; checkedAt: string;
+  data: Record<string, string> | null; requestedBy?: string; provider?: string;
+}
+export interface Suggestion { fieldId: string; fieldLabel: string; value: string; confidence: number; current: string; state: 'empty' | 'match' | 'differs' }
+export interface Extraction {
+  id: string; documentId: string; status: 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED'; provider: string; test: boolean;
+  summary: string | null; error: string | null; appliedAt: string | null; docTypeDetected: string | null; suggestions: Suggestion[];
 }

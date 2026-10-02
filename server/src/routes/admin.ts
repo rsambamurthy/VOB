@@ -9,6 +9,14 @@ import { ALL_PERMISSIONS, PERMISSIONS } from '../lib/permissions.js';
 import { audit } from '../lib/audit.js';
 import { createStaffUser, sendStaffInvite } from '../services/users.js';
 import { rolesInUse } from '../services/config.js';
+import { emailStatus } from '../integrations/email/index.js';
+import { sendMail } from '../lib/mailer.js';
+import { sendSms, smsStatus } from '../integrations/sms/index.js';
+import { storageCheck, storageStatus } from '../integrations/storage/index.js';
+import { kycStatus } from '../integrations/kyc/index.js';
+import { aiStatus } from '../integrations/ai/index.js';
+import { queueRunning } from '../jobs/queue.js';
+import { env } from '../lib/env.js';
 
 const { users, roles, userRoles, auditLogs, tenants, approvalSteps } = schema;
 export const adminRouter = Router();
@@ -162,7 +170,7 @@ adminRouter.patch('/tenant', requireStaff('tenant.settings'), ah(async (req, res
       primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value like #6d1a73').optional(),
       logoUrl: z.string().url().max(500).optional().or(z.literal('')),
     }).optional(),
-    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional() }).optional(),
+    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional() }).optional(),
   }).parse(req.body);
   await db.update(tenants).set({
     ...(input.name ? { name: input.name } : {}),
@@ -181,4 +189,41 @@ adminRouter.get('/audit', requireStaff('audit.view'), ah(async (req, res) => {
   const size = 50;
   const rows = await db.select().from(auditLogs).where(eq(auditLogs.tenantId, tenant.id)).orderBy(desc(auditLogs.createdAt)).limit(size + 1).offset((page - 1) * size);
   res.json({ rows: rows.slice(0, size), hasMore: rows.length > size, page });
+}));
+
+/* ---------- Integrations (read-only status: providers are configured on the server) ---------- */
+
+adminRouter.get('/integrations', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const { tenant } = staffCtx(req);
+  const recentEmail = await db.select({ status: schema.emailOutbox.status, n: count() }).from(schema.emailOutbox).where(eq(schema.emailOutbox.tenantId, tenant.id)).groupBy(schema.emailOutbox.status);
+  const recentSms = await db.select({ status: schema.smsLog.status, n: count() }).from(schema.smsLog).where(eq(schema.smsLog.tenantId, tenant.id)).groupBy(schema.smsLog.status);
+  const lastFailures = await db.select({ to: schema.emailOutbox.to, subject: schema.emailOutbox.subject, error: schema.emailOutbox.error, createdAt: schema.emailOutbox.createdAt })
+    .from(schema.emailOutbox).where(and(eq(schema.emailOutbox.tenantId, tenant.id), eq(schema.emailOutbox.status, 'FAILED'))).orderBy(desc(schema.emailOutbox.createdAt)).limit(5);
+  res.json({
+    email: { ...emailStatus(), counts: Object.fromEntries(recentEmail.map((r) => [r.status, r.n])), lastFailures },
+    sms: { ...smsStatus(), counts: Object.fromEntries(recentSms.map((r) => [r.status, r.n])) },
+    storage: storageStatus(),
+    kyc: kycStatus(),
+    ai: { ...aiStatus(), enabledForWorkspace: !!tenant.settings.aiExtraction },
+    jobs: { running: queueRunning() },
+    devMode: env.devShowOtp,
+  });
+}));
+
+adminRouter.post('/integrations/test-email', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  await sendMail({ tenantId: s.tenant.id, to: s.user.email, subject: 'Test email from your supplier portal', body: `Hello ${s.user.name},\n\nThis is a test message to confirm email delivery works for ${s.tenant.name}.` });
+  res.json({ ok: true, to: s.user.email });
+}));
+
+adminRouter.post('/integrations/test-sms', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { to } = z.object({ to: z.string().min(8).max(20) }).parse(req.body);
+  try { await sendSms({ tenantId: s.tenant.id, to, purpose: 'otp', vars: { otp: '123456', var1: '123456' }, body: `123456 is your ${s.tenant.name} supplier portal code (test). Valid 10 min. Do not share.` }); }
+  catch (e: any) { throw new HttpError(400, e.message); }
+  res.json({ ok: true });
+}));
+
+adminRouter.post('/integrations/test-storage', requireStaff('tenant.settings'), ah(async (_req, res) => {
+  try { res.json({ ok: true, detail: await storageCheck() }); } catch (e: any) { throw new HttpError(502, `Storage check failed: ${e.message}`); }
 }));
