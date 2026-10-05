@@ -58,10 +58,18 @@ export interface WorkflowLevel {
   /** Hours allowed before the step is overdue and reminders/escalation fire. */
   slaHours?: number;
 }
+/**
+ * After approval, vendors change details through change requests. Each rule says which approval
+ * levels must sign off when matching fields change. Patterns: "bank.*" (whole tab), "tax.gstin"
+ * (one field) or "documents" (new / renewed documents). If no rule matches, defaultLevelIds apply.
+ */
+export interface ChangeRule { match: string[]; levelIds: string[] }
+export interface ChangeApproval { rules: ChangeRule[]; defaultLevelIds: string[] }
+
 export interface OnboardingConfig {
   sections: SectionDef[];
   documents: DocumentRequirement[];
-  workflow: { levels: WorkflowLevel[] };
+  workflow: { levels: WorkflowLevel[]; changes?: ChangeApproval };
   guide: { title: string; body: string }[];
 }
 
@@ -126,6 +134,10 @@ export const configSchema = z.object({
       rule: z.object({ match: z.enum(['all', 'any']), conditions: z.array(condition).min(1).max(10) }).optional(),
       slaHours: z.number().int().min(1).max(24 * 60).optional(),
     })).max(10),
+    changes: z.object({
+      rules: z.array(z.object({ match: z.array(z.string().min(1).max(80)).min(1).max(20), levelIds: z.array(KEY).min(1).max(10) })).max(20),
+      defaultLevelIds: z.array(KEY).min(1).max(10),
+    }).optional(),
   }),
   guide: z.array(z.object({ title: z.string().min(1).max(120), body: z.string().max(2000) })).max(20),
 });
@@ -186,6 +198,18 @@ export function findIssues(cfg: OnboardingConfig, roleKeys: string[]): ConfigIss
     if (!roleKeys.includes(l.roleKey)) issues.push({ path: where, message: `Level ${i + 1} (“${l.label}”) is assigned to a role that doesn’t exist` });
     l.rule?.conditions.forEach((c) => checkCond(c, where));
   });
+  const ch = cfg.workflow.changes;
+  if (ch) {
+    const known = new Set(cfg.workflow.levels.map((l) => l.id));
+    const sections = new Set(cfg.sections.map((s) => s.key));
+    for (const id of [...ch.defaultLevelIds, ...ch.rules.flatMap((r) => r.levelIds)]) {
+      if (!known.has(id)) issues.push({ path: 'workflow.changes', message: `Change-approval rule uses level “${id}”, which isn’t in the approval flow` });
+    }
+    for (const r of ch.rules) for (const m of r.match) {
+      const ok = m === 'documents' || (m.endsWith('.*') ? sections.has(m.slice(0, -2)) : fieldIds.has(m));
+      if (!ok) issues.push({ path: 'workflow.changes', message: `Change-approval rule matches “${m}”, which doesn’t exist` });
+    }
+  }
   if (cfg.workflow.levels.length && cfg.workflow.levels.every((l) => l.rule)) {
     issues.push({ path: 'workflow', message: 'At least one approval level must apply to every vendor (have no rule)' });
   }

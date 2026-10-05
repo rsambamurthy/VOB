@@ -15,6 +15,7 @@ import { csrfGuard, loadSessions } from './auth/session.js';
 import { staffAuthRouter } from './routes/staffAuth.js';
 import { vendorAuthRouter } from './routes/vendorAuth.js';
 import { metaRouter } from './routes/meta.js';
+import { reportsRouter } from './routes/reports.js';
 import { staffRouter } from './routes/staff.js';
 import { adminRouter } from './routes/admin.js';
 import { vendorRouter } from './routes/vendorPortal.js';
@@ -49,11 +50,12 @@ export function createApp() {
   app.use('/api/vendor-auth', vendorAuthRouter);
   app.use('/api/meta', metaRouter);
   app.use('/api/staff', staffRouter);
+  app.use('/api/reports', reportsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/vendor', vendorRouter);
   app.use('/api/documents', documentsRouter);
   app.use('/api', configRouter);
-  app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));
+  app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found', undefined, 'NO_ROUTE')));
 
   // In production the API also serves the built web app.
   const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');

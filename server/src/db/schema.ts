@@ -2,7 +2,7 @@
  * Database schema. Every business table carries tenant_id — all queries MUST filter by it
  * (see lib/tenantScope notes in README "Multi-tenancy"). Platform-level tables: tenants.
  */
-import { pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, primaryKey, date } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import type { OnboardingConfig } from '../config/types.js';
@@ -36,6 +36,8 @@ export type VendorStatus = (typeof vendorStatusEnum.enumValues)[number];
 export interface TenantBranding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface TenantSettings {
   requireMfa?: boolean;
+  /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
+  reKycMonths?: number;
   sessionHours?: number;
   /** Let AI read uploaded documents and suggest form values (sends documents to the AI provider). */
   aiExtraction?: boolean;
@@ -140,6 +142,24 @@ export const vendors = pgTable('vendors', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   submittedAt: timestamp('submitted_at', { withTimezone: true }),
   decidedAt: timestamp('decided_at', { withTimezone: true }),
+  /* ---- Lifecycle (Phase 4) ---- */
+  blockedAt: timestamp('blocked_at', { withTimezone: true }),
+  blockedReason: text('blocked_reason'),
+  blockedById: text('blocked_by_id').references(() => users.id),
+  /** Next periodic re-verification (set on approval from the workspace's re-check interval). */
+  nextReviewAt: timestamp('next_review_at', { withTimezone: true }),
+  lastReviewAt: timestamp('last_review_at', { withTimezone: true }),
+  /** OK | ATTENTION — result of the last periodic re-verification */
+  reviewStatus: text('review_status'),
+  reviewNote: text('review_note'),
+  /** When the vendor last confirmed their details are still correct. */
+  lastConfirmedAt: timestamp('last_confirmed_at', { withTimezone: true }),
+  /* ---- ERP (Phase 5) ---- */
+  /** Supplier id the ERP assigned (returned by the first successful push). */
+  erpVendorId: text('erp_vendor_id'),
+  /** PENDING · SYNCED · FAILED · TEST — latest push outcome */
+  erpSyncStatus: text('erp_sync_status'),
+  erpSyncedAt: timestamp('erp_synced_at', { withTimezone: true }),
 }, (t) => [uniqueIndex('vendors_tenant_code_uq').on(t.tenantId, t.code), index('vendors_tenant_status_idx').on(t.tenantId, t.status)]);
 
 export const otpCodes = pgTable('otp_codes', {
@@ -167,6 +187,15 @@ export const documents = pgTable('documents', {
   sha256: text('sha256'),
   /** CLEAN, SKIPPED (no scanner configured) */
   scanStatus: text('scan_status').notNull().default('SKIPPED'),
+  /** ACTIVE (in force) · PENDING (uploaded by an approved vendor, waiting in a change request) · SUPERSEDED · REJECTED */
+  status: text('status').notNull().default('ACTIVE'),
+  expiresOn: date('expires_on', { mode: 'string' }),
+  /** Bit flags of expiry reminders already sent: 1 = 30 days, 2 = 7 days, 4 = expired */
+  expiryNotified: integer('expiry_notified').notNull().default(0),
+  changeRequestId: text('change_request_id'),
+  /** Staff member who uploaded it on the vendor's behalf (null = the vendor). */
+  uploadedById: text('uploaded_by_id'),
+  supersededAt: timestamp('superseded_at', { withTimezone: true }),
   uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -207,6 +236,43 @@ export const documentExtractions = pgTable('document_extractions', {
   createdAt: createdAt(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (t) => [index('extractions_vendor_idx').on(t.vendorId)]);
+
+/** An approved vendor's request to change details or renew documents; applied only after approval. */
+export const changeRequests = pgTable('change_requests', {
+  id: id(),
+  tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  /** PENDING · APPROVED · REJECTED · CANCELLED */
+  status: text('status').notNull().default('PENDING'),
+  changes: jsonb('changes').$type<{ fieldId: string; label: string; old: string; new: string }[]>().notNull().default([]),
+  documentIds: jsonb('document_ids').$type<string[]>().notNull().default([]),
+  note: text('note'),
+  /** Set when a staff member proposed the change on the vendor's behalf (null = vendor's own request). */
+  raisedById: text('raised_by_id').references(() => users.id),
+  sensitive: boolean('sensitive').notNull().default(false),
+  remarks: text('remarks'),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('change_requests_vendor_idx').on(t.vendorId, t.status), index('change_requests_tenant_idx').on(t.tenantId, t.status)]);
+
+export const changeRequestSteps = pgTable('change_request_steps', {
+  id: id(),
+  tenantId: tenantId(),
+  changeRequestId: text('change_request_id').notNull().references(() => changeRequests.id, { onDelete: 'cascade' }),
+  level: integer('level').notNull(),
+  roleId: text('role_id').notNull().references(() => roles.id),
+  label: text('label').notNull(),
+  status: stepStatusEnum('status').notNull(),
+  assigneeUserId: text('assignee_user_id').references(() => users.id),
+  remarks: text('remarks'),
+  actedById: text('acted_by_id').references(() => users.id),
+  actedAt: timestamp('acted_at', { withTimezone: true }),
+  slaHours: integer('sla_hours'),
+  activatedAt: timestamp('activated_at', { withTimezone: true }),
+  dueAt: timestamp('due_at', { withTimezone: true }),
+  remindedAt: timestamp('reminded_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('cr_steps_pending_idx').on(t.tenantId, t.status, t.roleId)]);
 
 export const smsLog = pgTable('sms_log', {
   id: id(),
@@ -332,3 +398,60 @@ export type Vendor = typeof vendors.$inferSelect;
 export type ApprovalStep = typeof approvalSteps.$inferSelect;
 export type TenantConfig = typeof tenantConfigs.$inferSelect;
 export type DocumentRow = typeof documents.$inferSelect;
+export type ChangeRequest = typeof changeRequests.$inferSelect;
+export type ChangeRequestStep = typeof changeRequestSteps.$inferSelect;
+
+export const changeRequestsRelations = relations(changeRequests, ({ one, many }) => ({
+  vendor: one(vendors, { fields: [changeRequests.vendorId], references: [vendors.id] }),
+  steps: many(changeRequestSteps),
+  raisedBy: one(users, { fields: [changeRequests.raisedById], references: [users.id], relationName: 'crRaisedBy' }),
+}));
+export const changeRequestStepsRelations = relations(changeRequestSteps, ({ one }) => ({
+  changeRequest: one(changeRequests, { fields: [changeRequestSteps.changeRequestId], references: [changeRequests.id] }),
+  role: one(roles, { fields: [changeRequestSteps.roleId], references: [roles.id] }),
+  actedBy: one(users, { fields: [changeRequestSteps.actedById], references: [users.id], relationName: 'crActedBy' }),
+  assignee: one(users, { fields: [changeRequestSteps.assigneeUserId], references: [users.id], relationName: 'crAssignee' }),
+}));
+
+/* ======================= ERP (Phase 5) ======================= */
+
+/** One ERP connection per workspace. Secrets (passwords, signing keys) are AES-GCM encrypted. */
+export const erpConnections = pgTable('erp_connections', {
+  tenantId: text('tenant_id').primaryKey().references(() => tenants.id, { onDelete: 'cascade' }),
+  /** none · oracle · webhook · csv */
+  kind: text('kind').notNull().default('none'),
+  /** Test mode: build and record exactly what would be sent, but send nothing. */
+  testMode: boolean('test_mode').notNull().default(true),
+  /** Push automatically on approval, approved changes and block / unblock. */
+  autoPush: boolean('auto_push').notNull().default(true),
+  config: jsonb('config').$type<Record<string, string>>().notNull().default({}),
+  secretsEnc: text('secrets_enc'),
+  updatedById: text('updated_by_id').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Every push attempt to the ERP, for status, troubleshooting and retry. */
+export const erpSyncs = pgTable('erp_syncs', {
+  id: id(),
+  tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  /** CREATE · UPDATE · BLOCK · UNBLOCK · MANUAL */
+  event: text('event').notNull(),
+  kind: text('kind').notNull(),
+  /** PENDING · SENT · TEST · FAILED */
+  status: text('status').notNull().default('PENDING'),
+  attempts: integer('attempts').notNull().default(0),
+  target: text('target'),
+  /** What was (or would be) sent — payload / CSV text, never secrets. */
+  request: jsonb('request').$type<{ body?: unknown; csv?: string; fileName?: string; headers?: Record<string, string> }>(),
+  httpStatus: integer('http_status'),
+  response: text('response'),
+  error: text('error'),
+  erpVendorId: text('erp_vendor_id'),
+  requestedBy: text('requested_by'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('erp_syncs_vendor_idx').on(t.vendorId, t.createdAt), index('erp_syncs_tenant_status_idx').on(t.tenantId, t.status)]);
+export const erpSyncsRelations = relations(erpSyncs, ({ one }) => ({ vendor: one(vendors, { fields: [erpSyncs.vendorId], references: [vendors.id] }) }));
+export type ErpConnection = typeof erpConnections.$inferSelect;
+export type ErpSync = typeof erpSyncs.$inferSelect;

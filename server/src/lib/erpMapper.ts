@@ -27,7 +27,7 @@ const COUNTRY_ISO: Record<string, string> = { India: 'IN', 'United Arab Emirates
 const s = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 const ts = (d: Date | null | undefined) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '');
 
-export function toOracleSupplier(v: Vendor, opts: { orgId?: string } = {}) {
+export function toOracleSupplier(v: Vendor, opts: { orgId?: string; action?: 'CREATE' | 'UPDATE' } = {}) {
   const p = (v.profile ?? {}) as Profile;
   const b = p.basic ?? {}, bank = p.bank ?? {}, tax = p.tax ?? {}, risk = p.risk ?? {};
   const domestic = s(b.supplierCountry) === 'India';
@@ -40,7 +40,8 @@ export function toOracleSupplier(v: Vendor, opts: { orgId?: string } = {}) {
       VENDOR: {
         VENDOR_DATA: {
           SOURCE_SYSTEM_NAME: 'VENDOR_PORTAL',
-          VENDOR_ID: '',                   // assigned by the ERP on import
+          SYNC_ACTION: opts.action ?? (v.erpVendorId ? 'UPDATE' : 'CREATE'),
+          VENDOR_ID: v.erpVendorId ?? '',  // assigned by the ERP on the first import; sent back on updates
           SEGMENT1: v.code,                // supplier number
           VENDOR_NAME: s(b.vendorName) || v.name,
           VENDOR_NAME_ALT: s(b.tradingName),
@@ -52,9 +53,10 @@ export function toOracleSupplier(v: Vendor, opts: { orgId?: string } = {}) {
           PAYMENT_PRIORITY: '99',
           INVOICE_CURRENCY_CODE: currency,
           PAYMENT_CURRENCY_CODE: currency,
-          HOLD_ALL_PAYMENTS_FLAG: 'N',
-          HOLD_FUTURE_PAYMENTS_FLAG: 'N',
-          HOLD_FLAG: 'N',
+          HOLD_ALL_PAYMENTS_FLAG: v.blockedAt ? 'Y' : 'N',
+          HOLD_FUTURE_PAYMENTS_FLAG: v.blockedAt ? 'Y' : 'N',
+          HOLD_FLAG: v.blockedAt ? 'Y' : 'N',
+          HOLD_REASON: v.blockedReason ?? '',
           TERMS_DATE_BASIS: 'Invoice',
           TERMS_NAME: TERMS[s(b.paymentTerms)] ?? 'N30',
           MATCH_OPTION: 'P',
@@ -117,4 +119,41 @@ export function toOracleSupplier(v: Vendor, opts: { orgId?: string } = {}) {
       },
     },
   };
+}
+
+/** System-neutral vendor record used by the webhook and CSV connectors. */
+export function toGenericVendor(v: Vendor) {
+  const p = (v.profile ?? {}) as Profile;
+  const b = p.basic ?? {}, bank = p.bank ?? {}, tax = p.tax ?? {};
+  return {
+    id: v.id, code: v.code, erpVendorId: v.erpVendorId ?? null, name: s(b.vendorName) || v.name, vendorType: v.vendorType,
+    status: v.blockedAt ? 'BLOCKED' : v.status === 'APPROVED' ? 'ACTIVE' : v.status,
+    blocked: !!v.blockedAt, blockedReason: v.blockedReason ?? null,
+    approvedAt: v.decidedAt?.toISOString() ?? null,
+    entityType: s(b.entityType), msme: s(b.msmeRegistered) === 'Yes', udyamNumber: s(b.udyamNumber),
+    address: { line1: s(b.address).split('\n')[0] ?? '', line2: s(b.address).split('\n').slice(1).join(', '), city: s(b.district), state: s(b.region), postalCode: s(b.postalCode), country: COUNTRY_ISO[s(b.supplierCountry)] ?? s(b.supplierCountry) },
+    contact: { name: s(b.contactName) || `${v.contactFirstName} ${v.contactLastName}`, email: s(b.contactEmail) || v.contactEmail, mobile: s(b.contactMobile) || v.contactMobile },
+    tax: { pan: s(tax.pan), gstin: s(tax.gstin), tan: s(tax.tan), cin: s(tax.cin), gstClassification: s(tax.gstClassification), foreignTin: s(tax.foreignTin) },
+    bank: { accountName: s(bank.accountHolderName), accountNumber: s(bank.accountNumber), bankName: s(bank.bankName), branch: s(bank.bankBranch), ifsc: s(bank.ifsc), swift: s(bank.swift), iban: s(bank.iban), country: COUNTRY_ISO[s(bank.bankCountry)] ?? s(bank.bankCountry) },
+    paymentTerms: s(b.paymentTerms),
+  };
+}
+
+export const CSV_COLUMNS = [
+  'ACTION', 'VENDOR_CODE', 'ERP_VENDOR_ID', 'VENDOR_NAME', 'VENDOR_TYPE', 'STATUS', 'HOLD_FLAG', 'HOLD_REASON', 'APPROVED_AT',
+  'ADDRESS_LINE1', 'ADDRESS_LINE2', 'CITY', 'STATE', 'POSTAL_CODE', 'COUNTRY', 'CONTACT_NAME', 'CONTACT_EMAIL', 'CONTACT_MOBILE',
+  'PAN', 'GSTIN', 'TAN', 'CIN', 'MSME', 'UDYAM_NO', 'BANK_ACCOUNT_NAME', 'BANK_ACCOUNT_NUMBER', 'BANK_NAME', 'BANK_BRANCH', 'IFSC', 'SWIFT', 'IBAN', 'BANK_COUNTRY', 'PAYMENT_TERMS',
+] as const;
+
+export function toCsvRow(v: Vendor, action: string) {
+  const g = toGenericVendor(v);
+  return [action, g.code, g.erpVendorId ?? '', g.name, g.vendorType, g.status, g.blocked ? 'Y' : 'N', g.blockedReason ?? '', g.approvedAt ?? '',
+    g.address.line1, g.address.line2, g.address.city, g.address.state, g.address.postalCode, g.address.country, g.contact.name, g.contact.email, g.contact.mobile,
+    g.tax.pan, g.tax.gstin, g.tax.tan, g.tax.cin, g.msme ? 'Y' : 'N', g.udyamNumber, g.bank.accountName, g.bank.accountNumber, g.bank.bankName, g.bank.branch, g.bank.ifsc, g.bank.swift, g.bank.iban, g.bank.country, g.paymentTerms];
+}
+
+/** RFC 4180 CSV; cells starting with = + - @ are prefixed with ' so spreadsheets don't run them as formulas. */
+export function toCsv(rows: (readonly string[])[]) {
+  const cell = (x: string) => { let v = x ?? ''; if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`; return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  return rows.map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
 }

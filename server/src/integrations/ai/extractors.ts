@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import type { ExtractKey } from './catalog.js';
 
 export interface RawExtraction { documentType: string; values: Record<string, string>; confidence: Record<string, number>; notes?: string }
@@ -21,7 +20,11 @@ Rules:
 - Confidence: 0.95+ only when the value is clearly printed and fully legible; lower when blurry, cropped or handwritten.
 - documentType must describe what the document actually is, even if it isn't the document that was expected.`;
 
-export function anthropicExtractor(cfg: { apiKey: string; model: string }, client = new Anthropic({ apiKey: cfg.apiKey })): Extractor {
+type MessagesClient = { messages: { create: (args: any) => Promise<{ content: { type: string; [k: string]: unknown }[] }> } };
+
+export function anthropicExtractor(cfg: { apiKey: string; model: string }, injected?: MessagesClient): Extractor {
+  let client: MessagesClient | undefined = injected;
+  const getClient = async () => client ??= new (await import('@anthropic-ai/sdk')).default({ apiKey: cfg.apiKey }) as unknown as MessagesClient;
   return {
     name: 'anthropic', live: true,
     async extract({ bytes, mimeType, expected }) {
@@ -44,13 +47,13 @@ export function anthropicExtractor(cfg: { apiKey: string; model: string }, clien
       const docBlock = mimeType === 'application/pdf'
         ? { type: 'document' as const, source: source as { type: 'base64'; media_type: 'application/pdf'; data: string } }
         : { type: 'image' as const, source: source as { type: 'base64'; media_type: 'image/png' | 'image/jpeg'; data: string } };
-      const msg = await client.messages.create({
+      const msg = await (await getClient()).messages.create({
         model: cfg.model, max_tokens: 1024, system: SYSTEM,
         tools: [tool], tool_choice: { type: 'tool', name: 'record_document' },
         messages: [{ role: 'user', content: [docBlock, { type: 'text', text: `The vendor uploaded this as their ${expected.label}. Record the values you can read.` }] }],
       });
       const use = msg.content.find((c) => c.type === 'tool_use');
-      if (!use || use.type !== 'tool_use') throw new Error('The AI did not return structured output');
+      if (!use) throw new Error('The AI did not return structured output');
       const out = use.input as Partial<RawExtraction>;
       return { documentType: String(out.documentType ?? 'OTHER'), values: (out.values ?? {}) as Record<string, string>, confidence: (out.confidence ?? {}) as Record<string, number>, notes: out.notes || undefined };
     },

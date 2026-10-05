@@ -8,7 +8,9 @@
   ],
   "scripts": {
     "db:up": "docker compose up -d db",
-    "db:setup": "npm run -w server db:reset",
+    "db:setup": "npm run -w server db:setup",
+    "db:reset": "npm run -w server db:reset --",
+    "db:demo-history": "npm run -w server db:demo-history --",
     "dev": "concurrently -n api,web -c magenta,cyan \"npm run -w server dev\" \"npm run -w web dev\"",
     "build": "npm run -w server build && npm run -w web build",
     "start": "npm run -w server start",

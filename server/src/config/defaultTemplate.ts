@@ -188,11 +188,11 @@ const documents: DocumentRequirement[] = [
   { type: 'CANCELLED_CHEQUE', label: 'Cancelled Cheque / Bank Letter', required: true },
   { type: 'INCORPORATION_CERT', label: 'Certificate of Incorporation', required: { field: 'basic.entityType', op: 'in', value: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership'] }, showIf: { field: 'basic.entityType', op: 'in', value: ['Company (Pvt / Public Ltd)', 'Limited Liability Partnership'] } },
   { type: 'MSME_CERT', label: 'Udyam (MSME) Certificate', required: { field: 'basic.msmeRegistered', op: 'eq', value: 'Yes' }, showIf: { field: 'basic.msmeRegistered', op: 'eq', value: 'Yes' } },
-  { type: 'LOWER_TDS_CERT', label: 'Lower / Nil TDS Certificate', required: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' } },
-  { type: 'TRC', label: 'Tax Residency Certificate', required: { field: 'tax.hasTrc', op: 'eq', value: 'Yes' }, showIf: NOT_INDIA },
-  { type: 'NO_PE_CERT', label: 'No-PE Declaration', required: { field: 'tax.holdsNoPe', op: 'eq', value: 'Yes' }, showIf: NOT_INDIA },
+  { type: 'LOWER_TDS_CERT', hasExpiry: true, label: 'Lower / Nil TDS Certificate', required: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' }, showIf: { field: 'tax.concessionalTds', op: 'eq', value: 'Yes' } },
+  { type: 'TRC', hasExpiry: true, label: 'Tax Residency Certificate', required: { field: 'tax.hasTrc', op: 'eq', value: 'Yes' }, showIf: NOT_INDIA },
+  { type: 'NO_PE_CERT', hasExpiry: true, label: 'No-PE Declaration', required: { field: 'tax.holdsNoPe', op: 'eq', value: 'Yes' }, showIf: NOT_INDIA },
   { type: 'FORM_10F', label: 'Form 10F', showIf: NOT_INDIA },
-  { type: 'FINANCIALS', label: 'Latest Audited Financial Statements', help: 'Recommended for turnover above ₹5 crore' },
+  { type: 'FINANCIALS', hasExpiry: true, label: 'Latest Audited Financial Statements', help: 'Recommended for turnover above ₹5 crore. Valid until the next year’s accounts are due.' },
   { type: 'OTHER', label: 'Other Supporting Document' },
 ];
 
@@ -213,6 +213,14 @@ export const defaultConfig: OnboardingConfig = {
       { id: 'finance', label: 'Finance & Risk Review', roleKey: 'FINANCE_MANAGER', slaHours: 48 },
       { id: 'mdm', label: 'Master Data Approval', roleKey: 'MDM_MANAGER', slaHours: 24 },
     ],
+    // Changes after approval: bank details need Finance + Master Data; tax identifiers need Tax + Master Data.
+    changes: {
+      rules: [
+        { match: ['bank.*'], levelIds: ['finance', 'mdm'] },
+        { match: ['tax.*'], levelIds: ['tax', 'mdm'] },
+      ],
+      defaultLevelIds: ['mdm'],
+    },
   },
   guide,
 };

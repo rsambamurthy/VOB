@@ -3,15 +3,18 @@ import path from 'node:path';
 import { env } from '../../lib/env.js';
 import { HttpError } from '../../lib/http.js';
 import { logger } from '../../lib/logger.js';
-import { azureDriver, localDriver, s3Driver, type StorageDriver } from './drivers.js';
+import { localDriver, type StorageDriver } from './drivers.js';
 import { clamScan, pdfLooksActive, sniffType } from './scan.js';
 
 const i = env.int;
 const local = localDriver(env.uploadDir);
-const primary: StorageDriver =
-  i.STORAGE_DRIVER === 's3' ? s3Driver({ bucket: i.S3_BUCKET!, region: i.S3_REGION, endpoint: i.S3_ENDPOINT, accessKeyId: i.S3_ACCESS_KEY_ID!, secretAccessKey: i.S3_SECRET_ACCESS_KEY!, forcePathStyle: i.S3_FORCE_PATH_STYLE === 'true' })
-  : i.STORAGE_DRIVER === 'azure' ? azureDriver({ connectionString: i.AZURE_STORAGE_CONNECTION_STRING!, container: i.AZURE_STORAGE_CONTAINER })
-  : local;
+// Cloud SDKs are imported only when that driver is configured (keeps start-up fast and light).
+const primary: StorageDriver = i.STORAGE_DRIVER === 'local' ? local : await (async () => {
+  const cloud = await import('./cloud.js');
+  return i.STORAGE_DRIVER === 's3'
+    ? cloud.s3Driver({ bucket: i.S3_BUCKET!, region: i.S3_REGION, endpoint: i.S3_ENDPOINT, accessKeyId: i.S3_ACCESS_KEY_ID!, secretAccessKey: i.S3_SECRET_ACCESS_KEY!, forcePathStyle: i.S3_FORCE_PATH_STYLE === 'true' })
+    : cloud.azureDriver({ connectionString: i.AZURE_STORAGE_CONNECTION_STRING!, container: i.AZURE_STORAGE_CONTAINER });
+})();
 
 /** Documents remember which driver stored them, so switching drivers doesn't break old files. */
 export function driverFor(name: string): StorageDriver {

@@ -15,6 +15,27 @@
       "when": 1790959208365,
       "tag": "0001_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791001837645,
+      "tag": "0002_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791014630843,
+      "tag": "0003_staff_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791134190861,
+      "tag": "0004_erp",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,8 @@ import { ruleHolds, type Profile } from '../lib/conditions.js';
 import { getPublished } from './config.js';
 import { approverIds, directApprovers, emailsFor } from './approvers.js';
 import { defineJob } from '../jobs/queue.js';
+import { nextReviewFrom, sweepOverdueChanges } from './lifecycle.js';
+import { pushLater } from '../integrations/erp/index.js';
 import type { WorkflowLevel } from '../config/types.js';
 
 const { vendors, approvalSteps, roles, users, userRoles, tenants } = schema;
@@ -99,10 +101,12 @@ export async function decide(tenantId: string, vendorId: string, actor: { id: st
       await activate(next, vendor);
       return { status: 'UNDER_REVIEW' as const, nextLevel: next.label };
     }
-    await setVendor(tenantId, vendorId, { status: 'APPROVED', decidedAt: now });
+    const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
+    await setVendor(tenantId, vendorId, { status: 'APPROVED', decidedAt: now, nextReviewAt: nextReviewFrom(now, tenant?.settings.reKycMonths), reviewStatus: 'OK' });
     await audit({ tenantId, vendorId, actor: 'system', action: 'VENDOR_APPROVED' });
     await sendMail({ tenantId, to: vendor.contactEmail, subject: 'Your vendor registration is approved',
       body: `Dear ${vendor.contactFirstName},\n\n${vendor.name} has been approved as a vendor (vendor code ${vendor.code}). Welcome aboard.` });
+    await pushLater(tenantId, vendorId, 'CREATE');
     return { status: 'APPROVED' as const };
   }
 
@@ -172,4 +176,4 @@ export async function sweepOverdue(now = new Date()) {
 }
 
 
-defineJob('sla.sweep', async () => { await sweepOverdue(); }, { retryLimit: 0, expireInSeconds: 240 });
+defineJob('sla.sweep', async () => { await sweepOverdue(); await sweepOverdueChanges(); }, { retryLimit: 0, expireInSeconds: 240 });

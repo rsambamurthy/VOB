@@ -50,3 +50,13 @@ export async function emailsFor(ids: Iterable<string>) {
   if (!list.length) return [];
   return db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, list));
 }
+
+/** Active users holding a permission through any of their roles. */
+export async function usersWithPermission(tenantId: string, perm: string) {
+  const rows = await db.select({ name: schema.users.name, email: schema.users.email, permissions: schema.roles.permissions }).from(schema.userRoles)
+    .innerJoin(schema.users, eq(schema.users.id, schema.userRoles.userId)).innerJoin(schema.roles, eq(schema.roles.id, schema.userRoles.roleId))
+    .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.status, 'ACTIVE')));
+  const seen = new Map<string, { name: string; email: string }>();
+  for (const r of rows) if (r.permissions.includes(perm)) seen.set(r.email, { name: r.name, email: r.email });
+  return [...seen.values()];
+}

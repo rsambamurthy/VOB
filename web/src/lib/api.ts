@@ -15,7 +15,13 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     body: opts.body === undefined ? undefined : isForm ? (opts.body as FormData) : JSON.stringify(opts.body),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, json.error ?? `Request failed (${res.status})`, json.details, json.code);
+  if (!res.ok) {
+    // No JSON body on a 5xx = the dev proxy couldn't reach the API (it isn't running or crashed on start-up).
+    const unreachable = res.status >= 500 && !json.error;
+    // The page knows an endpoint the running API doesn't: the API is an older build that wasn't restarted.
+    if (json.code === 'NO_ROUTE') throw new ApiError(404, 'The API server is running older code than this page. Stop the API window (Ctrl+C) and start it again, then refresh.', undefined, 'NO_ROUTE');
+    throw new ApiError(res.status, json.error ?? (unreachable ? 'Can’t reach the server. Check the terminal running “npm run dev” — the [api] lines will show why it stopped.' : `Request failed (${res.status})`), json.details, json.code);
+  }
   return json as T;
 }
 

@@ -17,14 +17,18 @@ export function StaffShell() {
           <span className="brand-text"><span>{product}</span><span className="brand-tenant">{me.tenant.name}</span></span>
         </div>
         <nav aria-label="Main">
+          {can('reports.view') && <NavLink to="/staff/dashboard">Dashboard</NavLink>}
           {can('vendors.view') && <NavLink to="/staff/vendors" end>Vendors</NavLink>}
           {can('vendors.view') && <NavLink to="/staff/queue">My approvals</NavLink>}
+          {can('vendors.view') && <NavLink to="/staff/changes">Change requests</NavLink>}
+          {can('reports.view') && <NavLink to="/staff/reports">Reports</NavLink>}
           {admin && <div className="nav-section">Administration</div>}
           {can('users.manage') && <NavLink to="/staff/admin/users">Users</NavLink>}
           {can('users.manage') && <NavLink to="/staff/admin/roles">Roles</NavLink>}
           {can('config.manage') && <NavLink to="/staff/admin/config">Configuration</NavLink>}
           {can('tenant.settings') && <NavLink to="/staff/admin/workspace">Workspace</NavLink>}
           {can('tenant.settings') && <NavLink to="/staff/admin/integrations">Integrations</NavLink>}
+          {can('tenant.settings') && <NavLink to="/staff/admin/erp">ERP integration</NavLink>}
           {can('audit.view') && <NavLink to="/staff/admin/audit">Audit log</NavLink>}
           {me.devMailbox && <NavLink to="/staff/mailbox">Mailbox <span className="tag">dev</span></NavLink>}
         </nav>

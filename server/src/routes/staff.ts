@@ -16,11 +16,32 @@ import { canAct, coveringFor } from '../services/approvers.js';
 import { getConfig } from '../services/config.js';
 import { latestChecks, runKyc, type KycKind } from '../integrations/kyc/index.js';
 import { extractionsFor } from '../integrations/ai/index.js';
-import { publicCheck } from './vendorPortal.js';
-import { toOracleSupplier } from '../lib/erpMapper.js';
+import { checkExpiry, publicCheck, upload } from './vendorPortal.js';
+import { getPublished } from '../services/config.js';
+import { storeUpload, removeStored } from '../integrations/storage/index.js';
+import { cancelStaffChange, changeRequestsForVendor, decideChange, flagsForMany, openChangeRequest, reassignChangeStep, reviewVendor, setBlocked, submitChangeRequest } from '../services/lifecycle.js';
+import { approverIds } from '../services/approvers.js';
+import { CSV_COLUMNS, toCsv, toCsvRow, toOracleSupplier } from '../lib/erpMapper.js';
+import { queueErpPush, recentSyncs, retrySync, syncsForVendor, syncSummary } from '../integrations/erp/index.js';
+import { actionFor } from '../integrations/erp/drivers.js';
 import { validators } from '../lib/validators.js';
 
-const { vendors, approvalSteps, documents, auditLogs, userRoles } = schema;
+const { vendors, approvalSteps, documents, auditLogs, userRoles, changeRequests, changeRequestSteps } = schema;
+
+/** Change requests waiting on this user (own role / assignment / delegation). */
+async function myPendingChangeIds(tenantId: string, userId: string) {
+  const people = [userId, ...(await coveringFor(tenantId, userId))];
+  const roleIds = [...new Set((await db.select({ id: userRoles.roleId }).from(userRoles).where(inArray(userRoles.userId, people))).map((r) => r.id))];
+  const byRole = roleIds.length ? and(isNull(changeRequestSteps.assigneeUserId), inArray(changeRequestSteps.roleId, roleIds)) : undefined;
+  const byAssignee = inArray(changeRequestSteps.assigneeUserId, people);
+  const rows = await db.selectDistinct({ id: changeRequestSteps.changeRequestId }).from(changeRequestSteps)
+    .where(and(eq(changeRequestSteps.tenantId, tenantId), eq(changeRequestSteps.status, 'PENDING'), byRole ? or(byRole, byAssignee) : byAssignee));
+  if (!rows.length) return new Set<string>();
+  // A change someone proposed is never in their own queue — someone else has to approve it.
+  const mineRaised = await db.select({ id: changeRequests.id }).from(changeRequests).where(and(inArray(changeRequests.id, rows.map((r) => r.id)), eq(changeRequests.raisedById, userId)));
+  const skip = new Set(mineRaised.map((r) => r.id));
+  return new Set(rows.map((r) => r.id).filter((id) => !skip.has(id)));
+}
 
 /** Pending steps the user can act on: own role / own assignment, plus anyone they're covering for. */
 async function actionableStepFilter(tenantId: string, userId: string) {
@@ -48,7 +69,7 @@ async function sendInvite(tenantName: string, v: { tenantId: string; name: strin
 
 staffRouter.get('/vendors', requireStaff('vendors.view'), ah(async (req, res) => {
   const s = staffCtx(req);
-  const { q, status, mine } = req.query as Record<string, string | undefined>;
+  const { q, status, mine, attention } = req.query as Record<string, string | undefined>;
   const filters: SQL[] = [eq(vendors.tenantId, s.tenant.id)];
   if (status) filters.push(eq(vendors.status, status as VendorStatus));
   if (q) filters.push(or(ilike(vendors.name, `%${q}%`), ilike(vendors.code, `%${q}%`), ilike(vendors.contactEmail, `%${q}%`))!);
@@ -64,8 +85,15 @@ staffRouter.get('/vendors', requireStaff('vendors.view'), ah(async (req, res) =>
     with: { steps: { where: eq(approvalSteps.status, 'PENDING'), columns: { label: true, roleId: true, dueAt: true }, with: { assignee: { columns: { name: true } } } }, createdBy: { columns: { name: true } } },
   });
   const counts = await db.select({ status: vendors.status, n: count() }).from(vendors).where(eq(vendors.tenantId, s.tenant.id)).groupBy(vendors.status);
+  const flags = await flagsForMany(s.tenant.id, rows);
+  const myChanges = await myPendingChangeIds(s.tenant.id, s.user.id);
+  const list = attention === 'true' ? rows.filter((v) => (flags.get(v.id) ?? []).length) : rows;
+  // How many approved vendors need attention (for the stat tile), computed over the whole workspace
+  const allApproved = attention === 'true' || status || q || mine ? null : rows.filter((v) => (flags.get(v.id) ?? []).length).length;
   res.json({
-    vendors: rows.map(({ steps, ...v }) => ({ ...v, pendingStep: steps[0] ? { label: steps[0].label, mine: mineIds.has(v.id), dueAt: steps[0].dueAt, overdue: !!steps[0].dueAt && steps[0].dueAt < new Date(), assignee: steps[0].assignee?.name ?? null } : null })),
+    attentionCount: allApproved ?? undefined,
+    myChangeQueue: myChanges.size,
+    vendors: list.map(({ steps, ...v }) => ({ ...v, flags: flags.get(v.id) ?? [], pendingStep: steps[0] ? { label: steps[0].label, mine: mineIds.has(v.id), dueAt: steps[0].dueAt, overdue: !!steps[0].dueAt && steps[0].dueAt < new Date(), assignee: steps[0].assignee?.name ?? null } : null })),
     counts: Object.fromEntries(counts.map((c) => [c.status, c.n])),
     myQueue: pendingForMe.length,
   });
@@ -135,7 +163,7 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
   const canInvite = s.permissions.has('vendors.create');
   res.json({
     vendor: { ...rest, steps: rest.steps.map(({ role, assignee, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
-    checklist: buildChecklist(config, profile, v.documents.map((d) => d.docType), v.vendorType),
+    checklist: buildChecklist(config, profile, v.documents.filter((d) => d.status === 'ACTIVE').map((d) => d.docType), v.vendorType),
     docRequirements: visibleDocRequirements(config, profile, v.vendorType),
     canAct: !!pending && await canAct(pending, s.user.id),
     canReassign: !!pending && s.permissions.has('approvals.manage'),
@@ -143,6 +171,21 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
     extractions: await extractionsFor(v.id, profile, config),
     canInvite,
     canExport: s.permissions.has('vendors.export'),
+    canBlock: s.permissions.has('vendors.block'),
+    canPropose: s.permissions.has('vendors.edit') && v.status === 'APPROVED',
+    me: s.user.id,
+    flags: (await flagsForMany(s.tenant.id, [v])).get(v.id) ?? [],
+    changeRequests: await Promise.all((await changeRequestsForVendor(v.id)).map(async (cr) => {
+      const cur = cr.steps.find((st) => st.status === 'PENDING');
+      return {
+        ...cr,
+        raisedBy: cr.raisedBy ? { id: cr.raisedBy.id, name: cr.raisedBy.name } : null,
+        canWithdraw: cr.status === 'PENDING' && !!cr.raisedById && (cr.raisedById === s.user.id || s.permissions.has('approvals.manage')),
+        steps: cr.steps.map(({ role, assignee, actedBy, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, actedBy: actedBy ? { name: actedBy.name } : null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })),
+        canAct: !!cur && cr.raisedById !== s.user.id && (await approverIds(cur)).has(s.user.id),
+        canReassign: !!cur && s.permissions.has('approvals.manage'),
+      };
+    })),
   });
 }));
 
@@ -190,4 +233,175 @@ staffRouter.post('/vendors/:id/verify/:kind', requireStaff('vendors.view'), ah(a
   const r = await runKyc(v, kind, input, s.user.name);
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'VERIFICATION_RUN', detail: { kind, status: r.status }, ip: req.ip });
   res.json(publicCheck(r));
+}));
+
+/* ---------- Change requests (after approval) ---------- */
+
+staffRouter.get('/change-requests', requireStaff('vendors.view'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const mine = req.query.mine === 'true';
+  const status = typeof req.query.status === 'string' ? req.query.status : 'PENDING';
+  const myIds = await myPendingChangeIds(s.tenant.id, s.user.id);
+  const rows = await db.query.changeRequests.findMany({
+    where: and(eq(changeRequests.tenantId, s.tenant.id), eq(changeRequests.status, status), ...(mine ? [myIds.size ? inArray(changeRequests.id, [...myIds]) : sql`false`] : [])),
+    orderBy: desc(changeRequests.createdAt), limit: 200,
+    with: { vendor: { columns: { id: true, name: true, code: true } }, raisedBy: { columns: { name: true } }, steps: { where: eq(changeRequestSteps.status, 'PENDING'), columns: { label: true, dueAt: true }, with: { assignee: { columns: { name: true } } } } },
+  });
+  res.json(rows.map(({ steps, ...cr }) => ({ ...cr, pendingStep: steps[0] ? { label: steps[0].label, dueAt: steps[0].dueAt, overdue: !!steps[0].dueAt && steps[0].dueAt < new Date(), assignee: steps[0].assignee?.name ?? null } : null, mine: myIds.has(cr.id) })));
+}));
+
+staffRouter.post('/change-requests/:id/decision', requireStaff('vendors.view'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { action, remarks } = z.object({ action: z.enum(['APPROVE', 'REJECT']), remarks: z.string().max(2000).default('') }).parse(req.body);
+  res.json(await decideChange(s.tenant.id, req.params.id, { id: s.user.id, name: s.user.name }, action, remarks, req.ip));
+}));
+
+staffRouter.get('/change-requests/:id/assignable', requireStaff('approvals.manage'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const cr = await db.query.changeRequests.findFirst({ where: and(eq(changeRequests.tenantId, s.tenant.id), eq(changeRequests.id, req.params.id)) });
+  if (!cr) throw new HttpError(404, 'Change request not found');
+  const step = await db.query.changeRequestSteps.findFirst({ where: and(eq(changeRequestSteps.changeRequestId, cr.id), eq(changeRequestSteps.status, 'PENDING')) });
+  if (!step) throw new HttpError(409, 'Nothing is pending');
+  res.json(await assignableUsers(s.tenant.id, step.roleId));
+}));
+
+staffRouter.post('/change-requests/:id/steps/:stepId/assign', requireStaff('approvals.manage'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { userId } = z.object({ userId: z.string().nullable() }).parse(req.body);
+  res.json(await reassignChangeStep(s.tenant.id, req.params.id, req.params.stepId, userId, { name: s.user.name }, req.ip));
+}));
+
+/* ---------- Staff-proposed changes (on the vendor's behalf) ---------- */
+
+async function approvedVendor(tenantId: string, id: string) {
+  const v = await findVendor(tenantId, id);
+  if (!v) throw new HttpError(404, 'Vendor not found');
+  if (v.status !== 'APPROVED') throw new HttpError(409, 'Only approved vendors can be changed this way');
+  return v;
+}
+
+/** Upload a document as part of a proposal; it stays PENDING until the change is approved. */
+staffRouter.post('/vendors/:id/documents', requireStaff('vendors.edit'), upload.single('file'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await approvedVendor(s.tenant.id, req.params.id);
+  if (!req.file) throw new HttpError(400, 'No file uploaded');
+  if (await openChangeRequest(v.id)) throw new HttpError(409, 'This vendor already has a change request waiting for review');
+  const { config } = await getPublished(v.tenantId);
+  const docType = String(req.body.docType ?? '');
+  const req_ = config.documents.find((d) => d.type === docType);
+  if (!req_) throw new HttpError(400, 'Unknown document type');
+  const expiresOn = checkExpiry(req_, req.body.expiresOn);
+  const stored = await storeUpload(v.tenantId, v.id, req.file);
+  const [doc] = await db.insert(documents).values({ tenantId: v.tenantId, vendorId: v.id, docType, ...stored, expiresOn, status: 'PENDING', uploadedById: s.user.id }).returning();
+  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: s.user.name, action: 'DOCUMENT_UPLOADED', detail: { docType, fileName: stored.fileName, onBehalf: 'yes' }, ip: req.ip });
+  const { storagePath: _p, ...safe } = doc;
+  res.status(201).json(safe);
+}));
+
+staffRouter.delete('/vendors/:id/documents/:docId', requireStaff('vendors.edit'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const doc = await db.query.documents.findFirst({ where: and(eq(documents.tenantId, s.tenant.id), eq(documents.vendorId, req.params.id), eq(documents.id, req.params.docId)) });
+  if (!doc) throw new HttpError(404, 'Document not found');
+  if (doc.status !== 'PENDING' || doc.changeRequestId || doc.uploadedById !== s.user.id) throw new HttpError(409, 'Only your own not-yet-submitted uploads can be removed');
+  await db.delete(documents).where(eq(documents.id, doc.id));
+  await removeStored(doc);
+  await audit({ tenantId: s.tenant.id, vendorId: doc.vendorId, actor: s.user.name, action: 'DOCUMENT_REMOVED', detail: { docType: doc.docType, fileName: doc.fileName }, ip: req.ip });
+  res.json({ ok: true });
+}));
+
+staffRouter.post('/vendors/:id/change-requests', requireStaff('vendors.edit'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await approvedVendor(s.tenant.id, req.params.id);
+  const input = z.object({ changes: z.record(z.record(z.unknown())).default({}), note: z.string().max(1000).default('') }).parse(req.body);
+  const cr = await submitChangeRequest(v, input, req.ip, { id: s.user.id, name: s.user.name });
+  res.status(201).json({ id: cr.id });
+}));
+
+staffRouter.post('/change-requests/:id/cancel', requireStaff(), ah(async (req, res) => {
+  const s = staffCtx(req);
+  await cancelStaffChange(s.tenant.id, req.params.id, { id: s.user.id, name: s.user.name, canManage: s.permissions.has('approvals.manage') }, req.ip);
+  res.json({ ok: true });
+}));
+
+/* ---------- Block / unblock / re-check ---------- */
+
+staffRouter.post('/vendors/:id/block', requireStaff('vendors.block'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { reason, notifyVendor } = z.object({ reason: z.string().max(500), notifyVendor: z.boolean().default(false) }).parse(req.body);
+  await setBlocked(s.tenant.id, req.params.id, true, reason, { id: s.user.id, name: s.user.name }, notifyVendor, req.ip);
+  res.json({ ok: true });
+}));
+
+staffRouter.post('/vendors/:id/unblock', requireStaff('vendors.block'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { reason, notifyVendor } = z.object({ reason: z.string().max(500), notifyVendor: z.boolean().default(false) }).parse(req.body);
+  await setBlocked(s.tenant.id, req.params.id, false, reason, { id: s.user.id, name: s.user.name }, notifyVendor, req.ip);
+  res.json({ ok: true });
+}));
+
+/** Run the periodic re-verification now. */
+staffRouter.post('/vendors/:id/review', requireStaff('vendors.block'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v || v.status !== 'APPROVED') throw new HttpError(409, 'Only approved vendors are re-checked');
+  res.json(await reviewVendor(v, s.user.name));
+}));
+
+/* ---------- ERP push (Phase 5) ---------- */
+
+staffRouter.get('/vendors/:id/erp', requireStaff('vendors.view'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v) throw new HttpError(404, 'Vendor not found');
+  const conn = await db.query.erpConnections.findFirst({ where: eq(schema.erpConnections.tenantId, s.tenant.id) });
+  res.json({
+    connector: conn?.kind ?? 'none', testMode: conn?.testMode ?? true,
+    erpVendorId: v.erpVendorId, status: v.erpSyncStatus, syncedAt: v.erpSyncedAt,
+    canPush: s.permissions.has('vendors.export') && v.status === 'APPROVED' && !!conn && conn.kind !== 'none',
+    deliveries: (await syncsForVendor(v.id)).map(syncSummary),
+  });
+}));
+
+staffRouter.post('/vendors/:id/erp/push', requireStaff('vendors.export'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v) throw new HttpError(404, 'Vendor not found');
+  if (v.status !== 'APPROVED') throw new HttpError(409, 'Only approved vendors are sent to the ERP');
+  const sync = await queueErpPush(s.tenant.id, v.id, 'MANUAL', s.user.name);
+  res.status(202).json(syncSummary(sync!));
+}));
+
+staffRouter.get('/erp/deliveries', requireStaff('vendors.export'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const status = typeof req.query.status === 'string' && req.query.status ? req.query.status : undefined;
+  res.json((await recentSyncs(s.tenant.id, status)).map((x) => ({ ...syncSummary(x), vendor: x.vendor })));
+}));
+
+staffRouter.post('/erp/deliveries/:id/retry', requireStaff('vendors.export'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  res.json(syncSummary(await retrySync(s.tenant.id, req.params.id, s.user.name)));
+}));
+
+/** What a delivery sent: the JSON body, or the CSV file. */
+staffRouter.get('/erp/deliveries/:id/payload', requireStaff('vendors.export'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const x = await db.query.erpSyncs.findFirst({ where: and(eq(schema.erpSyncs.tenantId, s.tenant.id), eq(schema.erpSyncs.id, req.params.id)) });
+  if (!x || !x.request) throw new HttpError(404, 'Nothing was recorded for this delivery');
+  await audit({ tenantId: s.tenant.id, vendorId: x.vendorId, actor: s.user.name, action: 'ERP_PAYLOAD_VIEWED', detail: { delivery: x.id }, ip: req.ip });
+  if (x.request.csv) {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${x.request.fileName ?? 'vendor.csv'}"`);
+    return res.send(x.request.csv);
+  }
+  res.json({ target: x.target, headers: x.request.headers, body: x.request.body, httpStatus: x.httpStatus, response: x.response });
+}));
+
+/** All approved vendors as one CSV (for a first bulk load into the ERP). */
+staffRouter.get('/erp/export.csv', requireStaff('vendors.export'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const rows = await db.query.vendors.findMany({ where: and(eq(vendors.tenantId, s.tenant.id), eq(vendors.status, 'APPROVED')), orderBy: asc(vendors.code) });
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'ERP_BULK_EXPORTED', detail: { vendors: rows.length }, ip: req.ip });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="vendors_${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(toCsv([CSV_COLUMNS, ...rows.map((v) => toCsvRow(v, actionFor(v, 'MANUAL')))]));
 }));

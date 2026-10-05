@@ -72,6 +72,10 @@ const schema = z.object({
   AI_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('claude-sonnet-5-5'),
+
+  /** ERP push: allow targets on private / local networks (on-prem Oracle EBS behind VPN). Off by default in production. */
+  ERP_ALLOW_PRIVATE_HOSTS: z.enum(['true', 'false']).optional(),
+  ERP_TIMEOUT_MS: z.coerce.number().default(20000),
 });
 
 const parsed = schema.parse(process.env);

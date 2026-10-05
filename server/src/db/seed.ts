@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { eq } from 'drizzle-orm';
 import { db, pool, schema } from '../lib/db.js';
 import { env } from '../lib/env.js';
 import { gstinCheckChar } from '../lib/validators.js';
@@ -83,6 +84,8 @@ export async function seed() {
   const mdm = await makeUser(acme, 'Vikram Shah', 'mdm@acme.test', [role('MDM_MANAGER')], hash);
   await makeUser(acme, 'Farah Khan', 'farah@acme.test', [role('VIEWER')], hash, 'INVITED');
   await makeUser(acme, 'Joseph Mathew', 'compliance@acme.test', [role('COMPLIANCE')], hash);
+  // A second Master Data Manager, so a change one of them proposes can be approved by the other.
+  await makeUser(acme, 'Kiran Patel', 'mdm2@acme.test', [role('MDM_MANAGER')], hash);
 
   const [approved] = await db.insert(vendors).values({
     tenantId: acme.id, code: 'VND-00001', name: 'Precision Valves Pvt Ltd', vendorType: 'DOMESTIC', contactFirstName: 'Rahul', contactLastName: 'Deshmukh',
@@ -91,9 +94,9 @@ export async function seed() {
     createdAt: daysAgo(12), submittedAt: daysAgo(9), decidedAt: daysAgo(6),
   }).returning();
   await db.insert(approvalSteps).values([
-    { tenantId: acme.id, vendorId: approved.id, cycle: 1, level: 1, roleId: role('TAX_MANAGER').id, label: 'Tax Review', status: 'APPROVED', remarks: 'GSTIN and PAN verified', actedById: tax.id, actedAt: daysAgo(8) },
-    { tenantId: acme.id, vendorId: approved.id, cycle: 1, level: 2, roleId: role('FINANCE_MANAGER').id, label: 'Finance & Risk Review', status: 'APPROVED', remarks: 'CRISIL BBB+, acceptable', actedById: fin.id, actedAt: daysAgo(7) },
-    { tenantId: acme.id, vendorId: approved.id, cycle: 1, level: 3, roleId: role('MDM_MANAGER').id, label: 'Master Data Approval', status: 'APPROVED', actedById: mdm.id, actedAt: daysAgo(6) },
+    { tenantId: acme.id, vendorId: approved.id, cycle: 1, level: 1, roleId: role('TAX_MANAGER').id, label: 'Tax Review', status: 'APPROVED', remarks: 'GSTIN and PAN verified', actedById: tax.id, activatedAt: daysAgo(9), actedAt: daysAgo(8) },
+    { tenantId: acme.id, vendorId: approved.id, cycle: 1, level: 2, roleId: role('FINANCE_MANAGER').id, label: 'Finance & Risk Review', status: 'APPROVED', remarks: 'CRISIL BBB+, acceptable', actedById: fin.id, activatedAt: daysAgo(8), actedAt: daysAgo(7) },
+    { tenantId: acme.id, vendorId: approved.id, cycle: 1, level: 3, roleId: role('MDM_MANAGER').id, label: 'Master Data Approval', status: 'APPROVED', actedById: mdm.id, activatedAt: daysAgo(7), actedAt: daysAgo(6) },
   ]);
 
   const [review] = await db.insert(vendors).values({
@@ -103,7 +106,7 @@ export async function seed() {
     createdAt: daysAgo(5), submittedAt: daysAgo(2),
   }).returning();
   await db.insert(approvalSteps).values([
-    { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 1, roleId: role('TAX_MANAGER').id, label: 'Tax Review', status: 'APPROVED', remarks: 'OK', actedById: tax.id, actedAt: daysAgo(1) },
+    { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 1, roleId: role('TAX_MANAGER').id, label: 'Tax Review', status: 'APPROVED', remarks: 'OK', actedById: tax.id, activatedAt: daysAgo(2), actedAt: daysAgo(1) },
     { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 2, roleId: role('FINANCE_MANAGER').id, label: 'Finance & Risk Review', status: 'PENDING', slaHours: 48, activatedAt: daysAgo(1), dueAt: new Date(Date.now() + 86_400_000) },
     { tenantId: acme.id, vendorId: review.id, cycle: 1, level: 3, roleId: role('MDM_MANAGER').id, label: 'Master Data Approval', status: 'WAITING', slaHours: 24 },
   ]);
@@ -123,7 +126,13 @@ export async function seed() {
     },
   }).returning();
 
-  await db.insert(documents).values([...placeholderDocs(acme.id, approved.id, FULL_DOCS), ...placeholderDocs(acme.id, review.id, FULL_DOCS)]);
+  const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+  // Precision's audited financials expire in 20 days, and its yearly re-check is due — so it shows up under "Needs attention".
+  await db.insert(documents).values([
+    ...placeholderDocs(acme.id, approved.id, FULL_DOCS).map((d) => (d.docType === 'FINANCIALS' ? { ...d, expiresOn: inDays(20) } : d)),
+    ...placeholderDocs(acme.id, review.id, FULL_DOCS).map((d) => (d.docType === 'FINANCIALS' ? { ...d, expiresOn: inDays(300) } : d)),
+  ]);
+  await db.update(vendors).set({ nextReviewAt: daysAgo(1), reviewStatus: 'OK', lastReviewAt: daysAgo(6) }).where(eq(vendors.id, approved.id));
   for (const v of [approved, review, invited, foreign]) {
     await db.insert(auditLogs).values({ tenantId: acme.id, vendorId: v.id, actor: admin.name, action: 'VENDOR_CREATED', createdAt: v.createdAt });
   }
@@ -143,7 +152,7 @@ export async function seed() {
   });
 
   console.log(`\nDemo workspaces ready. Password for every demo user: ${DEMO_PASSWORD}`);
-  console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test, compliance@acme.test');
+  console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test, mdm2@acme.test, compliance@acme.test');
   console.log('  Workspace "globex": admin@globex.test\n');
 }
 

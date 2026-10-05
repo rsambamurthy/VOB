@@ -8,13 +8,13 @@ export function Workspace() {
   const t = me!.tenant;
   const [f, setF] = useState({
     name: t.name, productName: t.branding.productName ?? '', primaryColor: t.branding.primaryColor ?? '#6d1a73', logoUrl: t.branding.logoUrl ?? '',
-    requireMfa: !!t.settings.requireMfa, sessionHours: t.settings.sessionHours ?? 12,
+    requireMfa: !!t.settings.requireMfa, sessionHours: t.settings.sessionHours ?? 12, reKycMonths: t.settings.reKycMonths ?? 12,
   });
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
   async function save(e: React.FormEvent) {
     e.preventDefault(); setMsg(undefined);
     try {
-      await api('/admin/tenant', { method: 'PATCH', body: { name: f.name, branding: { productName: f.productName || undefined, primaryColor: f.primaryColor, logoUrl: f.logoUrl }, settings: { requireMfa: f.requireMfa, sessionHours: Number(f.sessionHours) } } });
+      await api('/admin/tenant', { method: 'PATCH', body: { name: f.name, branding: { productName: f.productName || undefined, primaryColor: f.primaryColor, logoUrl: f.logoUrl }, settings: { requireMfa: f.requireMfa, sessionHours: Number(f.sessionHours), reKycMonths: Number(f.reKycMonths) } } });
       await refresh();
       setMsg({ kind: 'success', text: 'Workspace settings saved.' });
     } catch (err: any) { setMsg({ kind: 'error', text: err.message }); }
@@ -39,6 +39,11 @@ export function Workspace() {
           <h3>Security</h3>
           <label className="check-item"><input type="checkbox" checked={f.requireMfa} onChange={(e) => setF({ ...f, requireMfa: e.target.checked })} /><span><strong>Require two-factor authentication for all staff</strong><span className="muted small block">Users without 2FA will be asked to set it up before they can do anything else.</span></span></label>
           <div className="field" style={{ maxWidth: 260, marginTop: 12 }}><label htmlFor="w-hours">Sign-in session length (hours)</label><input id="w-hours" type="number" min={1} max={72} value={f.sessionHours} onChange={(e) => setF({ ...f, sessionHours: Number(e.target.value) })} /></div>
+        </section>
+        <section className="card pad section-card">
+          <h3>Vendor lifecycle</h3>
+          <p className="muted small">Approved vendors are re-checked on this cycle: GSTIN, PAN and bank details are verified again and the vendor is asked to confirm their details. Problems are flagged to approvers. Document expiry reminders go out 30 days, 7 days and on the day a document expires.</p>
+          <div className="field" style={{ maxWidth: 260 }}><label htmlFor="w-rekyc">Re-verify every (months)</label><input id="w-rekyc" type="number" min={0} max={60} value={f.reKycMonths} onChange={(e) => setF({ ...f, reKycMonths: Number(e.target.value) })} /><div className="field-help">0 turns periodic re-checks off.</div></div>
         </section>
         <div><button className="btn btn-primary">Save settings</button></div>
       </form>

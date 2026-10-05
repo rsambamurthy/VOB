@@ -8,11 +8,16 @@ import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
-import type { Branding, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Profile, SectionDef, VendorFull } from '../lib/types';
+import type { Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Flag, Profile, SectionDef, VendorFull } from '../lib/types';
+import { ChangeDiff, CrHistory, diffProfiles, FlagBadges } from '../components/Lifecycle';
+import { fmtDate } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding }; checks: Check[]; extractions: Extraction[] };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding }; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null };
+type Lifecycle = { blocked: boolean; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
+
+
 
 /** Fields that get an online "Verify" button: field key -> [check kind, fields to send]. */
 const VERIFY: Record<string, { kind: string; label: string; from: (p: Profile) => Record<string, string> }> = {
@@ -35,11 +40,17 @@ export function VendorPortal() {
   const [saving, setSaving] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
+  // Approved vendors: edits are collected locally and sent as one change request.
+  const [changeMode, setChangeMode] = useState(false);
+  const [crOpen, setCrOpen] = useState(false);
+  const [crNote, setCrNote] = useState('');
+  const [crErrors, setCrErrors] = useState<Record<string, string>>({});
+  const [crBusy, setCrBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (reset = false) => {
     try {
       const r = await api<Me>('/vendor');
-      setMe(r); setProfile((p) => (Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
+      setMe(r); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
   useEffect(() => { load(); }, [load]);
@@ -54,15 +65,25 @@ export function VendorPortal() {
   }, [dirty]);
 
   const errors = useMemo(() => {
-    const m: Record<string, string> = {};
+    const m: Record<string, string> = { ...crErrors };
     for (const c of me?.checklist ?? []) if (!c.ok && c.message && revealed.has(c.section)) m[c.id.replace(/^cross\./, '')] = c.message;
     return m;
-  }, [me, revealed]);
+  }, [me, revealed, crErrors]);
 
   if (!me) return <div className="center-page"><div className="spinner" /></div>;
   const v = me.vendor;
-  const editable = me.editable;
   const cfg = me.config;
+  const lc = me.lifecycle;
+  const approved = v.status === 'APPROVED' && !!lc;
+  const openCr = lc?.changeRequests.find((c) => c.status === 'PENDING');
+  const canChange = approved && !lc!.blocked && !openCr;
+  const editable = me.editable || (changeMode && canChange);
+  const docsEditable = me.editable || canChange;
+  const newDocs = v.documents.filter((d) => d.status === 'PENDING' && !d.changeRequestId);
+  const fieldChanges = approved ? diffProfiles(cfg.sections, v.profile, profile) : [];
+  // Asked to confirm after each periodic re-check, until they do.
+  const reviewRequested = approved && !!v.lastReviewAt && (!v.lastConfirmedAt || v.lastConfirmedAt < v.lastReviewAt);
+  const docFlags = lc?.flags.filter((f) => f.code === 'DOC_EXPIRED' || f.code === 'DOC_EXPIRING') ?? [];
   const tabs = [...cfg.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' }];
   const sectionErrors = (k: string) => me.checklist.filter((c) => c.section === k && !c.ok && c.severity === 'error').length;
 
@@ -72,7 +93,7 @@ export function VendorPortal() {
   }
 
   async function save(section = tab, quiet = false) {
-    if (!dirty.has(section) || section === 'documents') { setRevealed((r) => new Set(r).add(section)); return true; }
+    if (!me!.editable || !dirty.has(section) || section === 'documents') { setRevealed((r) => new Set(r).add(section)); return true; }
     setSaving(true);
     try {
       const r = await api<{ checklist: ChecklistItem[]; docRequirements: DocRequirement[] }>(`/vendor/profile/${section}`, { method: 'PUT', body: profile[section] ?? {} });
@@ -91,9 +112,12 @@ export function VendorPortal() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function upload(docType: string, file: File) {
-    const fd = new FormData(); fd.append('docType', docType); fd.append('file', file);
-    try { await api('/vendor/documents', { body: fd }); await load(); setRevealed((r) => new Set(r).add('documents')); }
+  async function upload(docType: string, file: File, expiresOn?: string) {
+    const fd = new FormData(); fd.append('docType', docType); if (expiresOn) fd.append('expiresOn', expiresOn); fd.append('file', file);
+    try {
+      await api('/vendor/documents', { body: fd }); await load(); setRevealed((r) => new Set(r).add('documents'));
+      if (approved) setFlash({ kind: 'info', text: 'Uploaded. New documents take effect once you submit a change request and it is approved.' });
+    }
     catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
   async function remove(id: string) {
@@ -132,6 +156,34 @@ export function VendorPortal() {
     }
   }
 
+  function discardChanges() {
+    setProfile(v.profile); setDirty(new Set()); setChangeMode(false); setCrErrors({}); setFlash(undefined);
+  }
+  async function submitChange() {
+    setCrBusy(true);
+    try {
+      const changes = Object.fromEntries([...new Set(fieldChanges.map((c) => c.fieldId.split('.')[0]))].map((sec) => [sec, profile[sec] ?? {}]));
+      await api('/vendor/change-requests', { body: { changes, note: crNote || undefined } });
+      setCrOpen(false); setCrNote(''); setChangeMode(false); setDirty(new Set()); setCrErrors({});
+      setFlash({ kind: 'success', text: 'Change request submitted. Your current details stay in effect until it is approved — we’ll email you the outcome.' });
+      await load(true);
+    } catch (e: any) {
+      if (e instanceof ApiError && Array.isArray(e.details)) {
+        setCrErrors(Object.fromEntries((e.details as ChecklistItem[]).filter((c) => c.message).map((c) => [c.id.replace(/^cross\./, ''), c.message!])));
+        setChangeMode(true);
+      }
+      setCrOpen(false); setFlash({ kind: 'error', text: e.message });
+    } finally { setCrBusy(false); }
+  }
+  async function cancelCr(id: string) {
+    try { await api(`/vendor/change-requests/${id}/cancel`, { method: 'POST' }); setFlash({ kind: 'info', text: 'Change request withdrawn.' }); await load(true); }
+    catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+  }
+  async function confirmDetails() {
+    try { await api('/vendor/confirm-details', { method: 'POST' }); setFlash({ kind: 'success', text: 'Thanks — your details are confirmed as current.' }); await load(); }
+    catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+  }
+
   const blocking = me.checklist.filter((c) => !c.ok && c.severity === 'error').length;
   const extra = (f: FieldDef) => {
     const cfg = editable ? VERIFY[f.key] : undefined;
@@ -160,11 +212,27 @@ export function VendorPortal() {
       </header>
 
       <div className="page">
-        <header className="page-head"><div><h1>Business profile</h1><p className="muted">Vendor code <span className="mono">{v.code}</span>. Complete each tab, upload documents, then submit for review.</p></div></header>
+        <header className="page-head">
+          <div><h1>{approved ? 'Registered details' : 'Business profile'}</h1>
+            <p className="muted">Vendor code <span className="mono">{v.code}</span>. {approved ? 'To update anything, request a change — it takes effect once approved.' : 'Complete each tab, upload documents, then submit for review.'}</p></div>
+          {approved && !changeMode && <div className="head-actions"><button className="btn btn-secondary" disabled={!canChange} title={!canChange ? (lc!.blocked ? 'Your account is on hold' : 'A change request is already under review') : undefined} onClick={() => { setChangeMode(true); setFlash(undefined); }}>Request changes</button></div>}
+        </header>
 
         {v.status === 'SENT_BACK' && <Alert kind="warning"><strong>Changes requested:</strong> “{me.sendBackRemarks}”. Update the form and submit again.</Alert>}
         {v.status === 'UNDER_REVIEW' && <Alert kind="info">Submitted — your registration is being reviewed. Editing is locked until a decision is made.</Alert>}
-        {v.status === 'APPROVED' && <Alert kind="success">You’re approved and active as a vendor. 🎉</Alert>}
+        {approved && lc!.blocked && <Alert kind="error"><strong>Your vendor account is on hold.</strong> Please contact {me.buyer.name} for details. Changes can’t be requested while on hold.</Alert>}
+        {approved && openCr && (
+          <Alert kind="info"><strong>{openCr.byBuyer ? `${me.buyer.name} is updating your details` : 'Change request under review'}</strong> ({openCr.steps.filter((s) => s.status === 'PENDING' || s.status === 'WAITING').map((s) => s.label).join(' → ') || 'review'}). Your current details stay in effect until it’s approved.{' '}
+            {!openCr.byBuyer && <button className="link-btn" onClick={() => cancelCr(openCr.id)}>Withdraw request</button>}</Alert>
+        )}
+        {approved && reviewRequested && !changeMode && (
+          <Alert kind="warning"><strong>Periodic review:</strong> please check that your registered details are still correct.{' '}
+            <button className="btn btn-primary btn-sm" onClick={confirmDetails}>Yes, they’re correct</button>{' '}
+            {canChange && <button className="btn btn-ghost btn-sm" onClick={() => setChangeMode(true)}>Something changed</button>}</Alert>
+        )}
+        {approved && docFlags.length > 0 && <Alert kind="warning"><strong>{docFlags.map((f) => f.label).join(' · ')}.</strong> Upload renewed documents on the <button className="link-btn" onClick={() => goTo('documents')}>Documents</button> tab and submit them as a change request.</Alert>}
+        {approved && changeMode && <Alert kind="info"><strong>Editing</strong> — change the values you need to update, then submit the request for review. Bank details changes are verified and we’ll email your registered contact as a precaution.</Alert>}
+        {approved && !changeMode && !lc!.flags.length && !reviewRequested && <Alert kind="success">You’re approved and active as a vendor. 🎉</Alert>}
         {v.status === 'REJECTED' && <Alert kind="error">This registration was not approved. Check your email for the reason.</Alert>}
         {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
         {editable && tab !== 'documents' && me.extractions.some((e) => e.status === 'DONE' && !e.appliedAt && e.suggestions.some((x) => x.state !== 'match')) && (
@@ -185,14 +253,22 @@ export function VendorPortal() {
               {cfg.sections.filter((s) => s.key === tab).map((s) => (
                 <DynamicSection key={s.key} section={s} profile={profile} vendorType={v.vendorType} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} />
               ))}
-              {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={editable} onUpload={upload} onDelete={remove} />}
-              {tab === 'documents' && editable && me.extractions.filter((e) => e.status !== 'SKIPPED' && v.documents.some((d) => d.id === e.documentId)).map((e) => {
+              {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={docsEditable} onUpload={upload} onDelete={remove}
+                canDelete={approved ? (d) => d.status === 'PENDING' && !d.changeRequestId : undefined} uploadLabel={approved ? 'Upload renewal' : undefined} />}
+              {tab === 'documents' && me.editable && me.extractions.filter((e) => e.status !== 'SKIPPED' && v.documents.some((d) => d.id === e.documentId)).map((e) => {
                 const doc = v.documents.find((d) => d.id === e.documentId)!;
                 const label = me.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType;
                 return <ExtractionCard key={e.id} ex={e} docLabel={label} onApply={(ids) => applyExtraction(e.id, ids)} />;
               })}
             </div>
-            {editable && (
+            {approved && (changeMode || newDocs.length > 0) && (
+              <div className="form-foot">
+                {changeMode && <button className="btn btn-ghost" onClick={discardChanges}>Discard changes</button>}
+                <span className="muted small grow">{fieldChanges.length} field{fieldChanges.length === 1 ? '' : 's'} changed{newDocs.length ? ` · ${newDocs.length} new document${newDocs.length === 1 ? '' : 's'}` : ''}</span>
+                <button className="btn btn-primary" disabled={!fieldChanges.length && !newDocs.length} onClick={() => setCrOpen(true)}>Review & submit change</button>
+              </div>
+            )}
+            {me.editable && (
               <div className="form-foot">
                 <button className="btn btn-ghost" disabled={saving || !dirty.has(tab)} onClick={() => save()}>{saving ? 'Saving…' : 'Save'}</button>
                 {tabs.findIndex((t) => t.key === tab) < tabs.length - 1
@@ -202,7 +278,21 @@ export function VendorPortal() {
             )}
           </div>
           <aside className="side-col">
-            {editable ? (
+            {approved ? (
+              <>
+                <div className="card pad">
+                  <h3 className="card-title">Your account</h3>
+                  <dl className="kv small">
+                    <dt>Status</dt><dd>{lc!.blocked ? <span className="badge flag-high">On hold</span> : <span className="badge badge-approved">Active</span>}</dd>
+                    <dt>Last confirmed</dt><dd>{fmtDate(v.lastConfirmedAt ?? v.decidedAt)}</dd>
+                    <dt>Next review</dt><dd>{fmtDate(lc!.nextReviewAt)}</dd>
+                  </dl>
+                  <FlagBadges flags={lc!.flags.filter((f) => f.code !== 'BLOCKED')} />
+                  {!reviewRequested && <button className="link-btn small" onClick={confirmDetails}>Confirm my details are current</button>}
+                </div>
+                <div className="card pad"><h3 className="card-title">Change requests</h3><CrHistory items={lc!.changeRequests} onCancel={cancelCr} /></div>
+              </>
+            ) : me.editable ? (
               <div className="card pad">
                 <Checklist items={me.checklist} sections={cfg.sections} onJump={(s) => { setRevealed((r) => new Set(r).add(s)); goTo(s); }} />
                 <button className="btn btn-primary btn-block" onClick={() => setConfirmSubmit(true)} disabled={saving}>Submit for review</button>
@@ -223,6 +313,15 @@ export function VendorPortal() {
       {showGuide && (
         <Modal title="Vendor onboarding guide" onClose={() => setShowGuide(false)}>
           {cfg.guide.map((g) => <div key={g.title} className="guide-step"><h4>{g.title}</h4><p>{g.body}</p></div>)}
+        </Modal>
+      )}
+      {crOpen && (
+        <Modal title="Submit change request?" wide onClose={() => setCrOpen(false)}
+          footer={<><button className="btn btn-ghost" onClick={() => setCrOpen(false)}>Keep editing</button><button className="btn btn-primary" disabled={crBusy} onClick={submitChange}>{crBusy ? 'Submitting…' : 'Submit for review'}</button></>}>
+          <ChangeDiff changes={fieldChanges} docCount={newDocs.length} />
+          <label className="field"><span>Reason for the change (optional)</span>
+            <textarea className="input" rows={2} maxLength={1000} value={crNote} onChange={(e) => setCrNote(e.target.value)} placeholder="e.g. We moved our account to a new bank" /></label>
+          <p className="small muted">Your current details stay in effect until the change is approved.</p>
         </Modal>
       )}
       {confirmSubmit && (

@@ -1,4 +1,6 @@
 import request from 'supertest';
+import { expect } from 'vitest';
+import { gstinCheckChar } from '../src/lib/validators.js';
 import { desc, eq } from 'drizzle-orm';
 import { createApp } from '../src/app.js';
 import { db, schema } from '../src/lib/db.js';
@@ -46,3 +48,24 @@ export async function globexAdmin() {
   await db.update(schema.users).set({ mfaEnabled: false, mfaSecretEnc: null }).where(eq(schema.users.email, 'admin@globex.test'));
   return login('admin@globex.test', 'globex');
 }
+
+/** Onboard a vendor all the way to APPROVED and return a signed-in vendor session. */
+const PDF = '%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF';
+export async function approvedVendor(name: string, email: string) {
+  const admin = await login('admin@acme.test');
+  const id = (await admin.post('/api/staff/vendors', { name, vendorType: 'DOMESTIC', contactFirstName: 'Life', contactLastName: 'Cycle', contactEmail: email, contactMobile: '9800022233' })).body.vendor.id;
+  const token = tokenOf((await lastLinkTo(email))!);
+  const v = client();
+  const { devOtp } = (await v.post('/api/vendor-auth/request-otp', { token })).body;
+  await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp });
+  const pan = 'AAFCL1234Q'; const g = `27${pan}1Z`;
+  await v.put('/api/vendor/profile/basic', { entityType: 'Company (Pvt / Public Ltd)', address: '1 Main Rd', region: 'Maharashtra', district: 'Pune', postalCode: '411001', msmeRegistered: 'No', supplyCategory: 'Goods' });
+  await v.put('/api/vendor/profile/bank', { bankName: 'HDFC Bank', accountHolderName: name, accountNumber: '501000123456', bankBranch: 'Pune', ifsc: 'HDFC0000001' });
+  await v.put('/api/vendor/profile/tax', { hasGst: 'Yes', gstin: g + gstinCheckChar(g), gstClassification: 'Regular', pan, cin: 'U74999MH2015PTC123456' });
+  await v.put('/api/vendor/profile/risk', { fiscalYearEnd: 'March', currency: 'INR', turnoverYear: 'FY 2024-25', annualTurnover: '9000000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' });
+  for (const t of ['PAN_CARD', 'GST_CERT', 'CANCELLED_CHEQUE', 'INCORPORATION_CERT']) expect((await v.upload('/api/vendor/documents', t, PDF)).status).toBe(201);
+  expect((await v.post('/api/vendor/submit')).status).toBe(200);
+  for (const u of ['tax@acme.test', 'finance@acme.test', 'mdm@acme.test']) expect((await (await login(u)).post(`/api/staff/vendors/${id}/decision`, { action: 'APPROVE' })).status).toBe(200);
+  return { v, id, admin };
+}
+

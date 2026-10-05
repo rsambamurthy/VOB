@@ -11,6 +11,10 @@ import { ForgotPassword } from './pages/auth/ForgotPassword';
 import { ResetPassword } from './pages/auth/ResetPassword';
 import { AcceptInvite } from './pages/auth/AcceptInvite';
 import { VendorList } from './pages/VendorList';
+import { ChangeRequests } from './pages/ChangeRequests';
+import { Dashboard } from './pages/Dashboard';
+import { Reports } from './pages/Reports';
+import { ErpSettings } from './pages/admin/Erp';
 import { VendorDetail } from './pages/VendorDetail';
 import { Mailbox } from './pages/Mailbox';
 import { Account } from './pages/Account';
@@ -37,6 +41,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="vendors" element={<VendorList />} />
               <Route path="queue" element={<VendorList mine />} />
               <Route path="vendors/:id" element={<VendorDetail />} />
+              <Route path="changes" element={<ChangeRequests />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="admin/erp" element={<ErpSettings />} />
               <Route path="account" element={<Account />} />
               <Route path="admin/users" element={<Users />} />
               <Route path="admin/roles" element={<Roles />} />

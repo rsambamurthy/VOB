@@ -17,6 +17,8 @@ import { kycStatus } from '../integrations/kyc/index.js';
 import { aiStatus } from '../integrations/ai/index.js';
 import { queueRunning } from '../jobs/queue.js';
 import { env } from '../lib/env.js';
+import { checkConnection, connectionInput, getConnection, publicConnection, saveConnection } from '../integrations/erp/index.js';
+import { send as sendErp } from '../integrations/erp/drivers.js';
 
 const { users, roles, userRoles, auditLogs, tenants, approvalSteps } = schema;
 export const adminRouter = Router();
@@ -170,7 +172,7 @@ adminRouter.patch('/tenant', requireStaff('tenant.settings'), ah(async (req, res
       primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value like #6d1a73').optional(),
       logoUrl: z.string().url().max(500).optional().or(z.literal('')),
     }).optional(),
-    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional() }).optional(),
+    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), reKycMonths: z.number().int().min(0).max(60).optional() }).optional(),
   }).parse(req.body);
   await db.update(tenants).set({
     ...(input.name ? { name: input.name } : {}),
@@ -226,4 +228,31 @@ adminRouter.post('/integrations/test-sms', requireStaff('tenant.settings'), ah(a
 
 adminRouter.post('/integrations/test-storage', requireStaff('tenant.settings'), ah(async (_req, res) => {
   try { res.json({ ok: true, detail: await storageCheck() }); } catch (e: any) { throw new HttpError(502, `Storage check failed: ${e.message}`); }
+}));
+
+/* ---------- ERP integration (Phase 5) ---------- */
+
+adminRouter.get('/erp', requireStaff('tenant.settings'), ah(async (req, res) => {
+  res.json(publicConnection(await getConnection(staffCtx(req).tenant.id)));
+}));
+
+adminRouter.put('/erp', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  res.json(await saveConnection(s.tenant.id, connectionInput.parse(req.body), { id: s.user.id, name: s.user.name }, req.ip));
+}));
+
+adminRouter.post('/erp/test', requireStaff('tenant.settings'), ah(async (req, res) => {
+  res.json(await checkConnection(staffCtx(req).tenant.id));
+}));
+
+/** Exactly what would be sent for a vendor with the saved settings (nothing is sent). */
+adminRouter.get('/erp/preview', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const conn = await getConnection(s.tenant.id);
+  if (conn.kind === 'none') throw new HttpError(409, 'Choose and save a connector first');
+  const vendorId = typeof req.query.vendorId === 'string' ? req.query.vendorId : undefined;
+  const v = await db.query.vendors.findFirst({ where: and(eq(schema.vendors.tenantId, s.tenant.id), vendorId ? eq(schema.vendors.id, vendorId) : eq(schema.vendors.status, 'APPROVED')), orderBy: desc(schema.vendors.decidedAt) });
+  if (!v) throw new HttpError(404, 'No approved vendor to preview with yet');
+  const r = await sendErp({ ...conn, testMode: true }, v, 'MANUAL', { syncId: 'preview', tenantSlug: s.tenant.slug });
+  res.json({ vendor: { id: v.id, name: v.name, code: v.code }, ...r });
 }));

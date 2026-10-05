@@ -14,15 +14,17 @@ export interface GroupDef { key: string; label: string; fields: FieldDef[] }
 export interface SectionDef { key: string; label: string; groups: GroupDef[] }
 export interface DocRequirement { type: string; label: string; help?: string; required?: boolean | Condition; showIf?: Condition; hasExpiry?: boolean; isRequired?: boolean }
 export interface WorkflowLevel { id: string; label: string; roleKey: string; rule?: Rule; slaHours?: number }
-export interface OnboardingConfig { sections: SectionDef[]; documents: DocRequirement[]; workflow: { levels: WorkflowLevel[] }; guide: { title: string; body: string }[] }
+export interface ChangeRule { match: string[]; levelIds: string[] }
+export interface ChangeApproval { rules: ChangeRule[]; defaultLevelIds: string[] }
+export interface OnboardingConfig { sections: SectionDef[]; documents: DocRequirement[]; workflow: { levels: WorkflowLevel[]; changes?: ChangeApproval }; guide: { title: string; body: string }[] }
 export interface ConfigIssue { path: string; message: string }
 
 
-export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 'users.manage' | 'tenant.settings' | 'config.manage' | 'approvals.manage' | 'reports.view' | 'audit.view';
+export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 'vendors.block' | 'vendors.edit' | 'users.manage' | 'tenant.settings' | 'config.manage' | 'approvals.manage' | 'reports.view' | 'audit.view';
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
-  tenant: { id: string; slug: string; name: string; branding: Branding; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both' } };
+  tenant: { id: string; slug: string; name: string; branding: Branding; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number } };
   roles: { id: string; key: string; name: string }[];
   permissions: Permission[];
   mfaSetupRequired: boolean;
@@ -30,7 +32,8 @@ export interface Me {
 }
 
 export interface ChecklistItem { id: string; section: string; label: string; ok: boolean; message?: string; severity: 'error' | 'warning' }
-export interface DocumentRow { id: string; docType: string; fileName: string; mimeType: string; size: number; uploadedAt: string }
+export type DocStatus = 'ACTIVE' | 'PENDING' | 'SUPERSEDED' | 'REJECTED';
+export interface DocumentRow { id: string; docType: string; fileName: string; mimeType: string; size: number; uploadedAt: string; status?: DocStatus; expiresOn?: string | null; changeRequestId?: string | null; uploadedById?: string | null }
 export interface Step {
   id: string; cycle: number; level: number; roleId?: string; roleName?: string; label: string; status: StepStatus;
   remarks?: string | null; actedAt?: string | null; actedBy?: { name: string } | null;
@@ -43,8 +46,11 @@ export interface VendorSummary {
   contactEmail: string; contactMobile: string; status: VendorStatus; reviewCycle: number;
   createdAt: string; updatedAt: string; submittedAt?: string | null; decidedAt?: string | null;
   pendingStep?: { label: string; mine: boolean; dueAt?: string | null; overdue?: boolean; assignee?: string | null } | null; createdBy?: { name: string };
+  flags?: Flag[];
 }
 export interface VendorFull extends VendorSummary {
+  blockedAt?: string | null; blockedReason?: string | null; nextReviewAt?: string | null; lastReviewAt?: string | null;
+  reviewStatus?: string | null; reviewNote?: string | null; lastConfirmedAt?: string | null;
   profile: Profile; documents: DocumentRow[]; steps: Step[]; audit?: AuditRow[]; inviteLink?: string;
 }
 
@@ -57,4 +63,19 @@ export interface Suggestion { fieldId: string; fieldLabel: string; value: string
 export interface Extraction {
   id: string; documentId: string; status: 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED'; provider: string; test: boolean;
   summary: string | null; error: string | null; appliedAt: string | null; docTypeDetected: string | null; suggestions: Suggestion[];
+}
+
+export interface Flag { code: 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
+export type CrStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export interface FieldChange { fieldId: string; label: string; old: string; new: string }
+export interface ChangeRequest {
+  id: string; status: CrStatus; changes: FieldChange[]; documentIds: string[]; note: string | null; remarks: string | null;
+  sensitive?: boolean; createdAt: string; decidedAt: string | null; steps: Step[]; canAct?: boolean; canReassign?: boolean;
+  /** staff view */ raisedBy?: { id: string; name: string } | null; canWithdraw?: boolean;
+  /** vendor view: proposed by the buyer's staff */ byBuyer?: boolean;
+}
+export interface ChangeQueueRow {
+  id: string; status: CrStatus; changes: FieldChange[]; documentIds: string[]; sensitive: boolean; createdAt: string; mine: boolean;
+  vendor: { id: string; name: string; code: string }; raisedBy: { name: string } | null;
+  pendingStep: { label: string; dueAt: string | null; overdue: boolean; assignee: string | null } | null;
 }

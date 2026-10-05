@@ -12,9 +12,9 @@ A multi-tenant SaaS for supplier onboarding: buyer companies invite vendors, and
 | **1. Platform foundation** | Multi-tenant workspaces, staff accounts (password, invite, reset, lockout), TOTP 2FA + recovery codes, workspace-enforced 2FA, tenant-defined roles & permissions, cookie sessions, CSRF / rate limits / security headers, audit log, SQL migrations, automated tests | ✅ |
 | **2. Admin configuration** | Per-workspace form fields, documents and approval flow edited in the UI, with draft → publish, version history, restore and live preview. Rule-based approval levels (e.g. extra level for import vendors, Finance only above ₹5 cr), per-level deadlines (SLAs) with overdue reminders and escalation, reassigning a step to a person, and out-of-office delegation | ✅ |
 | **3. Integrations** | Postgres job queue with retries; branded HTML email (SMTP / SendGrid); SMS sign-in codes (MSG91 DLT / Twilio); S3 / R2 / Azure storage with content-type sniffing, script-PDF blocking and optional ClamAV; GSTIN / PAN / penny-drop / MCA checks (Surepass) with caching, limits, masking and name matching; Claude reading uploaded documents to suggest values and flag mismatches. All in **test mode** until keys are added | ✅ |
-| 4. Vendor lifecycle | Change requests + re-approval, document expiry, re-KYC, block/unblock | ⏳ next |
-| 5. Reports & ERP | Funnel, TAT, ageing, Excel; ERP push adapters | ⏳ |
-| 6. Hardening | Field-level encryption, DPDP, E2E tests, CI, deployment | ⏳ |
+| **4. Vendor lifecycle** | Approved vendors request changes, which are re-approved by the levels the changed fields need (bank → Finance + MDM, with automatic penny-drop and a security email). Document renewals with expiry dates and 30 / 7 / 0-day reminders. Periodic re-verification with vendor confirmation. Block / unblock with ERP payment holds. "Needs attention" flags across the vendor list | ✅ |
+| **5. Reports & ERP** | Dashboard with an onboarding funnel, turnaround, time per approval level, ageing and approver workload. Eight reports with Excel download. Automatic ERP push to Oracle EBS, a signed webhook or CSV (download or SFTP), with test mode, retries, a delivery log and the ERP vendor id stored on the vendor | ✅ |
+| 6. Hardening | Field-level encryption, DPDP, E2E tests, CI, deployment | ⏳ next |
 
 ## Quick start (Windows / macOS / Linux)
 
@@ -24,12 +24,12 @@ Prerequisites: **Node 20+** and **Docker Desktop** (running), or your own Postgr
 npm install
 npm run db:up                                   # Postgres in Docker on port 5433
 copy server\.env.example server\.env            # macOS/Linux: cp server/.env.example server/.env
-npm run db:setup                                # creates tables (migrations) + demo data
+npm run db:setup                                # creates/updates tables; demo data only if empty
 npm run dev                                     # web → http://localhost:5173, API → :4000
 ```
 
 If `db:setup` fails right after `db:up`, wait about 10 seconds for Postgres to start and run it again.
-`db:setup` **wipes and reloads** the demo data, so only run it on a dev database.
+`db:setup` is safe to run after every update: it applies new migrations and **never deletes data**. Demo workspaces are loaded only into an empty database. To deliberately wipe everything and reload the demo data, run `npm run db:reset -- --yes`.
 
 ### Demo sign-in
 
@@ -86,6 +86,55 @@ Optional local services: `docker compose --profile scan up -d clamav` (virus sca
 
 **Test-mode tips:** a PAN whose 9th character is `0`, a GSTIN whose 13th character is `0`, or a bank account ending in `0` returns "not found", so you can see the failure path.
 
+## Reports and ERP (Phase 5)
+
+**Dashboard** (needs `reports.view`; Administrator, Vendor Admin, Finance, Master Data Manager and Viewer have it by default). Filter by period and vendor type.
+- **Tiles:** vendors approved, median days from invite to approval, open registrations, overdue approval steps, active and blocked vendors, and vendors needing attention.
+- **Funnel:** vendors invited in the period, and how many started, submitted and were approved.
+- **Turnaround:** median, average and slowest 10%, split into vendor time and review time.
+- **Monthly:** vendors invited and approved per month.
+- **Time per approval level:** with the share decided after the deadline and the number waiting now.
+- **Ageing:** open registrations by stage and days waiting. Click a number to open the list.
+- **Approver workload:** items waiting now, overdue, decided, and median response time.
+
+**Reports** (preview on screen, **Download Excel** for the full list; every download is audited):
+- Vendor register (PAN and bank account masked)
+- Pending approvals
+- Deadline (SLA) breaches
+- Onboarding turnaround
+- Change requests
+- Expiring documents
+- Blocked vendors
+- ERP deliveries
+
+To see the dashboard with realistic data, run `npm run db:demo-history`. It adds about 40 demo vendors with a year of history to the `acme` workspace. It only adds records, never changes or deletes any, and runs once.
+
+**ERP push** is set up under Administration → **ERP integration**. Each workspace gets one connector:
+- **Oracle E-Business Suite:** POSTs the `ERPVendorsData` payload (vendor → sites → banks, India localisation block) to a REST endpoint, with Basic auth and the operating unit (ORG_ID). `SYNC_ACTION` is CREATE until the ERP returns a vendor id, then UPDATE, with `VENDOR_ID` filled in.
+- **Webhook:** POSTs a JSON event with the headers `X-VendorGate-Event`, `X-VendorGate-Delivery`, `X-VendorGate-Timestamp` and `X-VendorGate-Signature: sha256=HMAC(secret, "<timestamp>.<body>")`.
+  - Events: `vendor.approved`, `vendor.updated`, `vendor.blocked`, `vendor.unblocked`, `vendor.synced` and `ping`.
+  - Reply with `{"vendorId":"…"}` and that id is stored on the vendor.
+- **CSV:** one file per event (ACTION, vendor, address, tax, bank, hold flag columns). Files are kept for download or uploaded to an SFTP folder. There is also a one-click CSV of all approved vendors for a first bulk load.
+
+How pushing works:
+- **When it pushes:** on final approval, when an approved change takes effect (field changes only), and on block or unblock, so the ERP hold flag follows. "Push to ERP" on the vendor sends it on demand.
+- **Delivery:** pushes run in the background with 4 retries and backoff. Each attempt is logged with the response, and a failed push emails the users who have `vendors.export`. Failed pushes can be retried from the vendor page or the delivery log.
+- **Test mode** (on by default) records exactly what would be sent but sends nothing, and never stores a fake ERP id.
+- **Security:**
+  - Passwords and signing secrets are stored AES-GCM-encrypted and never sent back to the browser.
+  - In production, ERP URLs must be https and public unless `ERP_ALLOW_PRIVATE_HOSTS=true`.
+  - CSV cells that look like formulas are neutralised.
+
+## Vendor lifecycle (Phase 4)
+
+- **Change requests.** Once approved, the vendor portal shows the registered details read-only. **Request changes** unlocks the form; the vendor submits one request at a time, with an optional note, and sees an old → new summary first. The request goes only to the levels set under **Configuration → Approval flow → Changes after approval** (match a section with `bank.*`, a single field, or `documents`). If nothing matches, the default levels review it, or the last level if no default is set. The old values stay live until the final approval.
+- **Staff-proposed changes.** Users with the `vendors.edit` permission (Master Data Manager and Administrator by default) can click **Propose change** on an approved vendor. They edit fields, attach replacement documents, and must give a reason and source (for example, "vendor emailed a new cheque on 3 Oct"). The proposal goes through the same routed approval. The proposer can never approve it: it is left out of their queue, and an approvals manager can reassign a step if they are the only person in that role. The demo has a second MDM, `mdm2@acme.test`. The vendor's contact is emailed when the change is proposed and again when it takes effect. They see it in the portal but cannot withdraw it; the proposer can.
+- **Sensitive changes** (bank, GSTIN, PAN, legal name) are labelled for reviewers. A bank change also runs a penny-drop on the new account and emails the registered contact a security notice.
+- **Documents.** Documents with an expiry (lower-TDS certificate, TRC, no-PE, financials) ask for a *valid until* date. A daily job (09:15 IST) reminds the vendor 30 days before, 7 days before and on the day, and copies approvers when a document has expired. After approval, renewals are uploaded as *pending* and go through a change request; once approved they replace the old file, which is kept as *replaced*.
+- **Periodic re-check.** This runs every *N* months (Workspace → Vendor lifecycle; default 12; 0 turns it off). It re-runs the GSTIN, PAN and bank checks and asks the vendor to confirm their details. Problems are flagged to approvers. Staff can also click **Run re-check**.
+- **Block / unblock** needs the `vendors.block` permission (Admin and Master Data Manager by default). A reason is required and the vendor can optionally be emailed. Blocking sets the HOLD flags in the ERP export and stops change requests.
+- **Needs attention.** The vendor list shows flags (blocked, expired or expiring documents, change pending, re-check due or failed) and a *Needs attention* filter. **Change requests** in the sidebar is the reviewers' queue, with overdue markers; deadlines and escalation work the same way as onboarding.
+
 ## Onboarding configuration (Phase 2)
 
 Each workspace has its own **versioned** configuration: tabs → groups → fields, documents, approval levels and the portal guide.
@@ -114,8 +163,10 @@ Each workspace has its own **versioned** configuration: tabs → groups → fiel
 | Command | What it does |
 |---|---|
 | `npm run dev` | API + web with hot reload |
-| `npm test` | 49 automated tests covering email/SMS/storage/KYC/AI integrations, validators, auth, 2FA, tenant isolation, permissions, configuration editing and publishing, rule-based approval flows, SLA escalation, reassignment, delegation and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
-| `npm run db:setup` | Drop, migrate, reseed (dev only) |
+| `npm test` | 69 automated tests covering reports and Excel export, ERP push (webhook signatures, Oracle payload, CSV, failures and retry), vendor lifecycle (change requests, renewals, expiry reminders, re-checks, block/unblock), email/SMS/storage/KYC/AI integrations, validators, auth, 2FA, tenant isolation, permissions, configuration editing and publishing, rule-based approval flows, SLA escalation, reassignment, delegation and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
+| `npm run db:setup` | Apply new migrations; load demo data only into an empty database. Never deletes anything |
+| `npm run db:demo-history` | Add a year of demo onboarding history to the `acme` workspace for the dashboard (adds only, runs once) |
+| `npm run db:reset -- --yes` | **Wipe** the database and reload the demo data (dev only; refuses without `--yes`) |
 | `npm run -w server db:migrate` | Apply pending migrations (use this in production) |
 | `npm run -w server db:generate` | Create a new migration after editing `server/src/db/schema.ts` |
 | `npm run tenant:create -- …` | Provision a customer workspace |
@@ -141,8 +192,10 @@ server/src/
   services/approvers.ts  who can act on a step (role, assignee, delegation)
   integrations/          email · sms · storage (+ scan) · kyc · ai — each with test + live drivers
   jobs/queue.ts          Postgres job queue (pg-boss) with inline fallback
-  services/              tenants, users, workflowEngine
-  routes/                staffAuth, vendorAuth, admin, staff (vendors), vendorPortal, documents
+  services/              tenants, users, workflowEngine, lifecycle (changes, expiry, re-checks, block, flags)
+  routes/                staffAuth, vendorAuth, admin (incl. ERP settings), staff (vendors, ERP push), vendorPortal, documents, reports
+  services/reports.ts    dashboard metrics, report definitions, Excel export
+  integrations/erp/      ERP connectors (Oracle EBS, webhook, CSV/SFTP), push queue, delivery log
   db/schema.ts           tables  ·  drizzle/  SQL migrations
 server/tests/            Vitest + Supertest suites
 web/src/
