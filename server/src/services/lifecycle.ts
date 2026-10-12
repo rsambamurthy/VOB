@@ -15,7 +15,8 @@ import { getPublished } from './config.js';
 import { approverIds, directApprovers, emailsFor, usersWithPermission } from './approvers.js';
 export { usersWithPermission } from './approvers.js';
 import { buildChecklist, isSubmittable, sanitizeSection, type Profile } from '../lib/profileEngine.js';
-import { runKyc, type KycKind } from '../integrations/kyc/index.js';
+import { runKyc } from '../integrations/kyc/index.js';
+import { allChecks, checkInputs } from '../countries/registry.js';
 import { pushLater } from '../integrations/erp/index.js';
 import type { OnboardingConfig } from '../config/types.js';
 
@@ -115,9 +116,10 @@ export async function submitChangeRequest(vendor: Vendor, input: { changes: Reco
 
   // Fraud controls for bank changes: run a penny-drop on the new account and alert the registered contact.
   if (diff.some((d) => d.fieldId.startsWith('bank.'))) {
-    const p = proposed.bank ?? {};
-    if (p.accountNumber && p.ifsc) {
-      await runKyc({ ...vendor, profile: proposed }, 'bank', { accountNumber: str(p.accountNumber), ifsc: str(p.ifsc) }, 'system (bank change)').catch((e) => logger.warn({ err: e }, 'bank check on change failed'));
+    for (const { def } of allChecks().filter((c) => c.def.onBankChange)) {
+      const input = checkInputs(def, proposed as Profile);
+      if (!Object.values(input).every(Boolean)) continue;
+      await runKyc({ ...vendor, profile: proposed }, def.kind, input, 'system (bank change)').catch((e) => logger.warn({ err: e }, 'bank check on change failed'));
     }
     await sendMail({ tenantId: vendor.tenantId, to: vendor.contactEmail, subject: 'Security notice: bank details change requested',
       body: `Dear ${vendor.contactFirstName},\n\nA request to change the bank account registered for ${vendor.name} was submitted on the supplier portal. It will only take effect after review.\n\nIf you did not make this request, reply to this email or contact the buyer immediately.`, link: portalUrl(vendor) });
@@ -308,18 +310,19 @@ export function nextReviewFrom(from: Date, months: number | undefined) {
 /** Re-run the automated checks for one approved vendor; flag ATTENTION on any failure or expired document. */
 export async function reviewVendor(v: Vendor, requestedBy = 'system (periodic review)') {
   const p = v.profile as Profile;
-  const plan: [KycKind, Record<string, string>][] = [];
-  if (p.tax?.gstin) plan.push(['gstin', { gstin: str(p.tax.gstin) }]);
-  if (p.tax?.pan) plan.push(['pan', { pan: str(p.tax.pan) }]);
-  if (p.tax?.cin) plan.push(['cin', { cin: str(p.tax.cin) }]);
-  if (p.bank?.accountNumber && p.bank?.ifsc) plan.push(['bank', { accountNumber: str(p.bank.accountNumber), ifsc: str(p.bank.ifsc) }]);
+  // Every online check whose inputs this vendor has filled in (GSTIN, PAN, CIN, bank for Indian suppliers).
+  const plan: [string, Record<string, string>, string][] = [];
+  for (const { def } of allChecks()) {
+    const input = checkInputs(def, p);
+    if (Object.values(input).every(Boolean)) plan.push([def.kind, input, def.label]);
+  }
   const problems: string[] = [];
-  for (const [kind, input] of plan) {
+  for (const [kind, input, label] of plan) {
     try {
       const r = await runKyc(v, kind, input, requestedBy);
-      if (r.status !== 'VERIFIED') problems.push(`${kind.toUpperCase()}: ${r.message}`);
-      else if (r.nameMatch !== null && r.nameMatch < 70) problems.push(`${kind.toUpperCase()}: name on record “${r.nameOnRecord}” doesn’t match`);
-    } catch (e: any) { problems.push(`${kind.toUpperCase()}: ${e.message}`); }
+      if (r.status !== 'VERIFIED') problems.push(`${label}: ${r.message}`);
+      else if (r.nameMatch !== null && r.nameMatch < 70) problems.push(`${label}: name on record “${r.nameOnRecord}” doesn’t match`);
+    } catch (e: any) { problems.push(`${label}: ${e.message}`); }
   }
   const expired = await db.select({ docType: documents.docType, expiresOn: documents.expiresOn }).from(documents)
     .where(and(eq(documents.vendorId, v.id), eq(documents.status, 'ACTIVE'), isNotNull(documents.expiresOn), lt(documents.expiresOn, new Date().toISOString().slice(0, 10))));

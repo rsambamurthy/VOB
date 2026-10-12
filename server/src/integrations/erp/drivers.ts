@@ -107,10 +107,10 @@ export const actionFor = (v: Pick<Vendor, 'erpVendorId'>, event: ErpEvent) => (e
 
 /* ---------- send ---------- */
 
-export async function send(conn: Connection, v: Vendor, event: ErpEvent, ctx: { syncId: string; tenantSlug: string }): Promise<SendResult> {
+export async function send(conn: Connection, v: Vendor, event: ErpEvent, ctx: { syncId: string; tenantSlug: string; homeCountry?: string }): Promise<SendResult> {
   const c = conn.config;
   if (conn.kind === 'oracle') {
-    const body = toOracleSupplier(v, { orgId: c.orgId || undefined, action: v.erpVendorId ? 'UPDATE' : 'CREATE' });
+    const body = toOracleSupplier(v, { orgId: c.orgId || undefined, action: v.erpVendorId ? 'UPDATE' : 'CREATE', homeCountry: ctx.homeCountry });
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Idempotency-Key': ctx.syncId };
     const shown = { ...headers, ...(c.username ? { Authorization: 'Basic •••' } : {}) };
     const result: SendResult = { target: c.url, request: { body, headers: shown } };

@@ -2,7 +2,7 @@ import type { Condition, ConfigIssue, FieldDef, OnboardingConfig, Op } from '../
 import { OP_LABELS } from '../../../lib/conditions';
 
 export interface EditorMeta {
-  fieldTypes: string[]; validators: string[]; ops: Op[]; coreFields: string[]; coreSections: string[];
+  fieldTypes: string[]; validators: { key: string; label: string; country: string | null }[]; ops: Op[]; coreFields: string[]; coreSections: string[];
   vendorAttributes: { key: string; label: string; options: string[] }[];
   vendorTypes: { value: string; label: string }[];
 }
@@ -12,10 +12,8 @@ export type Update = (fn: (c: OnboardingConfig) => void) => void;
 export const FIELD_TYPE_LABELS: Record<string, string> = {
   text: 'Short text', textarea: 'Long text', select: 'Dropdown', radio: 'Yes/No or choice buttons', number: 'Number', email: 'Email', tel: 'Phone', date: 'Date', url: 'Website',
 };
-export const VALIDATOR_LABELS: Record<string, string> = {
-  gstin: 'GSTIN (checksum)', pan: 'PAN', tan: 'TAN', cin: 'CIN / LLPIN', ifsc: 'IFSC', swift: 'SWIFT / BIC', iban: 'IBAN (mod-97)', upi: 'UPI ID', udyam: 'Udyam number',
-  email: 'Email', phone: 'Phone', url: 'Website URL', postalCode: 'Postal / PIN code', bankAccount: 'Bank account number', year: 'Year',
-};
+/** Label for a format check, from the server's list (country packs). */
+export const validatorLabel = (meta: EditorMeta, key: string) => meta.validators.find((v) => v.key === key)?.label ?? key;
 
 /** Every field (and vendor attribute) a condition can point at. */
 export function fieldCatalog(cfg: OnboardingConfig, meta: EditorMeta): CatalogEntry[] {

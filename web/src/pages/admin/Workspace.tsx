@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { applyBranding, useSession } from '../../lib/session';
 import { Alert } from '../../components/ui';
 import { Link, useSearchParams } from 'react-router-dom';
+import { loc, localeInfo } from '../../lib/format';
 
 export function Workspace() {
   const { me, refresh } = useSession();
@@ -26,7 +27,7 @@ export function Workspace() {
       <header className="page-head"><div><h1>Workspace</h1><p className="muted">Workspace ID <strong className="mono">{t.slug}</strong> — staff enter this when signing in.</p></div></header>
       {welcome && (
         <Alert kind="success"><strong>Welcome to VendorGate — {t.name} is ready.</strong>
-          {me!.plan?.trialEndsAt && <> Your free trial runs until {new Date(me!.plan.trialEndsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}.</>}
+          {me!.plan?.trialEndsAt && <> Your free trial runs until {new Date(me!.plan.trialEndsAt).toLocaleDateString(loc(), { day: 'numeric', month: 'long' })}.</>}
           <ol className="welcome-steps">
             <li>Add your logo and colour below, so suppliers recognise you.</li>
             <li><Link to="/staff/admin/users">Invite your team</Link> — reviewers, finance and approvers.</li>
@@ -86,8 +87,8 @@ function PrivacySettings() {
   }
   return (
     <section className="card pad section-card" style={{ marginTop: 16 }}>
-      <h3>Privacy & data retention (DPDP)</h3>
-      <p className="muted small">Vendors must accept this notice before entering any data. Changing it creates a new version and asks every vendor to accept again. {d.notice.isDefault ? <strong>You are using the starting template — have it reviewed by your legal team.</strong> : <>Current version {d.notice.version}{d.notice.updatedAt ? `, updated ${new Date(d.notice.updatedAt).toLocaleDateString('en-IN')}` : ''}.</>}</p>
+      <h3>Privacy & data retention{localeInfo().privacyLaw ? ` (${localeInfo().privacyLaw})` : ''}</h3>
+      <p className="muted small">Vendors must accept this notice before entering any data. Changing it creates a new version and asks every vendor to accept again. {d.notice.isDefault ? <strong>You are using the starting template — have it reviewed by your legal team.</strong> : <>Current version {d.notice.version}{d.notice.updatedAt ? `, updated ${new Date(d.notice.updatedAt).toLocaleDateString(loc())}` : ''}.</>}</p>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <div className="field"><label htmlFor="pv-text">Privacy notice</label><textarea id="pv-text" rows={14} value={text} onChange={(e) => setText(e.target.value)} /></div>
       <div className="field-grid">

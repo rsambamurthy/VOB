@@ -122,7 +122,7 @@ async function deliver(syncId: string) {
   try {
     if (conn.kind === 'none') throw new ErpError('The ERP connection was removed');
     // Always send the vendor as it is now, so a retried or late push never carries stale data.
-    const r = await send({ ...conn, kind: conn.kind }, v as Vendor, s.event as ErpEvent, { syncId: s.id, tenantSlug: t?.slug ?? '' });
+    const r = await send({ ...conn, kind: conn.kind }, v as Vendor, s.event as ErpEvent, { syncId: s.id, tenantSlug: t?.slug ?? '', homeCountry: t?.country });
     const status = conn.testMode ? 'TEST' : 'SENT';
     await db.update(erpSyncs).set({ status, attempts, kind: conn.kind, target: r.target, request: r.request, httpStatus: r.httpStatus ?? null, response: r.response ?? null, error: null, erpVendorId: r.erpVendorId ?? null, sentAt: new Date() }).where(eq(erpSyncs.id, s.id));
     // Test-mode pushes never store an ERP id on the vendor, so going live later starts clean.

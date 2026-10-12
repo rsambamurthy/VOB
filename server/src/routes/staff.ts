@@ -14,7 +14,8 @@ import { buildChecklist, visibleDocRequirements, type Profile } from '../lib/pro
 import { assignableUsers, decide, reassign } from '../services/workflowEngine.js';
 import { canAct, coveringFor } from '../services/approvers.js';
 import { getConfig } from '../services/config.js';
-import { latestChecks, runKyc, type KycKind } from '../integrations/kyc/index.js';
+import { latestChecks, runKyc } from '../integrations/kyc/index.js';
+import { checkDef, checkInputs, packFor } from '../countries/registry.js';
 import { extractionsFor } from '../integrations/ai/index.js';
 import { checkExpiry, publicCheck, upload } from './vendorPortal.js';
 import { getPublished } from '../services/config.js';
@@ -130,8 +131,8 @@ staffRouter.post('/vendors', requireStaff('vendors.create'), ah(async (req, res)
     inviteToken: crypto.randomBytes(24).toString('base64url'),
     createdById: s.user.id,
     profile: {
-      basic: { vendorName: data.name, supplierCountry: data.vendorType === 'IMPORT' ? '' : 'India', contactName: `${data.contactFirstName} ${data.contactLastName}`, contactEmail: email, contactMobile: data.contactMobile },
-      bank: { bankCountry: data.vendorType === 'IMPORT' ? '' : 'India' },
+      basic: { vendorName: data.name, supplierCountry: data.vendorType === 'IMPORT' ? '' : packFor(s.tenant.country).name, contactName: `${data.contactFirstName} ${data.contactLastName}`, contactEmail: email, contactMobile: data.contactMobile },
+      bank: { bankCountry: data.vendorType === 'IMPORT' ? '' : packFor(s.tenant.country).name },
     },
   }).returning();
   await audit({ tenantId: s.tenant.id, vendorId: vendor.id, actor: s.user.name, action: 'VENDOR_CREATED', detail: { vendorType: data.vendorType }, ip: req.ip });
@@ -227,7 +228,7 @@ staffRouter.get('/vendors/:id/erp-export', requireStaff('vendors.export'), ah(as
   if (!v) throw new HttpError(404, 'Vendor not found');
   if (v.status !== 'APPROVED') throw new HttpError(409, 'Only approved vendors can be exported to the ERP');
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'ERP_EXPORTED', ip: req.ip });
-  res.json(toOracleSupplier(v, { orgId: typeof req.query.orgId === 'string' ? req.query.orgId : undefined }));
+  res.json(toOracleSupplier(v, { orgId: typeof req.query.orgId === 'string' ? req.query.orgId : undefined, homeCountry: s.tenant.country }));
 }));
 
 /** Reviewers can re-run an online check against the vendor's current answers. */
@@ -235,12 +236,11 @@ staffRouter.post('/vendors/:id/verify/:kind', requireStaff('vendors.view'), ah(a
   const s = staffCtx(req);
   const v = await findVendor(s.tenant.id, req.params.id);
   if (!v) throw new HttpError(404, 'Vendor not found');
-  const kind = z.enum(['gstin', 'pan', 'bank', 'cin']).parse(req.params.kind) as KycKind;
-  const p = v.profile as Profile;
-  const input: Record<string, string> = kind === 'bank'
-    ? { accountNumber: String(p.bank?.accountNumber ?? ''), ifsc: String(p.bank?.ifsc ?? '') }
-    : { [kind]: String(p.tax?.[kind] ?? '') };
-  if (Object.values(input).some((x) => !x || x === 'undefined')) throw new HttpError(400, `The vendor hasn't entered ${kind === 'bank' ? 'bank account details' : `a ${kind.toUpperCase()}`} yet`);
+  const found = checkDef(req.params.kind);
+  if (!found) throw new HttpError(404, 'Unknown check');
+  const kind = found.def.kind;
+  const input = checkInputs(found.def, v.profile as Profile);
+  if (Object.values(input).some((x) => !x)) throw new HttpError(400, `The vendor hasn't entered ${kind === 'bank' ? 'bank account details' : `a ${found.def.label}`} yet`);
   const r = await runKyc(v, kind, input, s.user.name);
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'VERIFICATION_RUN', detail: { kind, status: r.status }, ip: req.ip });
   res.json(publicCheck(r));

@@ -10,10 +10,11 @@
  * Conditions reference profile answers as "section.field", or "vendor.vendorType".
  */
 import { z } from 'zod';
-import type { ValidatorName } from '../lib/validators.js';
+import { validatorNames } from '../countries/registry.js';
+
+type ValidatorName = string;
 
 export const FIELD_TYPES = ['text', 'textarea', 'select', 'radio', 'number', 'email', 'tel', 'date', 'url'] as const;
-export const VALIDATORS = ['gstin', 'pan', 'tan', 'cin', 'ifsc', 'swift', 'iban', 'upi', 'udyam', 'email', 'phone', 'url', 'postalCode', 'bankAccount', 'year'] as const satisfies readonly ValidatorName[];
 export const OPS = ['eq', 'neq', 'in', 'notIn', 'gt', 'gte', 'lt', 'lte', 'empty', 'notEmpty'] as const;
 
 export type FieldType = (typeof FIELD_TYPES)[number];
@@ -114,7 +115,7 @@ const field = z.object({
   required: z.union([z.boolean(), condition]).optional(),
   showIf: condition.optional(),
   options: z.array(z.string().min(1).max(120)).max(200).optional(),
-  validator: z.enum(VALIDATORS).optional(),
+  validator: z.string().refine((v) => validatorNames().includes(v), (v) => ({ message: `Unknown format check “${v}”` })).optional(),
   placeholder: z.string().max(120).optional(),
   help: z.string().max(300).optional(),
 });

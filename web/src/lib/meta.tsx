@@ -9,15 +9,16 @@ export const VENDOR_TYPES = [
   { value: 'GOVERNMENT', label: 'Government' },
 ];
 
-interface ConfigValue { config: OnboardingConfig | null; version: number; reload: () => Promise<void> }
-const Ctx = createContext<ConfigValue>({ config: null, version: 0, reload: async () => {} });
+export interface CheckDefinition { kind: string; label: string; anchor: string; buttonLabel: string; inputs: Record<string, string>; country: string }
+interface ConfigValue { config: OnboardingConfig | null; version: number; checks: CheckDefinition[]; reload: () => Promise<void> }
+const Ctx = createContext<ConfigValue>({ config: null, version: 0, checks: [], reload: async () => {} });
 
 /** The workspace's published onboarding configuration (staff side). */
 export function ConfigProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<{ config: OnboardingConfig | null; version: number }>({ config: null, version: 0 });
+  const [state, setState] = useState<{ config: OnboardingConfig | null; version: number; checks: CheckDefinition[] }>({ config: null, version: 0, checks: [] });
   const reload = useCallback(async () => {
-    const r = await api<{ version: number; config: OnboardingConfig }>('/config');
-    setState({ config: r.config, version: r.version });
+    const r = await api<{ version: number; config: OnboardingConfig; checks: CheckDefinition[] }>('/config');
+    setState({ config: r.config, version: r.version, checks: r.checks ?? [] });
   }, []);
   useEffect(() => { reload().catch(() => {}); }, [reload]);
   return <Ctx.Provider value={{ ...state, reload }}>{children}</Ctx.Provider>;

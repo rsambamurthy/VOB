@@ -8,7 +8,7 @@ interface Status {
   email: { provider: string; live: boolean; from: string; counts: Record<string, number>; lastFailures: { to: string; subject: string; error: string; createdAt: string }[] };
   sms: { provider: string; live: boolean; counts: Record<string, number> };
   storage: { driver: string; scan: string; bucket?: string };
-  kyc: { provider: string; live: boolean };
+  kyc: { provider: string; live: boolean; packs: { country: string; title: string; provider: string; live: boolean }[] };
   ai: { provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean };
   jobs: { running: boolean };
   devMode: boolean;
@@ -76,7 +76,7 @@ export function Integrations() {
           <button className="btn btn-secondary btn-sm" onClick={() => run('/admin/integrations/test-storage', {}, (r) => `Storage OK — ${r.detail}.`)}>Check storage</button>
         </Card>
 
-        <Card title="GSTIN / PAN / bank / MCA checks" live={s.kyc.live} provider={s.kyc.provider} env={'KYC_PROVIDER=surepass\nSUREPASS_TOKEN=...\nSUREPASS_BASE_URL=https://kyc-api.surepass.io/api/v1   # sandbox: https://sandbox.surepass.io/api/v1\n# endpoint paths can be overridden: SUREPASS_PATH_GSTIN, _PAN, _BANK, _CIN'}>
+        <Card title={`${s.kyc.packs[0]?.title ?? "Online checks"} (${s.kyc.packs[0]?.country ?? ""})`} live={s.kyc.live} provider={s.kyc.provider} env={'KYC_PROVIDER=surepass\nSUREPASS_TOKEN=...\nSUREPASS_BASE_URL=https://kyc-api.surepass.io/api/v1   # sandbox: https://sandbox.surepass.io/api/v1\n# endpoint paths can be overridden: SUREPASS_PATH_GSTIN, _PAN, _BANK, _CIN'}>
           <p className="small muted">Vendors run checks from the form; reviewers can re-run them from the vendor page. Identical checks are reused for 24 hours and limited per vendor per day to control provider fees. Only masked identifiers are stored.</p>
           {!s.kyc.live && <p className="small">Test mode answers instantly. Numbers whose 9th (PAN) or 13th (GSTIN) character is <code>0</code>, or bank accounts ending in <code>0</code>, come back “not found”.</p>}
         </Card>

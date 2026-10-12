@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { Navigate, useLocation } from 'react-router-dom';
 import { api, ApiError } from './api';
 import type { Branding, Me, Permission } from './types';
+import { setLocaleInfo } from './format';
 
 interface SessionValue { me: Me | null; loading: boolean; refresh: () => Promise<Me | null>; can: (p: Permission) => boolean; signOut: () => Promise<void> }
 const Ctx = createContext<SessionValue>(null!);
@@ -20,7 +21,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
-  useEffect(() => { applyBranding(me?.tenant.branding); }, [me]);
+  useEffect(() => { applyBranding(me?.tenant.branding); setLocaleInfo(me?.tenant); }, [me]);
   const can = useCallback((p: Permission) => !!me?.permissions.includes(p), [me]);
   const signOut = useCallback(async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); setMe(null); }, []);
   return <Ctx.Provider value={{ me, loading, refresh, can, signOut }}>{children}</Ctx.Provider>;

@@ -22,7 +22,7 @@ type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
   const { id } = useParams();
-  const { config } = useConfig();
+  const { config, checks: checkDefs } = useConfig();
   const { can, me } = useSession();
   const [d, setD] = useState<Detail>();
   const [tab, setTab] = useState('basic');
@@ -241,9 +241,9 @@ export function VendorDetail() {
           <div className="card pad"><div className="row-between card-title"><h3>Approval flow</h3>{d.canReassign && <button className="link-btn small" onClick={() => setReassigning(true)}>Reassign</button>}</div><ApprovalTimeline steps={v.steps} levels={config.workflow.levels.map((l) => l.label)} /></div>
           <div className="card pad">
             <h3 className="card-title">Verifications</h3>
-            <ChecksPanel checks={d.checks} busy={checking} onRun={async (k) => {
+            <ChecksPanel checks={d.checks} defs={checkDefs} busy={checking} onRun={async (k) => {
               setChecking(k);
-              try { const r = await api(`/staff/vendors/${v.id}/verify/${k}`, { method: 'POST' }); setFlash({ kind: r.status === 'VERIFIED' ? 'success' : 'error', text: `${k.toUpperCase()}: ${r.message}` }); await load(); }
+              try { const r = await api(`/staff/vendors/${v.id}/verify/${k}`, { method: 'POST' }); setFlash({ kind: r.status === 'VERIFIED' ? 'success' : 'error', text: `${checkDefs.find((c) => c.kind === k)?.label ?? k.toUpperCase()}: ${r.message}` }); await load(); }
               catch (e: any) { setFlash({ kind: 'error', text: e.message }); } finally { setChecking(undefined); }
             }} />
             {mismatches > 0 && <p className="small diff-text">⚠ {mismatches} value{mismatches > 1 ? 's' : ''} on uploaded documents differ from the form — see the Documents tab.</p>}

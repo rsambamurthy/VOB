@@ -9,12 +9,14 @@ import { setSmsDriver } from '../src/integrations/sms/index.js';
 import { sniffType, pdfLooksActive } from '../src/integrations/storage/scan.js';
 import { safeKey } from '../src/integrations/storage/drivers.js';
 import { nameMatch } from '../src/integrations/kyc/nameMatch.js';
-import { surepassKyc } from '../src/integrations/kyc/surepass.js';
+import { surepassChecks as surepassKyc } from '../src/countries/in/surepass.js';
 import { setKycProvider } from '../src/integrations/kyc/index.js';
-import { mockKyc } from '../src/integrations/kyc/mock.js';
+import { indiaMockChecks as mockKyc } from '../src/countries/in/mockChecks.js';
 import { anthropicExtractor, mockExtractor } from '../src/integrations/ai/extractors.js';
 import { setExtractor } from '../src/integrations/ai/index.js';
-import { EXTRACTABLE } from '../src/integrations/ai/catalog.js';
+import { readableDocuments } from '../src/countries/registry.js';
+
+const EXTRACTABLE = readableDocuments();
 import { gstinCheckChar } from '../src/lib/validators.js';
 
 const jsonResponse = (status: number, body: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
@@ -240,7 +242,7 @@ describe('AI document reading', () => {
   });
 
   test('catalog only targets fields that exist in the default template', async () => {
-    const { defaultConfig } = await import('../src/config/defaultTemplate.js');
+    const defaultConfig = (await import('../src/countries/in/template.js')).indiaTemplate();
     const ids = new Set(defaultConfig.sections.flatMap((s) => s.groups.flatMap((g) => g.fields.map((f) => `${s.key}.${f.key}`))));
     for (const spec of Object.values(EXTRACTABLE)) for (const k of spec.keys) expect(ids.has(k.target), k.target).toBe(true);
   });

@@ -5,7 +5,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { HttpError } from '../lib/http.js';
-import { defaultConfig } from '../config/defaultTemplate.js';
+import { DEFAULT_HOME, packFor } from '../countries/registry.js';
 import { configSchema, findIssues, allFieldIds, type OnboardingConfig } from '../config/types.js';
 
 const { tenantConfigs, roles } = schema;
@@ -15,8 +15,14 @@ const TTL_MS = 60_000;
 const cache = new Map<string, { version: number; config: OnboardingConfig; at: number }>();
 const clone = <T>(x: T): T => structuredClone(x);
 
+/** Starting template for a workspace in this home country (from its country pack). */
+export function templateFor(country?: string | null): OnboardingConfig {
+  const make = packFor(country ?? DEFAULT_HOME).template ?? packFor(DEFAULT_HOME).template!;
+  return make();
+}
+
 /** Called when a workspace is created. */
-export async function seedInitialConfig(tenantId: string, config: OnboardingConfig = defaultConfig, userId?: string) {
+export async function seedInitialConfig(tenantId: string, config: OnboardingConfig = templateFor(DEFAULT_HOME), userId?: string) {
   await db.insert(tenantConfigs).values({ tenantId, version: 1, status: 'PUBLISHED', config: clone(config), note: 'Initial template', publishedAt: new Date(), publishedById: userId ?? null, updatedById: userId ?? null });
 }
 

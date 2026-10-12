@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../../../components/ui';
 import type { ConfigIssue, FieldDef, FieldType, OnboardingConfig } from '../../../lib/types';
-import { FIELD_TYPE_LABELS, VALIDATOR_LABELS, RulePicker, fieldCatalog, issuesFor, move, ruleSummary, toKey, type EditorMeta, type Update } from './shared';
+import { FIELD_TYPE_LABELS, validatorLabel, RulePicker, fieldCatalog, issuesFor, move, ruleSummary, toKey, type EditorMeta, type Update } from './shared';
 
 interface Props { config: OnboardingConfig; update: Update; meta: EditorMeta; publishedIds: Set<string>; issues: ConfigIssue[]; sectionKey: string; setSectionKey: (k: string) => void }
 
@@ -73,7 +73,7 @@ export function FormTab({ config, update, meta, publishedIds, issues, sectionKey
                       <div className="fr-label">{f.label}{f.required === true && <span className="req"> *</span>}{isCore(id) && <span className="core-tag" title="Built-in field used by the platform">built-in</span>}</div>
                       <div className="fr-meta">
                         <span>{FIELD_TYPE_LABELS[f.type]}</span>
-                        {f.validator && <span>✓ {VALIDATOR_LABELS[f.validator] ?? f.validator}</span>}
+                        {f.validator && <span>✓ {validatorLabel(meta, f.validator)}</span>}
                         {typeof f.required === 'object' && <span>Required: {ruleSummary(f.required, catalog)}</span>}
                         {f.showIf && <span>Shown: {ruleSummary(f.showIf, catalog)}</span>}
                         <span className="mono muted">{f.key}</span>
@@ -166,7 +166,7 @@ function FieldModal({ config, meta, sectionIndex, groupIndex, field, keyLocked, 
         )}
         <div className="field"><label htmlFor="fe-val">Format check</label>
           <select id="fe-val" value={f.validator ?? ''} onChange={(e) => setF({ ...f, validator: e.target.value || undefined })}>
-            <option value="">None</option>{meta.validators.map((v) => <option key={v} value={v}>{VALIDATOR_LABELS[v] ?? v}</option>)}
+            <option value="">None</option>{meta.validators.map((v) => <option key={v.key} value={v.key}>{v.label}{v.country ? ` (${v.country})` : ''}</option>)}
           </select></div>
         <div className="field"><label htmlFor="fe-ph">Placeholder</label><input id="fe-ph" value={f.placeholder ?? ''} onChange={(e) => setF({ ...f, placeholder: e.target.value })} /></div>
         <div className="field field-wide"><label htmlFor="fe-help">Help text</label><input id="fe-help" value={f.help ?? ''} onChange={(e) => setF({ ...f, help: e.target.value })} /></div>

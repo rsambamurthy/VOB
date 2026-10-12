@@ -6,20 +6,20 @@ import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
-import { CORE_FIELDS, CORE_SECTIONS, FIELD_TYPES, OPS, VALIDATORS, VENDOR_ATTRIBUTES, vendorTypes } from '../config/types.js';
-import { defaultConfig } from '../config/defaultTemplate.js';
+import { CORE_FIELDS, CORE_SECTIONS, FIELD_TYPES, OPS, VENDOR_ATTRIBUTES, vendorTypes } from '../config/types.js';
+import { checkList, validatorList } from '../countries/registry.js';
 import * as cfg from '../services/config.js';
 
 const { roles, users, delegations } = schema;
 export const configRouter = Router();
 
-const editorMeta = { fieldTypes: FIELD_TYPES, validators: VALIDATORS, ops: OPS, coreFields: CORE_FIELDS, coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes };
+const editorMeta = { fieldTypes: FIELD_TYPES, validators: validatorList(), ops: OPS, coreFields: CORE_FIELDS, coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes };
 
 /** Published config for rendering vendor profiles (any staff member). */
 configRouter.get('/config', requireStaff(), ah(async (req, res) => {
   const { tenant } = staffCtx(req);
   const { version, config } = await cfg.getPublished(tenant.id);
-  res.json({ version, config, vendorTypes });
+  res.json({ version, config, vendorTypes, checks: checkList() });
 }));
 
 /* ---------- Admin editor ---------- */
@@ -64,10 +64,10 @@ configRouter.post('/admin/config/versions/:version/restore', requireStaff('confi
   res.json({ ok: true, issues });
 }));
 
-/** Start a draft from the platform's default template (e.g. to undo heavy customisation). */
+/** Start a draft from the home country's default template (e.g. to undo heavy customisation). */
 configRouter.post('/admin/config/reset-to-template', requireStaff('config.manage'), ah(async (req, res) => {
   const s = staffCtx(req);
-  const issues = await cfg.saveDraft(s.tenant.id, defaultConfig, s.user.id);
+  const issues = await cfg.saveDraft(s.tenant.id, cfg.templateFor(s.tenant.country), s.user.id);
   res.json({ ok: true, issues });
 }));
 

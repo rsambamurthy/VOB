@@ -23,3 +23,10 @@ Phase 1 (purchase orders and acceptance, Oracle EBS first) is live.
 - **Phase 2 — Shipping:** advance shipping notices against accepted lines (required per buying group), partial shipments, receipt matching from the ERP.
 - **Phase 3 — Invoicing:** suppliers raise invoices from POs/ASNs; tolerance checks; country rules as plug-ins, starting with India e-invoicing (IRN/QR validation, GSTIN match).
 - **Phase 4 — Payments:** payment status and remittance advice from the ERP; more ERP connectors (SAP S/4HANA, Dynamics 365).
+
+## Country packs
+- **Phase 0 (done):** India moved into its own pack; workspaces have a home country; checks, formats, documents, template, privacy notice, ERP mapping and formatting come from packs. See docs/COUNTRY_PACKS.md.
+- **Phase 1:** shared Gulf (GCC) pack + Saudi Arabia (CR/licence expiry hold, UBO, sanctions screening, Zakat/GOSI/Nitaqat/IKTVA documents, Fri–Sat working week, SAR); country on the sign-up page.
+- **Phase 2:** Arabic supplier portal (RTL, bilingual names, Hijri dates, Arabic document reading).
+- **Phase 3:** live verification providers (Wathq, sanctions, bank/IBAN).
+- **Phase 4:** Bahrain, Qatar, UAE packs. **Phase 5:** in-region hosting when a customer requires it.

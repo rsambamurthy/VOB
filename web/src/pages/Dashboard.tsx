@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { VENDOR_TYPES } from '../lib/meta';
-import { statusLabel } from '../lib/format';
+import { statusLabel, loc } from '../lib/format';
 import { Alert } from '../components/ui';
 import { HBars, HeatTable, MonthColumns } from '../components/Charts';
 import type { VendorStatus } from '../lib/types';
@@ -93,7 +93,7 @@ export function Dashboard() {
             </section>
 
             <section className="card pad span-2">
-              <h3 className="card-title">Invited and approved by month <span className="muted small">12 months to {new Date(d.range.to).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span></h3>
+              <h3 className="card-title">Invited and approved by month <span className="muted small">12 months to {new Date(d.range.to).toLocaleDateString(loc(), { month: 'short', year: 'numeric' })}</span></h3>
               <MonthColumns data={d.monthly} series={[{ key: 'invited', label: 'Invited', cls: 'viz-s1' }, { key: 'approved', label: 'Approved', cls: 'viz-s2' }]} />
             </section>
 

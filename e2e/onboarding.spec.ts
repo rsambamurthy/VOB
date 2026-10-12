@@ -34,6 +34,13 @@ test('invite → vendor accepts privacy notice, fills in, submits → three appr
   await call(vendor, 'PUT', '/api/vendor/profile/tax', { hasGst: 'Yes', gstin: gstin(pan), gstClassification: 'Regular', pan, cin: 'U74999MH2015PTC123456' });
   await call(vendor, 'PUT', '/api/vendor/profile/risk', { fiscalYearEnd: 'March', currency: 'INR', turnoverYear: 'FY 2024-25', annualTurnover: '9000000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' });
   await vendor.reload();
+  // Online checks come from the India country pack: Verify next to GSTIN, Verify account next to IFSC.
+  await vendor.getByRole('tab', { name: 'Tax Details' }).click();
+  await vendor.locator('.verify', { has: vendor.getByRole('button', { name: 'Verify' }) }).first().getByRole('button').click();
+  await expect(vendor.locator('.verify .vbadge').first()).toHaveText('✓ Verified');
+  await vendor.getByRole('tab', { name: 'Bank Details' }).click();
+  await vendor.getByRole('button', { name: 'Verify account' }).click();
+  await expect(vendor.locator('.verify .vbadge').first()).toHaveText('✓ Verified');
   await vendor.getByRole('tab', { name: 'Documents' }).click();
   for (const label of ['PAN Card', 'GST Registration Certificate', 'Cancelled Cheque', 'Certificate of Incorporation']) {
     await vendor.locator('.doc-row', { hasText: label }).first().locator('input[type=file]').setInputFiles(PDF);
@@ -55,6 +62,8 @@ test('invite → vendor accepts privacy notice, fills in, submits → three appr
   }
   await admin.reload();
   await expect(admin.locator('h1 .badge-approved')).toBeVisible();
+  await expect(admin.locator('.card', { hasText: 'Verifications' })).toContainText('GSTIN');
+  await expect(admin.locator('.card', { hasText: 'Verifications' }).locator('.verif li', { hasText: 'Bank account' })).toContainText('Verified');
   await vendor.reload();
   await expect(vendor.getByRole('heading', { name: 'Registered details' })).toBeVisible();
 });

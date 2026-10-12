@@ -1,6 +1,6 @@
 /** Purchase order building blocks shared by the staff and supplier screens. */
 import type { ReactNode } from 'react';
-import { fmtDate } from '../lib/format';
+import { fmtDate, money, num } from '../lib/format';
 
 export type Acceptance = 'PENDING' | 'PARTIAL' | 'ACCEPTED' | 'AUTO_ACCEPTED';
 export interface OrderRow {
@@ -34,9 +34,8 @@ export function AcceptanceBadge({ a, status }: { a: Acceptance; status?: string 
   return <span className={`badge ${CLS[a]}`}>{ACCEPTANCE_LABEL[a]}</span>;
 }
 
-export const money = (v: string | number | null | undefined, cur = 'INR') =>
-  v === null || v === undefined ? '—' : new Intl.NumberFormat('en-IN', { style: 'currency', currency: cur, maximumFractionDigits: 2 }).format(Number(v));
-export const qty = (v: string | number | null | undefined) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 4 }));
+export { money };
+export const qty = (v: string | number | null | undefined) => (v === null || v === undefined ? '—' : num(Number(v), { maximumFractionDigits: 4 }));
 
 /** "Auto-accepts in 3 days" / "Accept manually" etc. */
 export function DueText({ po }: { po: Pick<OrderRow, 'acceptance' | 'acceptDueAt' | 'status'> }) {

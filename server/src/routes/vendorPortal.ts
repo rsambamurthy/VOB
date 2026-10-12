@@ -12,7 +12,8 @@ import { getPublished } from '../services/config.js';
 import { buildChecklist, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
 import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
-import { runKyc, latestChecks, type KycKind } from '../integrations/kyc/index.js';
+import { runKyc, latestChecks } from '../integrations/kyc/index.js';
+import { checkDef, checkList, localeFor } from '../countries/registry.js';
 import { hasFeature } from '../services/limits.js';
 import { pendingOrderCount } from '../services/orders/queries.js';
 import { queueExtraction, extractionsFor, getExtraction } from '../integrations/ai/index.js';
@@ -95,7 +96,8 @@ vendorRouter.get('/', ah(async (req, res) => {
       lastConfirmedAt: v.lastConfirmedAt, nextReviewAt: v.nextReviewAt,
       changeRequests: (await changeRequestsForVendor(v.id)).slice(0, 5).map((cr) => ({ id: cr.id, status: cr.status, byBuyer: !!cr.raisedById, changes: cr.changes, documentIds: cr.documentIds, note: cr.note, remarks: cr.status === 'REJECTED' && !cr.raisedById ? cr.remarks : null, createdAt: cr.createdAt, decidedAt: cr.decidedAt, steps: cr.steps.map((s) => ({ id: s.id, level: s.level, label: s.label, status: s.status })) })),
     } : null,
-    buyer: { name: tenant.name, branding: tenant.branding, workspace: tenant.slug },
+    buyer: { name: tenant.name, branding: tenant.branding, workspace: tenant.slug, ...localeFor(tenant.country) },
+    verifiable: checkList(),
     orders: hasFeature(tenant, 'collab') ? { enabled: true, pending: await pendingOrderCount(v.id) } : { enabled: false, pending: 0 },
     signedInAs: vendorCtx(req).contactEmail ?? v.contactEmail,
     privacy: { ...noticeFor(tenant), needsConsent: needsConsent(tenant, v), consentAt: v.consentAt, consentVersion: v.consentVersion, erasureRequestedAt: v.erasureRequestedAt },
@@ -154,7 +156,8 @@ vendorRouter.delete('/documents/:docId', ah(async (req, res) => {
 
 vendorRouter.post('/verify/:kind', ah(async (req, res) => {
   const v = await loadMine(req);
-  const kind = z.enum(['gstin', 'pan', 'bank', 'cin']).parse(req.params.kind) as KycKind;
+  const kind = z.string().max(40).parse(req.params.kind);
+  if (!checkDef(kind)) throw new HttpError(404, 'Unknown check');
   const result = await runKyc(v, kind, z.record(z.string().max(40)).parse(req.body), v.contactEmail);
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'VERIFICATION_RUN', detail: { kind, status: result.status, cached: 'cached' in result }, ip: req.ip });
   res.json(publicCheck(result));

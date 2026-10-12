@@ -3,7 +3,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import { approvedVendor, login, lastLinkTo } from './helpers.js';
 import { db, schema } from '../src/lib/db.js';
 import { levelsForChange, runExpiryReminders, runPeriodicReviews, flagsFor, daysUntil } from '../src/services/lifecycle.js';
-import { defaultConfig } from '../src/config/defaultTemplate.js';
+import { indiaTemplate } from '../src/countries/in/template.js';
+
+const defaultConfig = indiaTemplate();
 import { gstinCheckChar } from '../src/lib/validators.js';
 
 const PDF = '%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF';
@@ -210,7 +212,7 @@ describe('expiry reminders and periodic review', () => {
     const mdm = await login('mdm@acme.test');
     const r = (await mdm.post(`/api/staff/vendors/${id}/review`)).body;
     expect(r.status).toBe('ATTENTION');
-    expect(r.problems.join(' ')).toMatch(/BANK/);
+    expect(r.problems.join(' ')).toMatch(/Bank account/);
     expect((await mdm.get(`/api/staff/vendors/${id}`)).body.flags.map((f: any) => f.code)).toContain('REVIEW_ATTENTION');
   });
 });

@@ -10,25 +10,21 @@ import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import type { Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Flag, Profile, SectionDef, VendorFull } from '../lib/types';
 import { ChangeDiff, CrHistory, diffProfiles, FlagBadges } from '../components/Lifecycle';
-import { fmtDate } from '../lib/format';
+import { fmtDate, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
 import { rememberWorkspace, SupplierTopbar, supplierSignOut } from '../orders/SupplierShell';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string }; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string } & Partial<LocaleInfo>; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
 
 
-/** Fields that get an online "Verify" button: field key -> [check kind, fields to send]. */
-const VERIFY: Record<string, { kind: string; label: string; from: (p: Profile) => Record<string, string> }> = {
-  gstin: { kind: 'gstin', label: 'Verify', from: (p) => ({ gstin: String(p.tax?.gstin ?? '') }) },
-  pan: { kind: 'pan', label: 'Verify', from: (p) => ({ pan: String(p.tax?.pan ?? '') }) },
-  cin: { kind: 'cin', label: 'Verify', from: (p) => ({ cin: String(p.tax?.cin ?? '') }) },
-  ifsc: { kind: 'bank', label: 'Verify account', from: (p) => ({ accountNumber: String(p.bank?.accountNumber ?? ''), ifsc: String(p.bank?.ifsc ?? ''), accountHolderName: String(p.bank?.accountHolderName ?? '') }) },
-};
+/** An online check from the country packs: which field gets the "Verify" button and which fields it sends. */
+interface Verifiable { kind: string; label: string; anchor: string; buttonLabel: string; inputs: Record<string, string> }
+const inputsFrom = (c: Verifiable, p: Profile) => Object.fromEntries(Object.entries(c.inputs).map(([k, id]) => { const [sec, f] = id.split('.'); return [k, String(p[sec]?.[f] ?? '')]; }));
 
 export function VendorPortal() {
   const nav = useNavigate();
@@ -58,7 +54,7 @@ export function VendorPortal() {
   const load = useCallback(async (reset = false) => {
     try {
       const r = await api<Me>('/vendor');
-      setMe(r); rememberWorkspace(r.buyer.workspace); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
+      setMe(r); setLocaleInfo(r.buyer); rememberWorkspace(r.buyer.workspace); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
   useEffect(() => { load(); }, [load]);
@@ -141,11 +137,13 @@ export function VendorPortal() {
     } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
 
+  const verifierFor = (f: FieldDef) => me?.verifiable.find((c) => c.anchor === `${tab}.${f.key}`);
   async function runVerify(f: FieldDef) {
-    const cfg = VERIFY[f.key];
+    const cfg = verifierFor(f);
+    if (!cfg) return;
     await save(tab, true);
     try {
-      const r = await api<Check>(`/vendor/verify/${cfg.kind}`, { body: cfg.from(profile) });
+      const r = await api<Check>(`/vendor/verify/${cfg.kind}`, { body: inputsFrom(cfg, profile) });
       setMe((m) => m && { ...m, checks: [r, ...m.checks.filter((c) => c.kind !== r.kind)] });
       if (r.status !== 'VERIFIED') setFlash({ kind: r.status === 'ERROR' ? 'error' : 'info', text: `${r.message}` });
     } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
@@ -194,12 +192,12 @@ export function VendorPortal() {
 
   const blocking = me.checklist.filter((c) => !c.ok && c.severity === 'error').length;
   const extra = (f: FieldDef) => {
-    const cfg = editable ? VERIFY[f.key] : undefined;
+    const cfg = editable ? verifierFor(f) : undefined;
     if (!cfg) return null;
     const r = me?.checks.find((c) => c.kind === cfg.kind);
     return (
       <span className="verify">
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => runVerify(f)}>{cfg.label}</button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => runVerify(f)}>{cfg.buttonLabel}</button>
         {r && <CheckBadge c={r} compact />}
       </span>
     );

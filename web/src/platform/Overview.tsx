@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Alert } from '../components/ui';
-import { fmtDate } from '../lib/format';
+import { fmtDate, loc } from '../lib/format';
 import { PLAN_LABEL, SOURCE_LABEL, papi, relDays } from './session';
 
 interface Overview {
@@ -64,6 +64,6 @@ export function PlatformOverview() {
 }
 
 function Tile({ n, label, sub, to, tone }: { n: number; label: string; sub?: string; to?: string; tone?: 'warn' }) {
-  const body = <><span className={`tile-n ${tone ? `tile-${tone}` : ''}`}>{n.toLocaleString('en-IN')}</span><span className="tile-l">{label}</span>{sub && <span className="tile-sub">{sub}</span>}</>;
+  const body = <><span className={`tile-n ${tone ? `tile-${tone}` : ''}`}>{n.toLocaleString(loc())}</span><span className="tile-l">{label}</span>{sub && <span className="tile-sub">{sub}</span>}</>;
   return to ? <Link className="tile card" to={to}>{body}</Link> : <div className="tile card">{body}</div>;
 }

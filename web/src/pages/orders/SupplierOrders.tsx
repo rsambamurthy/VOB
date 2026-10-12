@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { fmtDate, fmtDateTime } from '../../lib/format';
+import { fmtDate, fmtDateTime, loc } from '../../lib/format';
 import { Alert, Empty, Modal } from '../../components/ui';
 import { AcceptanceBadge, DueText, Facts, LinesTable, money, type Counts, type OrderDetailData, type OrderRow } from '../../orders/common';
 import { useSupplier } from '../../orders/SupplierShell';
@@ -131,7 +131,7 @@ export function SupplierOrderDetail() {
             <section className="card section-card">
               <div className="toolbar"><h3>Received so far</h3></div>
               <table className="table static compact"><thead><tr><th>Receipt</th><th>Date</th><th>Line</th><th className="num">Quantity</th></tr></thead>
-                <tbody>{d.receipts.map((r) => <tr key={r.id}><td className="mono">{r.receiptNumber}</td><td>{fmtDate(r.receiptDate)}</td><td>{d.lines.find((l) => l.id === r.lineId)?.lineNo ?? '—'}</td><td className="num">{Number(r.quantity).toLocaleString('en-IN')}</td></tr>)}</tbody></table>
+                <tbody>{d.receipts.map((r) => <tr key={r.id}><td className="mono">{r.receiptNumber}</td><td>{fmtDate(r.receiptDate)}</td><td>{d.lines.find((l) => l.id === r.lineId)?.lineNo ?? '—'}</td><td className="num">{Number(r.quantity).toLocaleString(loc())}</td></tr>)}</tbody></table>
             </section>
           )}
         </div>

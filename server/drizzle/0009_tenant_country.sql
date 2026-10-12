@@ -1,0 +1,1 @@
+ALTER TABLE "tenants" ADD COLUMN "country" text DEFAULT 'IN' NOT NULL;

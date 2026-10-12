@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../lib/session';
-import { monogram } from '../lib/format';
+import { monogram, loc } from '../lib/format';
 
 export function StaffShell() {
   const { me, can, signOut } = useSession();
@@ -46,7 +46,7 @@ export function StaffShell() {
       <main className="main" id="main">
         {me.support && (
           <div className="support-bar" role="status">
-            <span><strong>Support access (read-only)</strong> by {me.support.by} — ends {new Date(me.support.endsAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}{me.support.reason ? ` · “${me.support.reason}”` : ''}</span>
+            <span><strong>Support access (read-only)</strong> by {me.support.by} — ends {new Date(me.support.endsAt).toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit' })}{me.support.reason ? ` · “${me.support.reason}”` : ''}</span>
             <button className="btn btn-sm btn-secondary" onClick={async () => { await signOut(); window.location.href = '/platform/tenants'; }}>End support access</button>
           </div>
         )}

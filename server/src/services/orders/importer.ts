@@ -7,6 +7,7 @@
  * - The supplier is matched by ERP supplier code; unmatched POs are kept and listed for mapping.
  */
 import crypto from 'node:crypto';
+import { packFor } from '../../countries/registry.js';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { ZodError } from 'zod';
 import { db, schema } from '../../lib/db.js';
@@ -98,6 +99,8 @@ export async function importPurchaseOrders(tenant: Tenant, inputs: unknown[], so
 
   for (const [i, raw] of inputs.entries()) {
     let po: CanonicalPo;
+    // No currency from the ERP: use the workspace's home currency.
+    if (raw && typeof raw === 'object' && !(raw as any).currency) (raw as any).currency = packFor(tenant.country).currency;
     try { po = canonicalPo.parse(raw); }
     catch (e) {
       res.failed++;

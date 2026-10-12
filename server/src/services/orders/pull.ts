@@ -5,6 +5,7 @@
  * with the connector's Basic auth; the answer is Oracle-shaped JSON (see oracle.ts).
  */
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { packFor } from '../../countries/registry.js';
 import { db, schema } from '../../lib/db.js';
 import { HttpError } from '../../lib/http.js';
 import { logger } from '../../lib/logger.js';
@@ -88,7 +89,7 @@ export async function loadSamplePurchaseOrders(tenant: Tenant, by: string, count
         SHIPMENTS: [{ LINE_LOCATION_ID: `${base + i * 10 + k + 1}01`, SHIP_TO_ORGANIZATION_CODE: k % 2 ? 'CHN1' : 'PUN1', SHIP_TO_ORGANIZATION_NAME: k % 2 ? 'Chennai Warehouse' : 'Pune Plant', NEED_BY_DATE: day(14 + i * 3 + k), QUANTITY: qty, QUANTITY_RECEIVED: 0, QUANTITY_BILLED: 0, QTY_RCV_TOLERANCE: 5 }] };
     });
     return { PO_HEADER_ID: `${900000 + base + i}`, SEGMENT1: `${4500 + (base % 1000)}${String(i + 1).padStart(3, '0')}`, REVISION_NUM: 0, TYPE_LOOKUP_CODE: 'STANDARD',
-      VENDOR_NUM: vendorNum, VENDOR_SITE_CODE: 'MAIN', ORG_ID: '101', OPERATING_UNIT: `${tenant.name} India`, AGENT_NAME: by, CURRENCY_CODE: 'INR',
+      VENDOR_NUM: vendorNum, VENDOR_SITE_CODE: 'MAIN', ORG_ID: '101', OPERATING_UNIT: `${tenant.name} ${packFor(tenant.country).name}`, AGENT_NAME: by, CURRENCY_CODE: packFor(tenant.country).currency ?? 'USD',
       APPROVED_DATE: day(-(i % 3)), TERMS: ['Net 30', 'Net 45', 'Net 60'][i % 3], FOB_LOOKUP_CODE: i % 2 ? 'DAP' : 'FCA', BUYING_GROUP: lines[0].CATEGORY.split('.')[0],
       AUTHORIZATION_STATUS: 'APPROVED', CLOSED_CODE: 'OPEN', CANCEL_FLAG: 'N', COMMENTS: 'Sample order created in test mode.', LINES: lines };
   });

@@ -24,7 +24,7 @@ export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
-  tenant: { id: string; slug: string; name: string; branding: Branding; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number } };
+  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number } };
   roles: { id: string; key: string; name: string }[];
   permissions: Permission[];
   mfaSetupRequired: boolean;
@@ -58,7 +58,7 @@ export interface VendorFull extends VendorSummary {
 }
 
 export interface Check {
-  id: string; kind: 'gstin' | 'pan' | 'bank' | 'cin'; status: 'VERIFIED' | 'NOT_FOUND' | 'INVALID_FORMAT' | 'ERROR';
+  id: string; kind: string; status: 'VERIFIED' | 'NOT_FOUND' | 'INVALID_FORMAT' | 'ERROR';
   message: string; inputMasked: string; nameOnRecord: string | null; nameMatch: number | null; test: boolean; checkedAt: string;
   data: Record<string, string> | null; requestedBy?: string; provider?: string;
 }

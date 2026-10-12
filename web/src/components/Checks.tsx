@@ -1,7 +1,8 @@
 import type { Check } from '../lib/types';
 import { fmtDateTime } from '../lib/format';
 
-export const CHECK_LABEL: Record<string, string> = { gstin: 'GSTIN', pan: 'PAN', bank: 'Bank account', cin: 'CIN / MCA' };
+/** An online check the workspace can run (from the country packs). */
+export interface CheckDefinition { kind: string; label: string }
 
 export function CheckBadge({ c, compact }: { c: Check; compact?: boolean }) {
   const cls = c.status === 'VERIFIED' ? 'v-verified' : c.status === 'ERROR' ? 'v-error' : 'v-not_found';
@@ -17,16 +18,17 @@ export function CheckBadge({ c, compact }: { c: Check; compact?: boolean }) {
 }
 
 /** Reviewer view: latest result per check, with name-on-record comparison and a re-run button. */
-export function ChecksPanel({ checks, onRun, busy }: { checks: Check[]; onRun?: (kind: string) => void; busy?: string }) {
-  const kinds = ['gstin', 'pan', 'bank', 'cin'];
+export function ChecksPanel({ checks, defs, onRun, busy }: { checks: Check[]; defs: CheckDefinition[]; onRun?: (kind: string) => void; busy?: string }) {
+  // Checks this workspace can run, plus any older results for checks no longer offered.
+  const all = [...defs, ...checks.filter((c) => !defs.some((d) => d.kind === c.kind)).map((c) => ({ kind: c.kind, label: c.kind.toUpperCase() }))];
   return (
     <ul className="verif">
-      {kinds.map((k) => {
+      {all.map(({ kind: k, label }) => {
         const c = checks.find((x) => x.kind === k);
         return (
           <li key={k}>
             <div className="verif-row">
-              <strong>{CHECK_LABEL[k]}</strong>
+              <strong>{label}</strong>
               {c ? <CheckBadge c={c} /> : <span className="muted small">Not checked</span>}
               {onRun && <button className="link-btn small" disabled={busy === k} onClick={() => onRun(k)}>{busy === k ? 'Checking…' : c ? 'Re-run' : 'Run'}</button>}
             </div>

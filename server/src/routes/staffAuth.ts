@@ -1,5 +1,6 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
+import { localeFor } from '../countries/registry.js';
 import { and, eq } from 'drizzle-orm';
 import QRCode from 'qrcode';
 import bcrypt from 'bcryptjs';
@@ -35,7 +36,7 @@ function me(req: Request) {
   const s = staffCtx(req);
   return {
     user: s.user,
-    tenant: { id: s.tenant.id, slug: s.tenant.slug, name: s.tenant.name, branding: s.tenant.branding, settings: s.tenant.settings },
+    tenant: { id: s.tenant.id, slug: s.tenant.slug, name: s.tenant.name, branding: s.tenant.branding, settings: s.tenant.settings, ...localeFor(s.tenant.country) },
     roles: s.roles,
     permissions: [...s.permissions],
     mfaSetupRequired: s.mfaSetupRequired,

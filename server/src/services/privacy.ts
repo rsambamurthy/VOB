@@ -1,5 +1,5 @@
 /**
- * DPDP (Digital Personal Data Protection Act, 2023) support: privacy notice + recorded consent,
+ * Privacy-law support (India: DPDP Act 2023; wording per country pack): privacy notice + recorded consent,
  * data export for access requests, erasure (on request or by retention policy).
  *
  * Erasure anonymises rather than deletes the vendor row: counts in reports and the audit trail of
@@ -16,6 +16,7 @@ import { env } from '../lib/env.js';
 import { logger } from '../lib/logger.js';
 import { removeStored } from '../integrations/storage/index.js';
 import { kycStatus } from '../integrations/kyc/index.js';
+import { DEFAULT_HOME, packFor } from '../countries/registry.js';
 import { aiStatus } from '../integrations/ai/index.js';
 import { usersWithPermission } from './approvers.js';
 import { getConfig } from './config.js';
@@ -25,27 +26,20 @@ const DAY = 86_400_000;
 
 /* ---------------- Privacy notice ---------------- */
 
-/** Starting text. Each workspace should have it reviewed by their own counsel before go-live. */
-export function defaultNotice(company: string, contactEmail?: string) {
-  return `${company} ("we") collects the information in this registration to evaluate you as a supplier, set you up in our purchasing and payment systems, pay you, and meet our tax and legal obligations.
-
-What we collect: business and contact details, tax registrations (PAN, GSTIN, TAN, CIN, MSME), bank account details, financial and risk information, and the documents you upload.
-
-How it is checked and shared: tax and bank details may be verified with government databases and verification service providers (including a ₹1 test transfer to confirm your bank account). Uploaded documents may be read automatically to pre-fill the form. Approved supplier records are sent to our ERP / accounting system. We do not sell your data.
-
-How long we keep it: while you are an active supplier and afterwards for as long as tax and accounting laws require. Registrations that are rejected or not completed are deleted after a set period.
-
-Your rights: you can see and download the data we hold about you, correct it (request a change in this portal), withdraw consent and ask us to delete it, and raise a grievance. Some records of approved suppliers must be kept by law even after a deletion request.${contactEmail ? `\n\nContact / grievance officer: ${contactEmail}` : ''}`;
+/** Starting text from the home country's pack (written for its privacy law). */
+export function defaultNotice(company: string, contactEmail?: string, country?: string | null) {
+  const p = packFor(country ?? DEFAULT_HOME).privacy ?? packFor(DEFAULT_HOME).privacy!;
+  return p.defaultNotice(company, contactEmail);
 }
 
-export function noticeFor(t: Pick<Tenant, 'name' | 'settings'>) {
+export function noticeFor(t: Pick<Tenant, 'name' | 'settings'> & { country?: string }) {
   const p = (t.settings as TenantSettings).privacy;
-  return { version: p?.version ?? 1, text: p?.text || defaultNotice(t.name, p?.contactEmail), contactEmail: p?.contactEmail ?? null, updatedAt: p?.updatedAt ?? null, isDefault: !p?.text };
+  return { version: p?.version ?? 1, text: p?.text || defaultNotice(t.name, p?.contactEmail, t.country), contactEmail: p?.contactEmail ?? null, updatedAt: p?.updatedAt ?? null, isDefault: !p?.text };
 }
 
 export const retentionFor = (t: Pick<Tenant, 'settings'>) => ({ rejectedDays: 365, abandonedDays: 180, ...((t.settings as TenantSettings).retention ?? {}) });
 
-export const needsConsent = (t: Pick<Tenant, 'name' | 'settings'>, v: Pick<Vendor, 'consentVersion'>) => v.consentVersion !== noticeFor(t).version;
+export const needsConsent = (t: Pick<Tenant, 'name' | 'settings'> & { country?: string }, v: Pick<Vendor, 'consentVersion'>) => v.consentVersion !== noticeFor(t).version;
 
 export async function recordConsent(t: Tenant, v: Vendor, version: number, ip?: string) {
   const current = noticeFor(t).version;

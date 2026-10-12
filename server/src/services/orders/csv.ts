@@ -52,7 +52,7 @@ export function csvToPurchaseOrders(text: string): { pos: CanonicalPoInput[]; er
         entity: col(r, 'ENTITY_CODE') ? { code: col(r, 'ENTITY_CODE'), name: opt(col(r, 'ENTITY_NAME')) } : undefined,
         buyingGroup: col(r, 'BUYING_GROUP') ? { code: col(r, 'BUYING_GROUP') } : undefined,
         buyer: { name: opt(col(r, 'BUYER_NAME')), email: opt(col(r, 'BUYER_EMAIL')) },
-        currency: col(r, 'CURRENCY') || 'INR', poDate: opt(col(r, 'PO_DATE')), paymentTerms: opt(col(r, 'PAYMENT_TERMS')), incoterms: opt(col(r, 'INCOTERMS')),
+        currency: col(r, 'CURRENCY') || undefined, poDate: opt(col(r, 'PO_DATE')), paymentTerms: opt(col(r, 'PAYMENT_TERMS')), incoterms: opt(col(r, 'INCOTERMS')),
         lines: [],
       };
       byPo.set(key, po);

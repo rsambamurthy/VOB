@@ -3,13 +3,13 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { applyBranding } from '../lib/session';
-import { monogram } from '../lib/format';
+import { monogram, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import type { Branding, VendorStatus } from '../lib/types';
 import { StatusBadge } from '../components/ui';
 import { useHelp } from '../help/HelpPanel';
 
 export interface SupplierInfo {
-  buyer: { name: string; branding: Branding; workspace?: string };
+  buyer: { name: string; branding: Branding; workspace?: string } & Partial<LocaleInfo>;
   vendor: { name: string; code: string; status: VendorStatus };
   orders: { enabled: boolean; pending: number };
   signedInAs?: string;
@@ -58,7 +58,7 @@ export function SupplierShell({ children }: { children: ReactNode }) {
     api<SupplierInfo>('/vendor').then((r) => {
       // Privacy notice must be accepted first; the profile page shows it.
       if (r.privacy?.needsConsent || !r.orders.enabled) { nav('/vendor', { replace: true }); return; }
-      setInfo(r); rememberWorkspace(r.buyer.workspace); applyBranding(r.buyer.branding);
+      setInfo(r); setLocaleInfo(r.buyer); rememberWorkspace(r.buyer.workspace); applyBranding(r.buyer.branding);
     }).catch((e) => { if (e instanceof ApiError && e.status === 401) nav(`/vendor/expired?next=${encodeURIComponent(loc.pathname)}`, { replace: true }); });
   }, [nav, loc.pathname]);
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps

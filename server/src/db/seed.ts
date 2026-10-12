@@ -14,7 +14,9 @@ import { hashPassword } from '../lib/password.js';
 import { DEFAULT_ROLES } from '../lib/permissions.js';
 import type { Role, Tenant, User } from './schema.js';
 import { seedInitialConfig } from '../services/config.js';
-import { defaultConfig } from '../config/defaultTemplate.js';
+import { indiaTemplate } from '../countries/in/template.js';
+
+const defaultConfig = indiaTemplate();
 import type { OnboardingConfig } from '../config/types.js';
 
 export const DEMO_PASSWORD = 'Demo@12345';

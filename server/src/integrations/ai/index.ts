@@ -10,7 +10,9 @@ import { env } from '../../lib/env.js';
 import { logger } from '../../lib/logger.js';
 import { defineJob, enqueue } from '../../jobs/queue.js';
 import { readBytes } from '../storage/index.js';
-import { EXTRACTABLE, derivePanFromGstin } from './catalog.js';
+import { deriveExtracted, readableDocuments } from '../../countries/registry.js';
+
+const EXTRACTABLE = readableDocuments();
 import { anthropicExtractor, mockExtractor, type Extractor } from './extractors.js';
 import type { OnboardingConfig } from '../../config/types.js';
 
@@ -49,9 +51,8 @@ defineJob<{ id: string }>('document.extract', async ({ id }) => {
       if (k.validate && !k.validate(v)) continue; // the AI misread a formatted identifier — drop it rather than suggest junk
       fields.push({ fieldId: k.target, label: k.description, value: v.slice(0, 300), confidence: Math.max(0, Math.min(1, Number(raw.confidence[k.key] ?? 0.5))) });
     }
-    // Cross-check: a GSTIN implies a PAN
-    const g = fields.find((f) => f.fieldId === 'tax.gstin');
-    if (g && !fields.some((f) => f.fieldId === 'tax.pan')) fields.push({ fieldId: 'tax.pan', label: 'PAN (from GSTIN)', value: derivePanFromGstin(g.value)!, confidence: g.confidence });
+    // Values implied by others (e.g. the PAN inside a GSTIN), from the country packs.
+    fields.push(...deriveExtracted(fields));
     const wrongDoc = raw.documentType !== doc.docType && raw.documentType !== 'OTHER';
     await db.update(schema.documentExtractions).set({
       status: 'DONE', docTypeDetected: raw.documentType, fields, completedAt: new Date(),

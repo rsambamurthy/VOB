@@ -87,6 +87,8 @@ export const tenants = pgTable('tenants', {
   status: tenantStatusEnum('status').notNull().default('ACTIVE'),
   branding: jsonb('branding').$type<TenantBranding>().notNull().default({}),
   settings: jsonb('settings').$type<TenantSettings>().notNull().default({}),
+  /** Home country (ISO code): picks the country pack — currency, formats, template, privacy law, ERP mapping. */
+  country: text('country').notNull().default('IN'),
   /** trial | standard | enterprise (lib/plans.ts) */
   plan: text('plan').notNull().default('standard'),
   limits: jsonb('limits').$type<TenantLimits>().notNull().default({}),

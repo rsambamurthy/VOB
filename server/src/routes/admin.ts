@@ -14,6 +14,7 @@ import { sendMail } from '../lib/mailer.js';
 import { sendSms, smsStatus } from '../integrations/sms/index.js';
 import { storageCheck, storageStatus } from '../integrations/storage/index.js';
 import { kycStatus } from '../integrations/kyc/index.js';
+import { packFor } from '../countries/registry.js';
 import { aiStatus } from '../integrations/ai/index.js';
 import { queueRunning } from '../jobs/queue.js';
 import { env } from '../lib/env.js';
@@ -266,7 +267,7 @@ adminRouter.get('/erp/preview', requireStaff('tenant.settings'), ah(async (req, 
 
 adminRouter.get('/privacy', requireStaff('tenant.settings'), ah(async (req, res) => {
   const t = staffCtx(req).tenant;
-  res.json({ notice: noticeFor(t), retention: retentionFor(t), template: defaultNotice(t.name, noticeFor(t).contactEmail ?? undefined) });
+  res.json({ notice: noticeFor(t), retention: retentionFor(t), template: defaultNotice(t.name, noticeFor(t).contactEmail ?? undefined, t.country), law: packFor(t.country).privacy ?? null });
 }));
 
 adminRouter.put('/privacy', requireStaff('tenant.settings'), ah(async (req, res) => {

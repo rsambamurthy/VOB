@@ -4,7 +4,7 @@
  * and builds the "Required Fields" checklist shown to vendors and reviewers.
  */
 import type { FieldDef, OnboardingConfig } from '../config/types.js';
-import { validators, crossFieldChecks } from './validators.js';
+import { validators, crossFieldChecks, UPPERCASE_VALIDATORS } from './validators.js';
 import { conditionHolds, isRequired, readValue, type EvalContext, type Profile } from './conditions.js';
 
 export type { Profile };
@@ -32,11 +32,10 @@ export function validateField(sectionKey: string, field: FieldDef, ctx: EvalCont
     return `${field.label}: choose one of the listed options`;
   }
   if (field.type === 'number' && Number.isNaN(Number(value.replace(/,/g, '')))) return `${field.label} must be a number`;
-  if (field.validator) return validators[field.validator](value, { country: countryFor(sectionKey, ctx) });
+  if (field.validator && validators[field.validator]) return validators[field.validator](value, { country: countryFor(sectionKey, ctx) });
   return null;
 }
 
-const UPPER = new Set(['gstin', 'pan', 'tan', 'cin', 'ifsc', 'swift', 'iban', 'udyam']);
 
 /** Keep only keys defined in this section; trim text and normalise identifiers. */
 export function sanitizeSection(cfg: OnboardingConfig, sectionKey: string, data: Record<string, unknown>): Record<string, unknown> {
@@ -50,7 +49,7 @@ export function sanitizeSection(cfg: OnboardingConfig, sectionKey: string, data:
       if (v !== null && typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') continue;
       if (typeof v === 'string') {
         v = v.trim().slice(0, 2000);
-        if (f.validator && UPPER.has(f.validator)) v = (v as string).toUpperCase().replace(/\s+/g, '');
+        if (f.validator && UPPERCASE_VALIDATORS.has(f.validator)) v = (v as string).toUpperCase().replace(/\s+/g, '');
       }
       out[f.key] = v;
     }

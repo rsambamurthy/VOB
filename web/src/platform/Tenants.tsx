@@ -76,7 +76,7 @@ export function PlatformTenants() {
 }
 
 function NewTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const [f, setF] = useState({ name: '', slug: '', adminName: '', adminEmail: '', plan: 'trial', trialDays: 14, primaryColor: '', productName: '', notes: '' });
+  const [f, setF] = useState({ name: '', slug: '', adminName: '', adminEmail: '', plan: 'trial', trialDays: 14, country: 'IN', primaryColor: '', productName: '', notes: '' });
   const [slugTouched, setSlugTouched] = useState(false);
   const [slugState, setSlugState] = useState<{ available: boolean; reason: string | null }>();
   const [error, setError] = useState<string>();
@@ -84,6 +84,8 @@ function NewTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: k === 'trialDays' ? Number(e.target.value) : e.target.value });
 
   useEffect(() => { papi('/settings').then((s) => setF((x) => ({ ...x, trialDays: s.trialDays }))).catch(() => {}); }, []);
+  const [countries, setCountries] = useState<{ code: string; name: string; currency: string }[]>([]);
+  useEffect(() => { papi('/plans').then((r) => setCountries(r.countries ?? [])).catch(() => {}); }, []);
   // Suggest a workspace ID from the company name until the user edits it.
   useEffect(() => {
     if (slugTouched || !f.name.trim()) return;
@@ -113,6 +115,9 @@ function NewTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <div className={`field-help ${slugState && !slugState.available ? 'err-text' : ''}`}>{slugState ? (slugState.available ? '✓ Available. People type this when they sign in.' : slugState.reason) : 'People type this when they sign in.'}</div></div>
         <div className="field"><label htmlFor="nt-an">Administrator’s name</label><input id="nt-an" value={f.adminName} onChange={set('adminName')} required /></div>
         <div className="field"><label htmlFor="nt-ae">Administrator’s email</label><input id="nt-ae" type="email" value={f.adminEmail} onChange={set('adminEmail')} required /><div className="field-help">Gets an invitation to set a password.</div></div>
+        <div className="field"><label htmlFor="nt-country">Country</label>
+          <select id="nt-country" value={f.country} onChange={set('country')} disabled={countries.length < 2}>{(countries.length ? countries : [{ code: 'IN', name: 'India', currency: 'INR' }]).map((c) => <option key={c.code} value={c.code}>{c.name} ({c.currency})</option>)}</select>
+          <div className="field-help">Sets the onboarding template, tax and bank checks, currency and privacy notice. More countries are added as country packs.</div></div>
         <div className="field"><label htmlFor="nt-plan">Plan</label>
           <select id="nt-plan" value={f.plan} onChange={set('plan')}>{Object.entries(PLAN_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         {f.plan === 'trial' && <div className="field"><label htmlFor="nt-td">Trial length (days)</label><input id="nt-td" type="number" min={1} max={365} value={f.trialDays} onChange={set('trialDays')} /></div>}

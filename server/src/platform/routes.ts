@@ -21,6 +21,7 @@ import { createTenant, slugProblem } from '../services/tenants.js';
 import { sendStaffInvite } from '../services/users.js';
 import { assertCanAddUser, startOfDay, usage } from '../services/limits.js';
 import { effectiveLimits, FEATURE_LABELS, PLAN_KEYS, PLANS } from '../lib/plans.js';
+import { homeCountries, packFor } from '../countries/registry.js';
 import { adminByToken, createPlatformSession, destroyPlatformSession, issuePlatformToken, platformCtx, platformLog, requirePlatform, verifyTotp } from './session.js';
 import { getPlatformSettings } from './settings.js';
 
@@ -162,7 +163,7 @@ platformRouter.post('/auth/change-password', sensitiveLimiter, ah(async (req, re
 platformRouter.use(requirePlatform);
 const actor = (req: Parameters<typeof platformCtx>[0]) => platformCtx(req).admin.email;
 
-platformRouter.get('/plans', (_req, res) => { res.json({ plans: PLANS, features: FEATURE_LABELS }); });
+platformRouter.get('/plans', (_req, res) => { res.json({ plans: PLANS, features: FEATURE_LABELS, countries: homeCountries() }); });
 
 platformRouter.get('/overview', ah(async (_req, res) => {
   const now = new Date(), in7 = new Date(Date.now() + 7 * DAY), ago30 = new Date(Date.now() - 30 * DAY);
@@ -224,19 +225,19 @@ platformRouter.post('/tenants', ah(async (req, res) => {
   const input = z.object({
     name: z.string().trim().min(2).max(120), slug: z.string().trim().min(3).max(40),
     adminName: z.string().trim().min(2).max(100), adminEmail: z.string().trim().email(),
-    plan: z.enum(PLAN_KEYS), trialDays: z.number().int().min(1).max(365).optional(),
+    plan: z.enum(PLAN_KEYS), trialDays: z.number().int().min(1).max(365).optional(), country: z.string().length(2).optional(),
     primaryColor: hex.optional().or(z.literal('')), productName: z.string().max(40).optional(), notes: z.string().max(2000).optional(),
   }).parse(req.body);
   const p = platformCtx(req);
   const settings = await getPlatformSettings();
   const r = await createTenant({
-    slug: input.slug, name: input.name, adminName: input.adminName, adminEmail: input.adminEmail, plan: input.plan, source: 'platform', notes: input.notes,
+    slug: input.slug, name: input.name, adminName: input.adminName, adminEmail: input.adminEmail, plan: input.plan, source: 'platform', notes: input.notes, country: input.country,
     trialEndsAt: input.plan === 'trial' ? new Date(Date.now() + (input.trialDays ?? settings.trialDays) * DAY) : null,
     branding: { ...(input.primaryColor ? { primaryColor: input.primaryColor } : {}), ...(input.productName ? { productName: input.productName } : {}) },
     invitedBy: `${p.admin.name} from VendorGate`,
   });
   await audit({ tenantId: r.tenant.id, actor: `VendorGate (${p.admin.name})`, action: 'WORKSPACE_CREATED', detail: { plan: input.plan, admin: r.admin.email } });
-  await platformLog({ actor: p.admin.email, action: 'TENANT_CREATED', tenantId: r.tenant.id, detail: { slug: r.tenant.slug, name: r.tenant.name, plan: input.plan, admin: r.admin.email }, ip: req.ip });
+  await platformLog({ actor: p.admin.email, action: 'TENANT_CREATED', tenantId: r.tenant.id, detail: { slug: r.tenant.slug, name: r.tenant.name, plan: input.plan, country: r.tenant.country, admin: r.admin.email }, ip: req.ip });
   res.status(201).json({ id: r.tenant.id, slug: r.tenant.slug, inviteLink: r.inviteLink });
 }));
 
@@ -265,7 +266,7 @@ platformRouter.get('/tenants/:id', ah(async (req, res) => {
   ]);
   const platformHistory = await db.select().from(platformAudit).where(eq(platformAudit.tenantId, t.id)).orderBy(desc(platformAudit.createdAt)).limit(20);
   res.json({
-    tenant: { id: t.id, slug: t.slug, name: t.name, status: t.status, statusReason: t.statusReason, plan: t.plan, limits: t.limits, trialEndsAt: t.trialEndsAt, source: t.source, notes: t.notes, createdAt: t.createdAt, branding: t.branding },
+    tenant: { id: t.id, slug: t.slug, name: t.name, status: t.status, statusReason: t.statusReason, plan: t.plan, limits: t.limits, trialEndsAt: t.trialEndsAt, source: t.source, notes: t.notes, createdAt: t.createdAt, branding: t.branding, country: t.country, countryName: packFor(t.country).name },
     effective: effectiveLimits(t),
     usage: { ...u, emailsLast30: Number(emails30.n), emailsFailedLast30: Number(failed30.n), vendorsByStatus: Object.fromEntries(vendorStatus.map((r) => [r.status, Number(r.n)])), lastActiveAt: lastSeen?.at ?? null },
     admins, activity, platformHistory,

@@ -41,7 +41,7 @@ export function oracleToCanonical(h: Row): CanonicalPoInput {
     buyingGroup: group ? { code: group } : undefined,
     buyer: { name: s(pick(h, 'AGENT_NAME', 'BUYER_NAME')), email: s(pick(h, 'AGENT_EMAIL', 'BUYER_EMAIL')) },
     poType: s(pick(h, 'TYPE_LOOKUP_CODE')),
-    currency: s(pick(h, 'CURRENCY_CODE')) ?? 'INR',
+    currency: s(pick(h, 'CURRENCY_CODE')) ?? undefined,
     poDate: d(pick(h, 'APPROVED_DATE', 'CREATION_DATE')),
     paymentTerms: s(pick(h, 'TERMS', 'PAYMENT_TERMS', 'TERMS_NAME')),
     incoterms: s(pick(h, 'FOB_LOOKUP_CODE', 'FREIGHT_TERMS_LOOKUP_CODE', 'INCOTERMS')),

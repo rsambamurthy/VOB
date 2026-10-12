@@ -5,6 +5,7 @@
  * readable labels, so colour never carries meaning alone.
  */
 import { useState, type ReactNode } from 'react';
+import { loc } from '../lib/format';
 
 function Tip({ x, y, children }: { x: number; y: number; children: ReactNode }) {
   return <div className="viz-tip" style={{ left: x, top: y }} role="status">{children}</div>;
@@ -44,7 +45,7 @@ export function MonthColumns({ data, series }: { data: { month: string; [k: stri
   const plotW = W - padL, plotH = H - padB - padT;
   const band = plotW / data.length, barW = Math.min(14, (band - 10) / series.length);
   const y = (v: number) => padT + plotH - (v / top) * plotH;
-  const mLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' });
+  const mLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString(loc(), { month: 'short', timeZone: 'UTC' });
   return (
     <div className="viz-wrap">
       <div className="viz-legend">{series.map((s) => <span key={s.key}><i className={`sw ${s.cls}`} />{s.label}</span>)}</div>
@@ -68,7 +69,7 @@ export function MonthColumns({ data, series }: { data: { month: string; [k: stri
       </svg>
       {hover !== undefined && (
         <div className="viz-tip viz-tip-fixed" style={{ left: `${((padL + hover * band + band / 2) / W) * 100}%` }}>
-          <strong>{new Date(`${data[hover].month}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</strong>
+          <strong>{new Date(`${data[hover].month}-01T00:00:00Z`).toLocaleDateString(loc(), { month: 'long', year: 'numeric', timeZone: 'UTC' })}</strong>
           {series.map((s) => <div key={s.key}><i className={`sw ${s.cls}`} />{s.label}: {data[hover][s.key]}</div>)}
         </div>
       )}

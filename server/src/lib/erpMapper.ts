@@ -5,11 +5,15 @@
  * Deliberate fixes vs. the sample data:
  *  - SITE_DATA and BANK_DATA are ALWAYS arrays (the sample mixes arrays, objects and "").
  *  - BIC_SWIFTCODE only ever holds a SWIFT/BIC; the IBAN goes in IBAN; Indian IFSC goes in BRANCH_NUMBER.
- *  - India tax identifiers (PAN/TAN/GSTIN/MSME) are carried in an INDIA_LOCALIZATION block
- *    (Oracle stores these in the JAI_* localization tables, not AP_SUPPLIERS).
+ *  - Country-specific tax identifiers come from the home country's pack: for India, PAN/TAN/GSTIN/MSME
+ *    go in an INDIA_LOCALIZATION block (Oracle stores these in the JAI_* localization tables, not AP_SUPPLIERS).
+ *
+ * "Domestic" means the supplier is in the workspace's home country (tenants.country).
  */
 import type { Vendor } from '../db/schema.js';
 import type { Profile } from './profileEngine.js';
+import { DEFAULT_HOME, packFor, packForCountryName } from '../countries/registry.js';
+import { isoFor } from '../countries/list.js';
 
 const ORG_TYPE: Record<string, string> = {
   'Company (Pvt / Public Ltd)': 'CORPORATION',
@@ -22,18 +26,23 @@ const ORG_TYPE: Record<string, string> = {
   'Government Organisation': 'GOVERNMENT',
 };
 const TERMS: Record<string, string> = { Advance: 'IMMEDIATE', 'Net 15': 'N15', 'Net 30': 'N30', 'Net 45': 'N45', 'Net 60': 'N60', 'Net 90': 'N90' };
-const COUNTRY_ISO: Record<string, string> = { India: 'IN', 'United Arab Emirates': 'AE', 'United States': 'US', 'United Kingdom': 'GB', Germany: 'DE', Singapore: 'SG', Kuwait: 'KW', 'Saudi Arabia': 'SA', China: 'CN', Japan: 'JP' };
 
 const s = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 const ts = (d: Date | null | undefined) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '');
 
-export function toOracleSupplier(v: Vendor, opts: { orgId?: string; action?: 'CREATE' | 'UPDATE' } = {}) {
+export function toOracleSupplier(v: Vendor, opts: { orgId?: string; action?: 'CREATE' | 'UPDATE'; homeCountry?: string } = {}) {
   const p = (v.profile ?? {}) as Profile;
   const b = p.basic ?? {}, bank = p.bank ?? {}, tax = p.tax ?? {}, risk = p.risk ?? {};
-  const domestic = s(b.supplierCountry) === 'India';
-  const bankIndia = s(bank.bankCountry) === 'India';
-  const currency = domestic ? 'INR' : s(risk.currency) || 'USD';
-  const payGroup = bankIndia ? 'EFT DOMESTIC' : 'EFT FOREIGN';
+  const home = packFor(opts.homeCountry ?? DEFAULT_HOME);
+  const domestic = s(b.supplierCountry) === home.name;
+  const bankDomestic = s(bank.bankCountry) === home.name;
+  const currency = domestic ? home.currency ?? 'USD' : s(risk.currency) || 'USD';
+  const payGroup = bankDomestic ? 'EFT DOMESTIC' : 'EFT FOREIGN';
+  const domesticBlock = domestic ? home.erp?.domesticBlock?.(p) : undefined;
+  const foreignBlock = !domestic ? home.erp?.foreignBlock?.(p) : undefined;
+  const taxId = domestic ? home.erp?.domesticTaxId?.(p) ?? s(tax.vatNumber) : s(tax.vatNumber);
+  const branchField = packForCountryName(s(bank.bankCountry)).erp?.bankBranchField;
+  const branchNumber = branchField ? s(bank[branchField.split('.')[1]]) : s(bank.routingNumber);
 
   return {
     ERPVendorsData: {
@@ -62,15 +71,11 @@ export function toOracleSupplier(v: Vendor, opts: { orgId?: string; action?: 'CR
           MATCH_OPTION: 'P',
           START_DATE_ACTIVE: ts(v.decidedAt),
           END_DATE_ACTIVE: '',
-          TCA_SYNC_VAT_REG_NUM: domestic ? s(tax.gstin) : s(tax.vatNumber),
+          TCA_SYNC_VAT_REG_NUM: taxId,
           NUM_1099: '',
           SMALL_BUSINESS_FLAG: s(b.msmeRegistered) === 'Yes' ? 'Y' : 'N',
-          INDIA_LOCALIZATION: domestic ? {
-            PAN_NO: s(tax.pan), TAN_NO: s(tax.tan), GSTIN: s(tax.gstin), GST_REGISTRATION_TYPE: s(tax.gstClassification),
-            CIN: s(tax.cin), MSME_UDYAM_NO: s(b.udyamNumber), MSME_CATEGORY: s(b.msmeCategory),
-            LOWER_TDS_CERT_NO: s(tax.tdsCertNumber), LOWER_TDS_RATE: s(tax.tdsRate), LOWER_TDS_VALID_TILL: s(tax.tdsValidTill),
-          } : undefined,
-          FOREIGN_TAX: !domestic ? { TIN: s(tax.foreignTin), TRC_HELD: s(tax.hasTrc), NO_PE_DECLARATION: s(tax.holdsNoPe), FORM_10F: s(tax.form10f) } : undefined,
+          ...(domesticBlock ? { [domesticBlock.key]: domesticBlock.value } : {}),
+          ...(foreignBlock ? { [foreignBlock.key]: foreignBlock.value } : {}),
           VENDOR_SITES: {
             SITE_DATA: [
               {
@@ -83,7 +88,7 @@ export function toOracleSupplier(v: Vendor, opts: { orgId?: string; action?: 'CR
                 CITY: s(b.district),
                 STATE: s(b.region),
                 ZIP: s(b.postalCode),
-                COUNTRY: COUNTRY_ISO[s(b.supplierCountry)] ?? s(b.supplierCountry),
+                COUNTRY: isoFor(s(b.supplierCountry)),
                 PHONE: s(b.contactMobile),
                 FAX: s(b.faxNumber),
                 TELEX: s(b.telexNumber),
@@ -93,7 +98,7 @@ export function toOracleSupplier(v: Vendor, opts: { orgId?: string; action?: 'CR
                 INVOICE_CURRENCY_CODE: currency,
                 PAYMENT_CURRENCY_CODE: currency,
                 ORG_ID: opts.orgId ?? '',     // operating unit — decided by Master Data at approval
-                VAT_REGISTRATION_NUMBER: domestic ? s(tax.gstin) : s(tax.vatNumber),
+                VAT_REGISTRATION_NUMBER: taxId,
                 VENDOR_BANKS: {
                   BANK_DATA: [
                     {
@@ -101,14 +106,14 @@ export function toOracleSupplier(v: Vendor, opts: { orgId?: string; action?: 'CR
                       BANK_ACCOUNT_NAME: s(bank.accountHolderName),
                       BANK_NAME: s(bank.bankName),
                       BRANCH_NAME: s(bank.bankBranch),
-                      BRANCH_NUMBER: bankIndia ? s(bank.ifsc) : s(bank.routingNumber),
+                      BRANCH_NUMBER: branchNumber,
                       BIC_SWIFTCODE: s(bank.swift),
                       IBAN: s(bank.iban),
-                      BANK_COUNTRY: COUNTRY_ISO[s(bank.bankCountry)] ?? s(bank.bankCountry),
+                      BANK_COUNTRY: isoFor(s(bank.bankCountry)),
                       START_DATE: ts(v.decidedAt),
                       END_DATE: '',
-                      FOREIGN_PAYMENT_USE_FLAG: bankIndia ? 'N' : 'Y',
-                      PAYMENT_METHOD: bankIndia ? 'EFT' : 'WIRE',
+                      FOREIGN_PAYMENT_USE_FLAG: bankDomestic ? 'N' : 'Y',
+                      PAYMENT_METHOD: bankDomestic ? 'EFT' : 'WIRE',
                     },
                   ],
                 },
@@ -131,10 +136,10 @@ export function toGenericVendor(v: Vendor) {
     blocked: !!v.blockedAt, blockedReason: v.blockedReason ?? null,
     approvedAt: v.decidedAt?.toISOString() ?? null,
     entityType: s(b.entityType), msme: s(b.msmeRegistered) === 'Yes', udyamNumber: s(b.udyamNumber),
-    address: { line1: s(b.address).split('\n')[0] ?? '', line2: s(b.address).split('\n').slice(1).join(', '), city: s(b.district), state: s(b.region), postalCode: s(b.postalCode), country: COUNTRY_ISO[s(b.supplierCountry)] ?? s(b.supplierCountry) },
+    address: { line1: s(b.address).split('\n')[0] ?? '', line2: s(b.address).split('\n').slice(1).join(', '), city: s(b.district), state: s(b.region), postalCode: s(b.postalCode), country: isoFor(s(b.supplierCountry)) },
     contact: { name: s(b.contactName) || `${v.contactFirstName} ${v.contactLastName}`, email: s(b.contactEmail) || v.contactEmail, mobile: s(b.contactMobile) || v.contactMobile },
     tax: { pan: s(tax.pan), gstin: s(tax.gstin), tan: s(tax.tan), cin: s(tax.cin), gstClassification: s(tax.gstClassification), foreignTin: s(tax.foreignTin) },
-    bank: { accountName: s(bank.accountHolderName), accountNumber: s(bank.accountNumber), bankName: s(bank.bankName), branch: s(bank.bankBranch), ifsc: s(bank.ifsc), swift: s(bank.swift), iban: s(bank.iban), country: COUNTRY_ISO[s(bank.bankCountry)] ?? s(bank.bankCountry) },
+    bank: { accountName: s(bank.accountHolderName), accountNumber: s(bank.accountNumber), bankName: s(bank.bankName), branch: s(bank.bankBranch), ifsc: s(bank.ifsc), swift: s(bank.swift), iban: s(bank.iban), country: isoFor(s(bank.bankCountry)) },
     paymentTerms: s(b.paymentTerms),
   };
 }

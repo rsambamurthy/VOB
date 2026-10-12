@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, Modal } from '../components/ui';
-import { fmtDate, fmtDateTime, humanize } from '../lib/format';
+import { fmtDate, fmtDateTime, humanize, loc } from '../lib/format';
 import { PLAN_LABEL, SOURCE_LABEL, papi, relDays } from './session';
 import { TenantStatus } from './Tenants';
 
 type Features = { erp: boolean; ai: boolean; kyc: boolean };
 interface Limits { maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Features }
 interface Detail {
-  tenant: { id: string; slug: string; name: string; status: 'ACTIVE' | 'SUSPENDED'; statusReason: string | null; plan: string; limits: Partial<Limits>; trialEndsAt: string | null; source: string; notes: string | null; createdAt: string };
+  tenant: { id: string; slug: string; name: string; status: 'ACTIVE' | 'SUSPENDED'; statusReason: string | null; plan: string; limits: Partial<Limits>; trialEndsAt: string | null; source: string; notes: string | null; createdAt: string; country?: string; countryName?: string };
   effective: Limits & { label: string };
   usage: { users: number; vendors: number; emailsToday: number; emailsLast30: number; emailsFailedLast30: number; vendorsByStatus: Record<string, number>; lastActiveAt: string | null };
   admins: { id: string; name: string; email: string; status: string; mfaEnabled: boolean; lastLoginAt: string | null }[];
@@ -77,6 +77,7 @@ export function PlatformTenantDetail() {
           <section className="card pad section-card">
             <h3>Details</h3>
             <dl className="kv small">
+              <dt>Country</dt><dd>{t.countryName ?? t.country ?? 'India'}</dd>
               <dt>Sign-in link</dt><dd><a href={signIn} target="_blank" rel="noreferrer" className="break">{signIn.replace(/^https?:\/\//, '')}</a></dd>
               <dt>Last active</dt><dd>{d.usage.lastActiveAt ? relDays(d.usage.lastActiveAt) : 'never'}</dd>
               {t.plan === 'trial' && <><dt>Trial ends</dt><dd>{fmtDate(t.trialEndsAt)} ({relDays(t.trialEndsAt)})</dd></>}
@@ -111,7 +112,7 @@ function Meter({ label, used, max }: { label: string; used: number; max: number 
   const pct = max ? Math.min(100, (used / max) * 100) : 0;
   return (
     <div className="meter">
-      <div className="row-between small"><span>{label}</span><span className="mono-num"><strong>{used.toLocaleString('en-IN')}</strong>{max !== null ? ` / ${max.toLocaleString('en-IN')}` : <span className="muted"> · no limit</span>}</span></div>
+      <div className="row-between small"><span>{label}</span><span className="mono-num"><strong>{used.toLocaleString(loc())}</strong>{max !== null ? ` / ${max.toLocaleString(loc())}` : <span className="muted"> · no limit</span>}</span></div>
       {max !== null && <div className="meter-track" role="img" aria-label={`${label}: ${used} of ${max}`}><span className={`meter-fill ${pct >= 100 ? 'full' : pct >= 80 ? 'near' : ''}`} style={{ width: `${Math.max(pct, used ? 2 : 0)}%` }} /></div>}
     </div>
   );
@@ -127,7 +128,7 @@ function UsageCard({ d }: { d: Detail }) {
         <Meter label="Vendors" used={u.vendors} max={e.maxVendors} />
         <Meter label="Emails today" used={u.emailsToday} max={e.emailsPerDay} />
       </div>
-      <p className="muted small">Emails in the last 30 days: {u.emailsLast30.toLocaleString('en-IN')}{u.emailsFailedLast30 > 0 && <> · <span className="err-text">{u.emailsFailedLast30} failed</span></>}
+      <p className="muted small">Emails in the last 30 days: {u.emailsLast30.toLocaleString(loc())}{u.emailsFailedLast30 > 0 && <> · <span className="err-text">{u.emailsFailedLast30} failed</span></>}
         {Object.keys(u.vendorsByStatus).length > 0 && <> · Vendors: {Object.entries(u.vendorsByStatus).map(([s, n]) => `${n} ${humanize(s).toLowerCase()}`).join(', ')}</>}</p>
     </section>
   );
