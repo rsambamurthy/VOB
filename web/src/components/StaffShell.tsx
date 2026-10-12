@@ -8,7 +8,8 @@ export function StaffShell() {
   if (!me) return null;
   const product = me.tenant.branding.productName ?? 'VendorGate';
   const initials = me.user.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
-  const admin = can('users.manage') || can('tenant.settings') || can('audit.view') || can('config.manage');
+  const collab = me.plan?.features.collab ?? false;
+  const admin = can('users.manage') || can('tenant.settings') || can('audit.view') || can('config.manage') || (collab && can('orders.manage'));
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -22,6 +23,7 @@ export function StaffShell() {
           {can('vendors.view') && <NavLink to="/staff/queue">My approvals</NavLink>}
           {can('vendors.view') && <NavLink to="/staff/changes">Change requests</NavLink>}
           {can('reports.view') && <NavLink to="/staff/reports">Reports</NavLink>}
+          {collab && can('orders.view') && <NavLink to="/staff/orders">Purchase orders</NavLink>}
           {admin && <div className="nav-section">Administration</div>}
           {can('users.manage') && <NavLink to="/staff/admin/users">Users</NavLink>}
           {can('users.manage') && <NavLink to="/staff/admin/roles">Roles</NavLink>}
@@ -29,6 +31,7 @@ export function StaffShell() {
           {can('tenant.settings') && <NavLink to="/staff/admin/workspace">Workspace</NavLink>}
           {can('tenant.settings') && <NavLink to="/staff/admin/integrations">Integrations</NavLink>}
           {can('tenant.settings') && <NavLink to="/staff/admin/erp">ERP integration</NavLink>}
+          {collab && (can('orders.manage') || can('tenant.settings')) && <NavLink to="/staff/admin/purchasing">Purchasing setup</NavLink>}
           {can('audit.view') && <NavLink to="/staff/admin/audit">Audit log</NavLink>}
           {me.devMailbox && <NavLink to="/staff/mailbox">Mailbox <span className="tag">dev</span></NavLink>}
         </nav>

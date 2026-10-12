@@ -91,6 +91,11 @@ export function ErpSettings() {
                 <div className="field"><label htmlFor="erp-user">User name</label><input id="erp-user" value={cfg('username')} autoComplete="off" onChange={(e) => setCfg('username', e.target.value)} /></div>
                 {secretField('password', 'Password')}
                 <div className="field"><label htmlFor="erp-org">Operating unit (ORG_ID)</label><input id="erp-org" value={cfg('orgId')} placeholder="e.g. 204" onChange={(e) => setCfg('orgId', e.target.value)} /></div>
+                <div className="field field-wide"><h4 className="sub-head">Purchase orders (supplier collaboration)</h4></div>
+                <div className="field field-wide"><label htmlFor="erp-poPullUrl">Purchase order pull URL</label><input id="erp-poPullUrl" value={cfg('poPullUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_po/get_purchase_orders/" onChange={(e) => setCfg('poPullUrl', e.target.value)} />
+                  <div className="field-help">Called nightly and from <strong>Get from ERP</strong> as <span className="mono">GET …?changedSince=&lt;time&gt;[&amp;poNumber=][&amp;supplierNumber=]</span>. It should return approved POs with PO_HEADERS_ALL columns, nested LINES → SHIPMENTS (PO_LINE_LOCATIONS_ALL) and optional RECEIPTS.</div></div>
+                <div className="field field-wide"><label htmlFor="erp-ackUrl">Acknowledgement URL</label><input id="erp-ackUrl" value={cfg('ackUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_po/acknowledge/" onChange={(e) => setCfg('ackUrl', e.target.value)} />
+                  <div className="field-help">Receives a POST each time a supplier accepts (or a PO is auto-accepted): PO_HEADER_ID, SEGMENT1, REVISION_NUM, ACCEPTED_FLAG, ACCEPTANCE_TYPE and the accepted LINES — for your service to record in PO_ACCEPTANCES.</div></div>
               </div>
             )}
             {f.kind === 'webhook' && (

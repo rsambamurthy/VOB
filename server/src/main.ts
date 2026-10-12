@@ -9,7 +9,9 @@ import { runExpiryReminders, runPeriodicReviews, sweepOverdueChanges } from './s
 if (process.env.CREATE_DATABASE_IF_MISSING === 'true') await (await import('./db/ensureDatabase.js')).ensureDatabase();
 if (process.env.MIGRATE_ON_START === 'true') {
   await runMigrations();
-  await (await import('./db/dataMigrations.js')).sealExistingData();
+  const dm = await import('./db/dataMigrations.js');
+  await dm.sealExistingData();
+  await dm.grantNewAdminPermissions();
 }
 // First deploy: create the first workspace and invite its administrator (only when the database has none).
 if (process.env.BOOTSTRAP_ADMIN_EMAIL) {
@@ -40,7 +42,9 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 
 try {
   // Background jobs: email/SMS delivery with retries, AI document reading, SLA sweep every 5 minutes.
-  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }];
+  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }, { name: 'po.hourly', cron: '7 * * * *' }];
+  if (env.int.PO_SYNC_SCHEDULE && env.int.PO_SYNC_SCHEDULE !== 'off') schedules.push({ name: 'po.sync', cron: env.int.PO_SYNC_SCHEDULE });
+  await import('./services/orders/pull.js'); await import('./services/orders/acceptance.js');
   if (env.int.BACKUP_SCHEDULE) { await import('./services/backups.js'); schedules.push({ name: 'db.backup', cron: env.int.BACKUP_SCHEDULE }); }
   await startQueue(schedules);
   if (env.jobsEnabled) console.log('[startup] job queue started');
@@ -51,6 +55,8 @@ try {
 if (!env.jobsEnabled) {
   setInterval(() => { sweepOverdue().then(() => sweepOverdueChanges()).catch((e) => logger.error({ err: e }, 'SLA sweep failed')); }, 5 * 60_000).unref();
   setInterval(() => { runExpiryReminders().then(() => runPeriodicReviews()).catch((e) => logger.error({ err: e }, 'daily lifecycle failed')); }, 6 * 3600_000).unref();
+  const { runAutoAccept, runAcceptanceReminders } = await import('./services/orders/acceptance.js');
+  setInterval(() => { runAutoAccept().then(() => runAcceptanceReminders()).catch((e) => logger.error({ err: e }, 'purchase order sweep failed')); }, 3600_000).unref();
 }
 
 const shutdown = async () => { logger.info('shutting down'); server.close(); await stopQueue().catch(() => {}); process.exit(0); };

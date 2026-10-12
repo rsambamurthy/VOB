@@ -2,7 +2,7 @@
  * Database schema. Every business table carries tenant_id — all queries MUST filter by it
  * (see lib/tenantScope notes in README "Multi-tenancy"). Platform-level tables: tenants.
  */
-import { pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, primaryKey, date, customType } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, primaryKey, date, customType, numeric } from 'drizzle-orm/pg-core';
 import { openChanges, openJson, openProfile, sealChanges, sealJson, sealProfile } from '../lib/fieldCrypto.js';
 
 /* JSON columns that encrypt sensitive values on write and decrypt on read (see lib/fieldCrypto.ts). */
@@ -77,7 +77,7 @@ export interface TenantLimits {
   maxUsers?: number | null;
   maxVendors?: number | null;
   emailsPerDay?: number | null;
-  features?: { erp?: boolean; ai?: boolean; kyc?: boolean };
+  features?: { erp?: boolean; ai?: boolean; kyc?: boolean; collab?: boolean };
 }
 
 export const tenants = pgTable('tenants', {
@@ -152,6 +152,8 @@ export const sessions = pgTable('sessions', {
   /** Read-only support session opened from the platform console: the platform admin's id and reason. */
   supportAdminId: text('support_admin_id'),
   supportReason: text('support_reason'),
+  /** Supplier sessions: the contact email that signed in (a supplier can have several). */
+  contactEmail: text('contact_email'),
   createdAt: createdAt(),
 });
 
@@ -223,6 +225,8 @@ export const otpCodes = pgTable('otp_codes', {
   tenantId: tenantId(),
   vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
   codeHash: text('code_hash').notNull(),
+  /** Set for email sign-in to the supplier portal: the address the code was sent to. */
+  email: text('email'),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   attempts: integer('attempts').notNull().default(0),
   used: boolean('used').notNull().default(false),
@@ -447,6 +451,178 @@ export const stepsRelations = relations(approvalSteps, ({ one }) => ({
   role: one(roles, { fields: [approvalSteps.roleId], references: [roles.id] }),
 }));
 export const auditRelations = relations(auditLogs, ({ one }) => ({ vendor: one(vendors, { fields: [auditLogs.vendorId], references: [vendors.id] }) }));
+
+/* ---------- Supplier collaboration (purchase orders) ---------- */
+
+const qty = (name: string) => numeric(name, { precision: 18, scale: 4 });
+
+/** Legal entity / company (Oracle: operating unit, ORG_ID). */
+export const legalEntities = pgTable('legal_entities', {
+  id: id(), tenantId: tenantId(),
+  code: text('code').notNull(), name: text('name').notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('legal_entities_code_uq').on(t.tenantId, t.code)]);
+
+/** Plant / warehouse / ship-to location (Oracle: ship-to organization). */
+export const sites = pgTable('sites', {
+  id: id(), tenantId: tenantId(),
+  entityId: text('entity_id').references(() => legalEntities.id, { onDelete: 'set null' }),
+  code: text('code').notNull(), name: text('name').notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('sites_code_uq').on(t.tenantId, t.code)]);
+
+/** Buying / purchasing group: how POs in it are acknowledged. */
+export const buyingGroups = pgTable('buying_groups', {
+  id: id(), tenantId: tenantId(),
+  code: text('code').notNull(), name: text('name').notNull(),
+  active: boolean('active').notNull().default(true),
+  /** Accept automatically this many calendar days after the PO reaches the portal; null = the supplier must accept. */
+  autoAcceptDays: integer('auto_accept_days'),
+  /** Shipment notice required before goods are received (used from Phase 2). */
+  asnRequired: boolean('asn_required').notNull().default(false),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('buying_groups_code_uq').on(t.tenantId, t.code)]);
+
+/** A vendor's supplier codes in the ERP (one vendor may have several, e.g. per site). */
+export const supplierCodes = pgTable('supplier_codes', {
+  id: id(), tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  code: text('code').notNull(),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('supplier_codes_uq').on(t.tenantId, t.code)]);
+
+/** People at a supplier who may sign in to the supplier portal (besides the vendor's main contact). */
+export const supplierContacts = pgTable('supplier_contacts', {
+  id: id(), tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(), email: text('email').notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('supplier_contacts_uq').on(t.vendorId, t.email), index('supplier_contacts_email_idx').on(t.tenantId, t.email)]);
+
+/**
+ * Purchase order header, mirrored from the ERP (the ERP stays the record).
+ * acceptance: PENDING · PARTIAL · ACCEPTED · AUTO_ACCEPTED ; status: OPEN · CLOSED · CANCELLED
+ */
+export const purchaseOrders = pgTable('purchase_orders', {
+  id: id(), tenantId: tenantId(),
+  erpId: text('erp_id').notNull(),
+  poNumber: text('po_number').notNull(),
+  revision: integer('revision').notNull().default(0),
+  vendorId: text('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+  supplierCode: text('supplier_code').notNull(),
+  supplierSiteCode: text('supplier_site_code'),
+  entityId: text('entity_id').references(() => legalEntities.id, { onDelete: 'set null' }),
+  buyingGroupId: text('buying_group_id').references(() => buyingGroups.id, { onDelete: 'set null' }),
+  buyerName: text('buyer_name'), buyerEmail: text('buyer_email'),
+  poType: text('po_type'),
+  currency: text('currency').notNull().default('INR'),
+  poDate: date('po_date'),
+  paymentTerms: text('payment_terms'), incoterms: text('incoterms'),
+  total: qty('total'),
+  status: text('status').notNull().default('OPEN'),
+  acceptance: text('acceptance').notNull().default('PENDING'),
+  /** When it is accepted automatically if the supplier hasn't (null = never). */
+  acceptDueAt: timestamp('accept_due_at', { withTimezone: true }),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  notes: text('notes'),
+  attachments: jsonb('attachments').$type<{ name: string; url: string }[]>().notNull().default([]),
+  /** api · csv · oracle · demo */
+  source: text('source').notNull(),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().defaultNow(),
+  remindedAt: timestamp('reminded_at', { withTimezone: true }),
+  /** Hash of the last imported content, to tell real changes from repeats. */
+  contentHash: text('content_hash'),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('po_erp_uq').on(t.tenantId, t.erpId), index('po_number_idx').on(t.tenantId, t.poNumber), index('po_vendor_idx').on(t.tenantId, t.vendorId, t.acceptance), index('po_supplier_code_idx').on(t.tenantId, t.supplierCode)]);
+
+export const poLines = pgTable('po_lines', {
+  id: id(), tenantId: tenantId(),
+  poId: text('po_id').notNull().references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  erpId: text('erp_id').notNull(),
+  lineNo: integer('line_no').notNull(),
+  /** GOODS (has an item code) · SERVICE */
+  lineType: text('line_type').notNull().default('GOODS'),
+  itemCode: text('item_code'), description: text('description').notNull(),
+  uom: text('uom'),
+  quantity: qty('quantity').notNull(), unitPrice: qty('unit_price').notNull(), amount: qty('amount').notNull(),
+  taxCode: text('tax_code'), taxRate: qty('tax_rate'), hsn: text('hsn'),
+  siteId: text('site_id').references(() => sites.id, { onDelete: 'set null' }),
+  needByDate: date('need_by_date'), promisedDate: date('promised_date'),
+  /** Over-delivery tolerance in % (used by shipment notices). */
+  tolerancePct: qty('tolerance_pct'),
+  receivedQty: qty('received_qty').notNull().default('0'),
+  billedQty: qty('billed_qty').notNull().default('0'),
+  status: text('status').notNull().default('OPEN'),
+  /** PENDING · ACCEPTED · AUTO_ACCEPTED */
+  acceptance: text('acceptance').notNull().default('PENDING'),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  acceptedBy: text('accepted_by'),
+  acceptNote: text('accept_note'),
+}, (t) => [uniqueIndex('po_lines_erp_uq').on(t.poId, t.erpId), index('po_lines_po_idx').on(t.poId, t.lineNo)]);
+
+/** Goods receipts / service acceptances from the ERP. */
+export const poReceipts = pgTable('po_receipts', {
+  id: id(), tenantId: tenantId(),
+  poId: text('po_id').notNull().references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  lineId: text('line_id').references(() => poLines.id, { onDelete: 'cascade' }),
+  erpId: text('erp_id').notNull(),
+  receiptNumber: text('receipt_number').notNull(),
+  receiptDate: date('receipt_date'),
+  quantity: qty('quantity').notNull(),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('po_receipts_uq').on(t.tenantId, t.erpId)]);
+
+/** Outbound messages to the ERP about orders (acceptances now; shipment notices later). */
+export const poMessages = pgTable('po_messages', {
+  id: id(), tenantId: tenantId(),
+  poId: text('po_id').notNull().references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  /** ACCEPTANCE */
+  kind: text('kind').notNull(),
+  connector: text('connector').notNull(),
+  /** PENDING · SENT · TEST · FAILED · NO_CONNECTOR */
+  status: text('status').notNull().default('PENDING'),
+  attempts: integer('attempts').notNull().default(0),
+  target: text('target'),
+  payload: jsonb('payload'),
+  httpStatus: integer('http_status'), response: text('response'), error: text('error'),
+  requestedBy: text('requested_by'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('po_messages_po_idx').on(t.poId, t.createdAt), index('po_messages_status_idx').on(t.tenantId, t.status)]);
+
+/** Each inbound import run (API call, CSV upload, Oracle pull, demo load). */
+export const poImports = pgTable('po_imports', {
+  id: id(), tenantId: tenantId(),
+  source: text('source').notNull(),
+  requestedBy: text('requested_by').notNull(),
+  /** OK · PARTIAL · FAILED */
+  status: text('status').notNull(),
+  created: integer('created').notNull().default(0), updated: integer('updated').notNull().default(0),
+  unchanged: integer('unchanged').notNull().default(0), failed: integer('failed').notNull().default(0),
+  unmapped: integer('unmapped').notNull().default(0),
+  errors: jsonb('errors').$type<string[]>().notNull().default([]),
+  detail: jsonb('detail'),
+  createdAt: createdAt(),
+}, (t) => [index('po_imports_tenant_idx').on(t.tenantId, t.createdAt)]);
+
+/** Keys an ERP or middleware uses to call the VendorGate API (stored hashed). */
+export const apiKeys = pgTable('api_keys', {
+  id: id(), tenantId: tenantId(),
+  name: text('name').notNull(),
+  prefix: text('prefix').notNull(),
+  keyHash: text('key_hash').notNull().unique(),
+  createdById: text('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type PoLine = typeof poLines.$inferSelect;
 
 /* ---------- Platform (the SaaS operator, above all tenants) ---------- */
 

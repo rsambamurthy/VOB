@@ -83,6 +83,9 @@ const schema = z.object({
   /** Scheduled encrypted database backups to the configured storage, e.g. "30 2 * * *" (02:30 IST). Needs pg_dump (included in the Docker image). */
   BACKUP_SCHEDULE: z.string().optional(),
   BACKUP_KEEP: z.coerce.number().int().min(1).default(14),
+
+  /** Nightly purchase order pull from Oracle EBS (workspaces with the PO pull URL set and test mode off). */
+  PO_SYNC_SCHEDULE: z.string().default('30 1 * * *'),
 });
 
 const parsed = schema.parse(process.env);

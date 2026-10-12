@@ -32,7 +32,7 @@ export function publicConnection(c: Connection) {
 }
 
 const CONFIG_FIELDS: Record<ErpKind, string[]> = {
-  none: [], oracle: ['url', 'username', 'orgId'], webhook: ['url'], csv: ['delivery', 'host', 'port', 'username', 'remoteDir'],
+  none: [], oracle: ['url', 'username', 'orgId', 'poPullUrl', 'ackUrl'], webhook: ['url'], csv: ['delivery', 'host', 'port', 'username', 'remoteDir'],
 };
 
 export const connectionInput = z.object({
@@ -48,9 +48,10 @@ export async function saveConnection(tenantId: string, input: z.infer<typeof con
   const current = await getConnection(tenantId);
   const config = Object.fromEntries(CONFIG_FIELDS[input.kind].map((k) => [k, (input.config[k] ?? '').trim()]).filter(([, v]) => v !== ''));
   if (input.kind === 'csv' && !config.delivery) config.delivery = 'download';
-  if ((input.kind === 'oracle' || input.kind === 'webhook') && config.url) {
-    try { const u = new URL(config.url); if (!['http:', 'https:'].includes(u.protocol)) throw new Error(); } catch { throw new HttpError(400, 'Enter a full URL starting with https://'); }
-    if (env.isProd && !config.url.startsWith('https://')) throw new HttpError(400, 'Use an https:// URL');
+  for (const k of ['url', 'poPullUrl', 'ackUrl']) {
+    if (!config[k]) continue;
+    try { const u = new URL(config[k]); if (!['http:', 'https:'].includes(u.protocol)) throw new Error(); } catch { throw new HttpError(400, 'Enter a full URL starting with https://'); }
+    if (env.isProd && !config[k].startsWith('https://')) throw new HttpError(400, 'Use an https:// URL');
   }
   if (input.kind === 'csv' && config.port && !/^\d{1,5}$/.test(config.port)) throw new HttpError(400, 'Port must be a number');
   const secrets: Record<string, string> = {};

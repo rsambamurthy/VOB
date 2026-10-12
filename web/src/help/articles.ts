@@ -18,7 +18,7 @@ export interface HelpArticle {
   /** Staff only: shown when the user has ANY of these permissions. */
   perms?: Permission[];
   /** Hidden when the workspace's plan doesn't include the feature. */
-  feature?: 'erp' | 'ai' | 'kyc';
+  feature?: 'erp' | 'ai' | 'kyc' | 'collab';
   /** Regexes on the URL path; the first matching article is the screen's main topic. */
   screens?: string[];
   /** In-page contexts (set by a screen with useHelpContext), e.g. a configuration tab. */
@@ -648,6 +648,159 @@ Under **Plan and limits** leave a box empty to use the plan's value, or type **u
 - The **Audit log** records every console action and sign-in.
 
 Locked out entirely? Run \`npm run platform:admin -- --email you@company.com --reset-2fa\` against the database (see DEPLOY.md).`,
+  },
+  /* ---------------- Purchase orders (supplier collaboration) ---------------- */
+  {
+    id: 'orders-overview', title: 'Purchase orders: how it works', audience: ['staff'], perms: ['orders.view', 'orders.manage'], feature: 'collab',
+    summary: 'Orders come from your ERP, suppliers accept them in the portal, acceptance goes back to the ERP.',
+    screens: ['^/staff/orders/?$'], contexts: ['orders'],
+    keywords: 'po purchase order supplier collaboration acceptance acknowledge confirm oracle ebs erp waiting',
+    related: ['orders-getting-in', 'orders-acceptance', 'orders-unlinked', 'purchasing-groups'],
+    body: `Purchase orders let your suppliers see and accept the orders you place with them, without email back-and-forth.
+
+1. Your ERP sends each order to VendorGate (see [Getting orders in](#orders-getting-in)).
+2. The order is linked to a vendor by its **supplier code**, and everyone with access at that supplier gets an email.
+3. The supplier accepts the whole order or individual lines in the supplier portal.
+4. The acceptance is sent back to your ERP through the connection under **ERP integration**.
+
+## The tiles
+- **Waiting for supplier** — at least one open line hasn't been accepted.
+- **Auto-accept within 2 days** — waiting orders that will accept themselves soon.
+- **Accepted / Auto-accepted** — confirmed by the supplier, or accepted because the buying group's waiting time passed.
+- **Closed / cancelled** — closed or cancelled in the ERP.
+
+> If the ERP changes the quantity, price, need-by date or item on a line, that line goes back to waiting and the supplier is asked to accept it again.`,
+  },
+  {
+    id: 'orders-getting-in', title: 'Getting orders in from the ERP', audience: ['staff'], perms: ['orders.manage', 'tenant.settings'], feature: 'collab',
+    summary: 'Oracle EBS pull, the REST API, CSV import and sample orders.',
+    contexts: ['orders', 'purchasing-keys'],
+    keywords: 'import csv api oracle pull sync nightly get from erp sample demo template po_headers_all webhook key',
+    related: ['orders-overview', 'purchasing-keys', 'orders-unlinked'],
+    body: `There are four ways to get orders in. Sending the same order again updates it rather than duplicating it.
+
+## Oracle EBS
+Under **ERP integration**, choose Oracle EBS and fill in **Purchase order pull URL** (an endpoint that returns PO_HEADERS_ALL with its lines and shipments) and **Acknowledgement URL** (where acceptances are posted). Orders are fetched every night; use **Get from ERP** on the Purchase orders page to fetch now.
+
+## REST API
+Your ERP or middleware can push orders to \`/api/v1/purchase-orders\` with an API key from [Purchasing setup → API keys](#purchasing-keys). Add \`?format=oracle\` to send Oracle rows as they are.
+
+## CSV
+**Import CSV** takes one row per order line. Download the template from the import window to see the columns.
+
+## Sample orders
+While the ERP connection is in test mode, **Load sample orders** creates a few Oracle-style orders for your approved vendors so you can try the supplier side.`,
+  },
+  {
+    id: 'orders-unlinked', title: 'Orders for unlinked supplier codes', audience: ['staff'], perms: ['orders.manage'], feature: 'collab',
+    summary: 'Link an ERP supplier code to a vendor so the supplier can see its orders.',
+    contexts: ['orders'],
+    keywords: 'unmapped unlinked supplier code vendor number link map not visible supplier cannot see order',
+    related: ['orders-overview', 'supplier-access'],
+    body: `Every order carries the ERP's **supplier code** (the supplier number in Oracle). An order is shown to a supplier only when that code is linked to one of your vendors.
+
+Codes are matched automatically when they equal a vendor's VendorGate code or a code already linked to it. When nothing matches, the Purchase orders page shows a yellow banner.
+
+1. Click **Link supplier codes**.
+2. Pick the vendor for each code and click **Link**.
+
+All waiting orders for that code are linked at once, and the supplier is emailed. You can also add codes from the vendor's page — see [Supplier portal access](#supplier-access).`,
+  },
+  {
+    id: 'orders-acceptance', title: 'Accepting orders and auto-accept', audience: ['staff'], perms: ['orders.view', 'orders.manage'], feature: 'collab',
+    summary: 'Line-level acceptance, recording acceptance for a supplier, reminders and the ERP message.',
+    screens: ['^/staff/orders/[^/]+$'], contexts: ['order'],
+    keywords: 'accept acceptance auto-accept automatic reminder record on behalf retry failed message erp acknowledgement payload',
+    related: ['purchasing-groups', 'orders-overview'],
+    body: `Suppliers can accept a whole order or only some lines. The order shows **Partly accepted** until every open line is accepted.
+
+## Auto-accept
+If the order's buying group has a waiting time, the order accepts itself when that time passes. Suppliers get a reminder a day before. Groups without a waiting time need the supplier to accept.
+
+## Recording an acceptance yourself
+If the supplier confirmed by phone or email, open the order and use **Record supplier acceptance**. Choose the lines and say how they confirmed. It's recorded under your name, on behalf of the supplier.
+
+## Messages to the ERP
+Each acceptance is sent to the ERP and listed under **Messages to the ERP**. **Payload** shows exactly what was sent. If sending failed, fix the cause (often the Acknowledgement URL or the ERP being down) and click **Retry**. "No ERP connection" means nothing is set up to receive acceptances — ERPs can still read them from \`/api/v1/acknowledgements\`.`,
+  },
+  {
+    id: 'purchasing-groups', title: 'Buying groups', audience: ['staff'], perms: ['orders.view', 'orders.manage'], feature: 'collab',
+    summary: 'Decide which orders the supplier must accept and when orders accept themselves.',
+    screens: ['^/staff/admin/purchasing'], contexts: ['purchasing-groups'],
+    keywords: 'buying group category auto accept days manual acceptance asn rule purchasing setup',
+    related: ['orders-acceptance', 'purchasing-entities'],
+    body: `Every order belongs to a buying group — the purchasing category or buyer team code your ERP sends. The group sets the acceptance rule:
+
+- **The supplier must accept it** — the order waits until the supplier responds.
+- **Accept automatically after N days** — if the supplier hasn't responded, the order accepts itself (calendar days from when it arrived).
+
+Codes the ERP sends that you haven't set up are added automatically with manual acceptance. Changing a group's rule also re-times its orders that are still waiting.`,
+  },
+  {
+    id: 'purchasing-entities', title: 'Companies and delivery sites', audience: ['staff'], perms: ['orders.view', 'orders.manage'], feature: 'collab',
+    summary: 'The legal entities that place orders and the sites goods are delivered to.',
+    contexts: ['purchasing-entities'],
+    keywords: 'company legal entity operating unit site plant warehouse ship-to location',
+    related: ['purchasing-groups'],
+    body: `**Companies** are the legal entities that place orders (operating units in Oracle EBS). **Delivery sites** are the plants, warehouses and offices on each line's ship-to.
+
+Both are created automatically from incoming orders using the ERP's codes; add them here first if you want friendlier names. Suppliers can filter their orders by company and site. Deactivating one hides it from new choices but keeps existing orders as they are.`,
+  },
+  {
+    id: 'purchasing-keys', title: 'API keys for your ERP', audience: ['staff'], perms: ['tenant.settings'], feature: 'collab',
+    summary: 'Create a key so your ERP or middleware can push orders and read acceptances.',
+    contexts: ['purchasing-keys'],
+    keywords: 'api key token bearer authorization rest endpoint integration middleware revoke',
+    related: ['orders-getting-in'],
+    body: `1. Go to **Purchasing setup → API keys**.
+2. Enter a name (for example "Oracle EBS production") and click **Create key**.
+3. Copy the key straight away — it is shown only once.
+
+Send it with every request as \`Authorization: Bearer <key>\`. The endpoints are listed under the keys. **Revoke** stops a key immediately; create a new one first if you are rotating keys.`,
+  },
+  {
+    id: 'supplier-access', title: 'Supplier portal access', audience: ['staff'], perms: ['vendors.view', 'orders.manage'], feature: 'collab',
+    summary: 'Which people at a supplier can sign in, their ERP codes and the sign-in link.',
+    keywords: 'supplier contact person access add email sign in link portal erp code remove access',
+    related: ['orders-unlinked', 'supplier-sign-in'],
+    body: `An approved vendor's page has a **Supplier portal** card.
+
+- **ERP supplier codes** — orders with these codes are shown to this vendor. Adding a code links any orders already waiting under it.
+- **Who can sign in** — the vendor's main contact, plus anyone you add. Each person signs in with their own email and a one-time code, sees this vendor's orders, and receives new-order emails. **Remove access** signs them out straight away.
+- **Sign-in link** — share it with the supplier; it's the same for all your suppliers.`,
+  },
+  {
+    id: 'supplier-sign-in', title: 'Signing in to the supplier portal', audience: ['supplier', 'public'],
+    summary: 'Use your work email and a one-time code. Pick the company if you have more than one.',
+    screens: ['^/s/', '^/vendor/expired'],
+    keywords: 'sign in login code otp email not received choose company supplier portal',
+    related: ['supplier-accept'],
+    body: `1. Open the sign-in link your customer sent you (it ends in \`/s/\` and their workspace name).
+2. Enter your work email and click **Send code**.
+3. Type the 6-digit code from the email. It's valid for 10 minutes.
+
+If your email has access to more than one supplier account, choose the company to work on.
+
+> No code? Check spam, wait a minute and click **Resend code**. If it still doesn't arrive, your customer may have a different email on file — ask them to add you.`,
+  },
+  {
+    id: 'supplier-accept', title: 'Accepting purchase orders', audience: ['supplier'], feature: 'collab',
+    summary: 'Review an order, accept all or some lines, and add a note for the buyer.',
+    screens: ['^/vendor/orders'], contexts: ['supplier-orders', 'supplier-order'],
+    keywords: 'accept purchase order po confirm lines partial auto-accepted revised changed note buyer',
+    related: ['supplier-sign-in'],
+    body: `**Purchase orders** in the top bar lists the orders your customer has placed with you. The number next to it is how many are waiting for you.
+
+1. Open an order and check the lines — quantity, price, delivery site and need-by date.
+2. All waiting lines are ticked. Untick any you can't accept yet.
+3. Click **Accept order** (or **Accept selected lines**), add a note if you like, and confirm.
+
+Your acceptance is sent to the customer's system straight away.
+
+## Good to know
+- Some orders accept themselves after a few days if you don't respond. The order shows when.
+- If the customer changes a line, it comes back to you as waiting.
+- Anything wrong with an order? Use the buyer's email on the order to contact them before accepting.`,
   },
 ];
 

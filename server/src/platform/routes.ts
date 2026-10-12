@@ -217,7 +217,7 @@ const limitsSchema = z.object({
   maxUsers: z.number().int().min(1).max(100000).nullable().optional(),
   maxVendors: z.number().int().min(1).max(10000000).nullable().optional(),
   emailsPerDay: z.number().int().min(1).max(1000000).nullable().optional(),
-  features: z.object({ erp: z.boolean().optional(), ai: z.boolean().optional(), kyc: z.boolean().optional() }).optional(),
+  features: z.object({ erp: z.boolean().optional(), ai: z.boolean().optional(), kyc: z.boolean().optional(), collab: z.boolean().optional() }).optional(),
 });
 
 platformRouter.post('/tenants', ah(async (req, res) => {

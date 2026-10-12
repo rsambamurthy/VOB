@@ -4,7 +4,7 @@
  */
 import type { Tenant, TenantLimits } from '../db/schema.js';
 
-export type Feature = 'erp' | 'ai' | 'kyc';
+export type Feature = 'erp' | 'ai' | 'kyc' | 'collab';
 export interface PlanDef {
   label: string;
   maxUsers: number | null;
@@ -14,12 +14,12 @@ export interface PlanDef {
 }
 
 export const PLANS: Record<string, PlanDef> = {
-  trial: { label: 'Trial', maxUsers: 5, maxVendors: 25, emailsPerDay: 200, features: { erp: false, ai: false, kyc: true } },
-  standard: { label: 'Standard', maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, features: { erp: true, ai: true, kyc: true } },
-  enterprise: { label: 'Enterprise', maxUsers: null, maxVendors: null, emailsPerDay: null, features: { erp: true, ai: true, kyc: true } },
+  trial: { label: 'Trial', maxUsers: 5, maxVendors: 25, emailsPerDay: 200, features: { erp: false, ai: false, kyc: true, collab: true } },
+  standard: { label: 'Standard', maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, features: { erp: true, ai: true, kyc: true, collab: true } },
+  enterprise: { label: 'Enterprise', maxUsers: null, maxVendors: null, emailsPerDay: null, features: { erp: true, ai: true, kyc: true, collab: true } },
 };
 export const PLAN_KEYS = Object.keys(PLANS) as [string, ...string[]];
-export const FEATURE_LABELS: Record<Feature, string> = { erp: 'ERP integration', ai: 'AI document reading', kyc: 'Verification checks (GSTIN, PAN, bank)' };
+export const FEATURE_LABELS: Record<Feature, string> = { erp: 'ERP integration', ai: 'AI document reading', kyc: 'Verification checks (GSTIN, PAN, bank)', collab: 'Supplier collaboration (purchase orders)' };
 
 export function effectiveLimits(t: Pick<Tenant, 'plan' | 'limits'>): PlanDef {
   const p = PLANS[t.plan] ?? PLANS.standard;

@@ -17,3 +17,9 @@ Planned work that has been discussed but not built yet.
 
 - "Require 2FA" switch per workspace from the console.
 - Billing and invoices for paid plans.
+
+## Supplier collaboration — next phases
+Phase 1 (purchase orders and acceptance, Oracle EBS first) is live.
+- **Phase 2 — Shipping:** advance shipping notices against accepted lines (required per buying group), partial shipments, receipt matching from the ERP.
+- **Phase 3 — Invoicing:** suppliers raise invoices from POs/ASNs; tolerance checks; country rules as plug-ins, starting with India e-invoicing (IRN/QR validation, GSTIN match).
+- **Phase 4 — Payments:** payment status and remittance advice from the ERP; more ERP connectors (SAP S/4HANA, Dynamics 365).

@@ -11,6 +11,7 @@ import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import type { ChangeRequest, Check, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
 import { ChangeDiff, CrBadge, diffProfiles, FlagBadges, isMasked, MASKED_FIELDS } from '../components/Lifecycle';
 import { ErpCard } from '../components/Erp';
+import { SupplierAccessCard } from '../components/SupplierAccess';
 import { useSession } from '../lib/session';
 import { ChecksPanel } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
@@ -22,7 +23,7 @@ type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 export function VendorDetail() {
   const { id } = useParams();
   const { config } = useConfig();
-  const { can } = useSession();
+  const { can, me } = useSession();
   const [d, setD] = useState<Detail>();
   const [tab, setTab] = useState('basic');
   const [action, setAction] = useState<Action>();
@@ -224,6 +225,7 @@ export function VendorDetail() {
             </div>
           )}
           {approved && <ErpCard key={`${v.id}-${v.updatedAt}`} vendorId={v.id} onFlash={setFlash} canConfigure={can('tenant.settings')} />}
+          {approved && me?.plan?.features.collab && can('orders.view') && <SupplierAccessCard vendorId={v.id} canManage={can('orders.manage')} onFlash={setFlash} />}
           {!d.privacy.erasedAt && (
             <div className="card pad">
               <h3 className="card-title">Privacy</h3>

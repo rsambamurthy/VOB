@@ -41,6 +41,7 @@ Optional, all described in `server/.env.example`:
 - **Verification:** `KYC_PROVIDER=surepass` with `SUREPASS_TOKEN`.
 - **AI document reading:** `AI_PROVIDER=anthropic` with `ANTHROPIC_API_KEY`.
 - **Cloud storage:** `STORAGE_DRIVER=s3` with the `S3_*` settings, instead of the volume.
+- **Purchase order pull:** `PO_SYNC_SCHEDULE` (default `30 1 * * *`, 01:30 IST) — when orders are fetched from Oracle EBS. Set to `off` to fetch only on demand.
 
 ## 3. First start
 
@@ -84,6 +85,20 @@ npm run platform:admin -- --email you@company.com --name "Your Name"     # new i
 npm run platform:admin -- --email you@company.com --reset-2fa            # lost authenticator
 ```
 The older command-line way to create a workspace (`npm run tenant:create`) still works.
+
+## 3b. Purchase orders (supplier collaboration)
+
+Included in every plan. After this release deploys, admins see **Purchase orders** and **Purchasing setup** in the sidebar, and a new **Buyer** role exists in each workspace (existing admin roles get the new permissions automatically).
+
+1. **Connect Oracle EBS** (ERP integration → Oracle EBS):
+   - **Purchase order pull URL** — an endpoint (Oracle REST / ORDS / middleware) that returns PO_HEADERS_ALL with lines, shipments and receipts. `?since=<ISO time>` is added for incremental pulls.
+   - **Acknowledgement URL** — where each supplier acceptance is POSTed back.
+   - Keep **test mode** on until you're ready; in test mode nothing is sent and **Load sample orders** works.
+2. **Or push from middleware:** Purchasing setup → API keys → create a key, then `POST /api/v1/purchase-orders` with `Authorization: Bearer <key>` (`?format=oracle` for raw Oracle rows). Acceptances can be read from `GET /api/v1/acknowledgements?since=`.
+3. **Buying groups:** set which groups auto-accept and after how many days. Unknown group codes from the ERP are added with manual acceptance.
+4. **Suppliers sign in** at `https://<your domain>/s/<workspace>` with their email and a one-time code. Add extra people or ERP supplier codes from the vendor's **Supplier portal** card.
+
+Hourly jobs send acceptance reminders and run auto-accept; the nightly job pulls from Oracle.
 
 ## 4. Day to day
 

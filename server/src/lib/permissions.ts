@@ -15,6 +15,8 @@ export const PERMISSIONS = {
   'approvals.manage': 'Reassign approval steps and see every queue',
   'reports.view': 'View dashboards and reports',
   'audit.view': 'View the audit log',
+  'orders.view': 'View purchase orders and supplier acknowledgements',
+  'orders.manage': 'Pull and import purchase orders, set up buying groups, manage supplier portal access',
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -27,5 +29,6 @@ export const DEFAULT_ROLES: { key: string; name: string; description: string; pe
   { key: 'TAX_MANAGER', name: 'Tax Accounts Manager', description: 'Tax review level', permissions: ['vendors.view'] },
   { key: 'FINANCE_MANAGER', name: 'Finance Manager', description: 'Finance & risk review level', permissions: ['vendors.view', 'reports.view'] },
   { key: 'MDM_MANAGER', name: 'Master Data Manager', description: 'Final approval and ERP export', permissions: ['vendors.view', 'vendors.export', 'vendors.block', 'vendors.edit', 'reports.view'] },
+  { key: 'BUYER', name: 'Buyer', description: 'Purchase orders and supplier collaboration', permissions: ['vendors.view', 'orders.view', 'orders.manage', 'reports.view'] },
   { key: 'VIEWER', name: 'Viewer', description: 'Read-only access', permissions: ['vendors.view', 'reports.view'] },
 ];

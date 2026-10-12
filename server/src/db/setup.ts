@@ -6,11 +6,12 @@ import { count } from 'drizzle-orm';
 import { db, pool, schema } from '../lib/db.js';
 import { runMigrations } from './migrate.js';
 import { seed } from './seed.js';
-import { sealExistingData } from './dataMigrations.js';
+import { grantNewAdminPermissions, sealExistingData } from './dataMigrations.js';
 
 await runMigrations();
 const sealed = await sealExistingData();
 if (sealed) console.log(`Encrypted sensitive values in ${sealed} existing record(s).`);
+await grantNewAdminPermissions();
 const [{ n }] = await db.select({ n: count() }).from(schema.tenants);
 if (n === 0) {
   await seed();

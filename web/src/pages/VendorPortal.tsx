@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { applyBranding } from '../lib/session';
 import { monogram } from '../lib/format';
@@ -14,8 +14,9 @@ import { fmtDate } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
+import { rememberWorkspace, SupplierTopbar, supplierSignOut } from '../orders/SupplierShell';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding }; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string }; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
@@ -57,7 +58,7 @@ export function VendorPortal() {
   const load = useCallback(async (reset = false) => {
     try {
       const r = await api<Me>('/vendor');
-      setMe(r); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
+      setMe(r); rememberWorkspace(r.buyer.workspace); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
   useEffect(() => { load(); }, [load]);
@@ -206,17 +207,7 @@ export function VendorPortal() {
 
   return (
     <div className="vendor-app">
-      <header className="topbar">
-        <div className="brand">
-          {me.buyer.branding.logoUrl ? <img src={me.buyer.branding.logoUrl} alt="" className="brand-logo" /> : <span className="brand-mark">{monogram(me.buyer.branding.productName)}</span>}
-          <span>{me.buyer.name}</span><span className="muted small hide-sm">· Supplier portal</span>
-        </div>
-        <div className="topbar-right">
-          <span className="hide-sm">{v.name}</span><StatusBadge status={v.status} />
-          <button className="btn btn-ghost btn-sm" onClick={() => openHelp()} title="Help (F1)">Help</button>
-          <button className="btn btn-ghost btn-sm" onClick={async () => { await api('/vendor-auth/logout', { method: 'POST' }).catch(() => {}); nav('/vendor/expired'); }}>Sign out</button>
-        </div>
-      </header>
+      <SupplierTopbar info={me} />
 
       <div className="page">
         <header className="page-head">
@@ -353,10 +344,16 @@ export function VendorPortal() {
 }
 
 export function VendorSignedOut() {
+  const [sp] = useSearchParams();
+  const next = sp.get('next');
+  const [ws, setWs] = useState<string>();
+  // Where a supplier who used the email sign-in page can sign in again (remembered on this device).
+  useEffect(() => { try { setWs(localStorage.getItem('vg.supplierWorkspace') ?? undefined); } catch { /* ignore */ } }, []);
   return (
     <div className="center-page login-bg"><div className="card pad login-card">
       <h2>You’re signed out</h2>
-      <p className="muted">To continue your registration, open the invitation link from your email again. You’ll get a new one-time code.</p>
+      <p className="muted">Open the invitation link from your email again, or sign in with your email address. You’ll get a new one-time code.</p>
+      {ws && <a className="btn btn-primary btn-block" href={`/s/${ws}${next ? `?next=${encodeURIComponent(next)}` : ''}`}>Sign in with your email</a>}
     </div></div>
   );
 }
@@ -382,7 +379,7 @@ function ConsentModal({ buyer, privacy, onDone }: { buyer: string; privacy: Priv
             <span>I have read the privacy notice and agree to {buyer} processing this information for supplier registration, payments and legal compliance.</span></label>
         </div>
         <div className="modal-foot">
-          <a className="btn btn-ghost" href="/api/vendor-auth/logout" onClick={async (e) => { e.preventDefault(); await api('/vendor-auth/logout', { method: 'POST' }).catch(() => {}); window.location.href = '/vendor/expired'; }}>Not now</a>
+          <a className="btn btn-ghost" href="/api/vendor-auth/logout" onClick={(e) => { e.preventDefault(); supplierSignOut(); }}>Not now</a>
           <button className="btn btn-primary" disabled={!agree || busy} onClick={accept}>{busy ? 'Saving…' : 'Accept and continue'}</button>
         </div>
       </div>

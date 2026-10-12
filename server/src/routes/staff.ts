@@ -62,7 +62,8 @@ export const staffRouter = Router();
 const findVendor = (tenantId: string, id: string) => db.query.vendors.findFirst({ where: and(eq(vendors.tenantId, tenantId), eq(vendors.id, id)) });
 
 async function nextVendorCode(tenantId: string) {
-  const [{ max }] = await db.select({ max: sql<number>`coalesce(max(substring(${vendors.code} from 5)::int), 0)` }).from(vendors).where(eq(vendors.tenantId, tenantId));
+  // Only VND-<digits> codes count; codes set another way (e.g. VND-ORD-1) must not break numbering.
+  const [{ max }] = await db.select({ max: sql<number>`coalesce(max(substring(${vendors.code} from 5)::bigint) filter (where ${vendors.code} ~ '^VND-[0-9]{1,15}$'), 0)` }).from(vendors).where(eq(vendors.tenantId, tenantId));
   return `VND-${String(Number(max) + 1).padStart(5, '0')}`;
 }
 

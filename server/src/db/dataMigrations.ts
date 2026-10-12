@@ -10,6 +10,23 @@ import { logger } from '../lib/logger.js';
 type Row = Record<string, unknown>;
 const rows = async (q: ReturnType<typeof sql>) => ((await db.execute(q)) as unknown as { rows: Row[] }).rows;
 
+/** New permissions added in later releases reach every workspace's Administrator role. */
+export async function grantNewAdminPermissions() {
+  const { ALL_PERMISSIONS } = await import('../lib/permissions.js');
+  for (const r of await rows(sql`select id, permissions from roles where key = 'ADMIN'`)) {
+    const have = new Set((r.permissions ?? []) as string[]);
+    const missing = ALL_PERMISSIONS.filter((p) => !have.has(p));
+    if (missing.length) await db.update(schema.roles).set({ permissions: [...have, ...missing] }).where(eq(schema.roles.id, r.id as string));
+  }
+  // Roles added to the defaults later (e.g. Buyer) are created in workspaces that don't have them yet.
+  const { DEFAULT_ROLES } = await import('../lib/permissions.js');
+  for (const def of DEFAULT_ROLES.filter((d) => d.key === 'BUYER')) {
+    for (const t of await rows(sql`select t.id from tenants t where not exists (select 1 from roles r where r.tenant_id = t.id and r.key = ${def.key})`)) {
+      await db.insert(schema.roles).values({ tenantId: t.id as string, key: def.key, name: def.name, description: def.description, permissions: def.permissions }).onConflictDoNothing();
+    }
+  }
+}
+
 export async function sealExistingData(force = false) {
   let n = 0;
   for (const r of await rows(sql`select id, profile from vendors`)) {

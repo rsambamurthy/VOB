@@ -61,7 +61,7 @@ export async function assertSafeTarget(raw: string) {
   return u;
 }
 
-async function post(url: string, body: string, headers: Record<string, string>) {
+export async function post(url: string, body: string, headers: Record<string, string>) {
   await assertSafeTarget(url);
   let res: Response;
   try {
@@ -72,6 +72,19 @@ async function post(url: string, body: string, headers: Record<string, string>) 
   const text = (await res.text().catch(() => '')).slice(0, 4000);
   if (!res.ok) throw new ErpError(`The ERP answered ${res.status} ${res.statusText}`.trim(), res.status, text);
   return { status: res.status, text };
+}
+
+/** GET JSON from the ERP (purchase order pull), with the connection's Basic auth. */
+export async function getJson(url: string, conn: Connection): Promise<unknown> {
+  await assertSafeTarget(url);
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (conn.config.username) headers.Authorization = `Basic ${Buffer.from(`${conn.config.username}:${conn.secrets.password ?? ''}`).toString('base64')}`;
+  let res: Response;
+  try { res = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(env.int.ERP_TIMEOUT_MS * 3) }); }
+  catch (e: any) { throw new ErpError(e?.name === 'TimeoutError' ? 'No response from the ERP in time' : `Couldn’t reach the ERP: ${e?.cause?.code ?? e?.message ?? e}`); }
+  const text = await res.text().catch(() => '');
+  if (!res.ok) throw new ErpError(`The ERP answered ${res.status} ${res.statusText}`.trim(), res.status, text.slice(0, 4000));
+  try { return JSON.parse(text); } catch { throw new ErpError('The ERP answer was not JSON', res.status, text.slice(0, 500)); }
 }
 
 /** Find the supplier id the ERP sent back, whatever it calls it. */
@@ -137,7 +150,7 @@ export async function send(conn: Connection, v: Vendor, event: ErpEvent, ctx: { 
 }
 
 export const sign = (secret: string, ts: string, body: string) => crypto.createHmac('sha256', secret).update(`${ts}.${body}`).digest('hex');
-const joinDir = (dir: string | undefined, f: string) => `${(dir || '/').replace(/\/?$/, '/')}${f}`;
+export const joinDir = (dir: string | undefined, f: string) => `${(dir || '/').replace(/\/?$/, '/')}${f}`;
 
 async function sftpClient(conn: Connection) {
   const c = conn.config;
@@ -150,7 +163,7 @@ async function sftpClient(conn: Connection) {
   return client;
 }
 
-async function sftpPut(conn: Connection, path: string, data: Buffer) {
+export async function sftpPut(conn: Connection, path: string, data: Buffer) {
   const client = await sftpClient(conn);
   try { await client.put(data, path); } catch (e: any) { throw new ErpError(`SFTP upload failed: ${e?.message ?? e}`); } finally { await client.end().catch(() => {}); }
 }

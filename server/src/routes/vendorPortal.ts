@@ -14,6 +14,7 @@ import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks, type KycKind } from '../integrations/kyc/index.js';
 import { hasFeature } from '../services/limits.js';
+import { pendingOrderCount } from '../services/orders/queries.js';
 import { queueExtraction, extractionsFor, getExtraction } from '../integrations/ai/index.js';
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
@@ -94,7 +95,9 @@ vendorRouter.get('/', ah(async (req, res) => {
       lastConfirmedAt: v.lastConfirmedAt, nextReviewAt: v.nextReviewAt,
       changeRequests: (await changeRequestsForVendor(v.id)).slice(0, 5).map((cr) => ({ id: cr.id, status: cr.status, byBuyer: !!cr.raisedById, changes: cr.changes, documentIds: cr.documentIds, note: cr.note, remarks: cr.status === 'REJECTED' && !cr.raisedById ? cr.remarks : null, createdAt: cr.createdAt, decidedAt: cr.decidedAt, steps: cr.steps.map((s) => ({ id: s.id, level: s.level, label: s.label, status: s.status })) })),
     } : null,
-    buyer: { name: tenant.name, branding: tenant.branding },
+    buyer: { name: tenant.name, branding: tenant.branding, workspace: tenant.slug },
+    orders: hasFeature(tenant, 'collab') ? { enabled: true, pending: await pendingOrderCount(v.id) } : { enabled: false, pending: 0 },
+    signedInAs: vendorCtx(req).contactEmail ?? v.contactEmail,
     privacy: { ...noticeFor(tenant), needsConsent: needsConsent(tenant, v), consentAt: v.consentAt, consentVersion: v.consentVersion, erasureRequestedAt: v.erasureRequestedAt },
     checks: (await latestChecks(v.id)).map(publicCheck),
     extractions: await extractionsFor(v.id, profile, config),

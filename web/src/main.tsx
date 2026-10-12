@@ -33,6 +33,12 @@ import { PlatformTenantDetail } from './platform/TenantDetail';
 import { PlatformAdmins, PlatformAudit, PlatformSettings, PlatformSignups } from './platform/Pages';
 import { Signup, SignupVerify } from './pages/signup/Signup';
 import { HelpProvider } from './help/HelpPanel';
+import { OrderList } from './pages/orders/OrderList';
+import { OrderDetail } from './pages/orders/OrderDetail';
+import { PurchasingSetup } from './pages/orders/PurchasingSetup';
+import { SupplierLogin } from './pages/orders/SupplierLogin';
+import { SupplierOrderDetail, SupplierOrderList } from './pages/orders/SupplierOrders';
+import { SupplierShell } from './orders/SupplierShell';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -63,6 +69,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/config" element={<ConfigEditor />} />
               <Route path="admin/integrations" element={<Integrations />} />
               <Route path="mailbox" element={<Mailbox />} />
+              <Route path="orders" element={<OrderList />} />
+              <Route path="orders/:id" element={<OrderDetail />} />
+              <Route path="admin/purchasing" element={<PurchasingSetup />} />
             </Route>
             <Route path="/signup" element={<Signup />} />
             <Route path="/signup/verify/:token" element={<SignupVerify />} />
@@ -86,6 +95,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/onboard/:token" element={<VendorLogin />} />
             <Route path="/vendor" element={<VendorPortal />} />
             <Route path="/vendor/expired" element={<VendorSignedOut />} />
+            <Route path="/vendor/orders" element={<SupplierShell><SupplierOrderList /></SupplierShell>} />
+            <Route path="/vendor/orders/:id" element={<SupplierShell><SupplierOrderDetail /></SupplierShell>} />
+            <Route path="/s/:workspace" element={<SupplierLogin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </HelpProvider>

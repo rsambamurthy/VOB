@@ -31,7 +31,7 @@ export interface StaffCtx {
   /** Read-only support session opened by a platform admin. */
   support?: { by: string; reason: string | null; endsAt: Date };
 }
-export interface VendorCtx { kind: 'vendor'; sessionId: string; tenant: Tenant; vendorId: string }
+export interface VendorCtx { kind: 'vendor'; sessionId: string; tenant: Tenant; vendorId: string; contactEmail: string | null }
 
 declare global {
   namespace Express {
@@ -45,7 +45,7 @@ function cookieOpts(hours: number) {
 
 export async function createSession(
   req: Request, res: Response,
-  s: { kind: 'STAFF'; tenant: Tenant; userId: string; mfaPending?: boolean; support?: { adminId: string; reason: string; minutes: number } } | { kind: 'VENDOR'; tenant: Tenant; vendorId: string },
+  s: { kind: 'STAFF'; tenant: Tenant; userId: string; mfaPending?: boolean; support?: { adminId: string; reason: string; minutes: number } } | { kind: 'VENDOR'; tenant: Tenant; vendorId: string; contactEmail?: string },
 ) {
   const token = randomToken();
   const hours = s.kind === 'STAFF' ? (s.support ? s.support.minutes / 60 : s.tenant.settings.sessionHours ?? DEFAULT_SESSION_HOURS) : VENDOR_SESSION_HOURS;
@@ -55,6 +55,7 @@ export async function createSession(
     vendorId: s.kind === 'VENDOR' ? s.vendorId : null,
     mfaPending: s.kind === 'STAFF' ? !!s.mfaPending : false,
     supportAdminId: s.kind === 'STAFF' ? s.support?.adminId ?? null : null,
+    contactEmail: s.kind === 'VENDOR' ? s.contactEmail ?? null : null,
     supportReason: s.kind === 'STAFF' ? s.support?.reason ?? null : null,
     expiresAt: new Date(Date.now() + hours * 3600_000),
     ip: req.ip, userAgent: req.get('user-agent')?.slice(0, 300),
@@ -105,7 +106,7 @@ async function loadVendor(token: string): Promise<VendorCtx | undefined> {
   const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, s.tenantId) });
   if (!tenant || tenant.status !== 'ACTIVE') return;
   touch(s.id, s.lastSeenAt);
-  return { kind: 'vendor', sessionId: s.id, tenant, vendorId: s.vendorId };
+  return { kind: 'vendor', sessionId: s.id, tenant, vendorId: s.vendorId, contactEmail: s.contactEmail };
 }
 
 /** Update last-seen at most every 5 minutes (fire-and-forget). */
@@ -130,6 +131,8 @@ export async function loadSessions(req: Request, _res: Response, next: NextFunct
 export function csrfGuard(req: Request, _res: Response, next: NextFunction) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   if (req.get('x-requested-with')) return next();
+  // The ERP API (/api/v1) authenticates with a bearer key and never reads cookies, so cross-site forgery doesn't apply.
+  if (req.path.startsWith('/v1/')) return next();
   next(new HttpError(403, 'Missing X-Requested-With header'));
 }
 

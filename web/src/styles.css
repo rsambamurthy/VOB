@@ -500,3 +500,40 @@ pre.code.small { font-size: 12px; }
 .help-video figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .help-foot { border-top: 1px solid var(--line); padding: 10px 16px; font-size: 12px; color: var(--muted); }
 @media print { .help-fab, .help-panel, .help-backdrop { display: none; } }
+
+/* ---------- Purchase orders (supplier collaboration) ---------- */
+.badge-auto { background: #efeafb; color: #5a3fa6; }
+.stat-row.stat-row-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.stat-row.stat-row-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .stat-row.stat-row-6, .stat-row.stat-row-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .stat-row.stat-row-6, .stat-row.stat-row-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.facts { display: grid; gap: 8px; margin: 0 0 10px; }
+.facts > div { display: grid; grid-template-columns: 112px 1fr; gap: 8px; font-size: 13px; }
+.facts dt { color: var(--muted); } .facts dd { margin: 0; overflow-wrap: anywhere; }
+.lines-table td { vertical-align: top; }
+.lines-table .chk, .table .chk { width: 34px; padding-right: 0; }
+.lines-table .chk input { width: 16px; height: 16px; accent-color: var(--brand); }
+.lines-table tr.selected td { background: var(--brand-50); }
+.sub-head { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 6px; }
+.sub-head:first-of-type { margin-top: 4px; }
+.warn-text { color: var(--warn); font-weight: 600; }
+.icode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; background: var(--line-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+.key-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; } .key-row .icode { flex: 1; min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
+.inline-num { width: 64px !important; display: inline-block; margin: 0 6px; padding: 4px 6px !important; }
+.chip-list { list-style: none; padding: 0; margin: 0 0 6px; display: flex; flex-wrap: wrap; }
+.chip-list .chip { font-size: 12px; display: inline-flex; align-items: center; gap: 2px; }
+.choice-list { display: grid; gap: 8px; margin-top: 12px; }
+.choice-list .user-card:disabled { opacity: .6; cursor: wait; }
+.toolbar.filters { gap: 8px; flex-wrap: wrap; justify-content: flex-start; }
+.toolbar.filters select { width: auto; }
+.topnav { display: flex; gap: 4px; flex: 1; margin-left: 16px; }
+.topnav a { padding: 7px 12px; border-radius: 8px; color: var(--ink-2); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+.topnav a:hover { background: var(--line-2); } .topnav a.active { background: var(--brand-50); color: var(--brand); font-weight: 600; }
+.count-pill { background: var(--brand); color: #fff; border-radius: 99px; font-size: 11px; font-weight: 700; padding: 1px 7px; min-width: 20px; text-align: center; }
+@media (max-width: 760px) { .topbar { flex-wrap: wrap; } .topnav { order: 3; flex-basis: 100%; margin-left: 0; } }
+.lines-table .item-cell { min-width: 220px; }
+.lines-table th { white-space: nowrap; }
+.lines-table td:last-child { white-space: nowrap; }
+fieldset.field { border: 0; padding: 0; margin: 0 0 14px; min-width: 0; }
+fieldset.field legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 6px; }
+fieldset.field .radio, .modal-body > .checkbox { display: flex; flex-wrap: wrap; align-items: center; margin: 6px 0; }
