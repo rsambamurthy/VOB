@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../../lib/api';
 import { useConfig } from '../../../lib/meta';
+import { useHelpContext } from '../../../help/HelpPanel';
 import { Alert, Modal } from '../../../components/ui';
 import { fmtDateTime } from '../../../lib/format';
 import type { ConfigIssue, OnboardingConfig } from '../../../lib/types';
@@ -32,6 +33,7 @@ export function ConfigEditor() {
   const [saved, setSaved] = useState('');
   const [issues, setIssues] = useState<ConfigIssue[]>([]);
   const [tab, setTab] = useState<Tab>('form');
+  useHelpContext(`config-${tab}`);
   const [sectionKey, setSectionKey] = useState('basic');
   const [flash, setFlash] = useState<{ kind: 'success' | 'error' | 'info'; text: string }>();
   const [busy, setBusy] = useState(false);

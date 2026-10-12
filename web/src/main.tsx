@@ -32,12 +32,14 @@ import { PlatformTenants } from './platform/Tenants';
 import { PlatformTenantDetail } from './platform/TenantDetail';
 import { PlatformAdmins, PlatformAudit, PlatformSettings, PlatformSignups } from './platform/Pages';
 import { Signup, SignupVerify } from './pages/signup/Signup';
+import { HelpProvider } from './help/HelpPanel';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
         <SessionProvider>
+          <HelpProvider>
           <Routes>
             <Route path="/" element={<Navigate to="/staff/vendors" replace />} />
             <Route path="/login" element={<Login />} />
@@ -86,6 +88,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/vendor/expired" element={<VendorSignedOut />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </HelpProvider>
         </SessionProvider>
     </BrowserRouter>
   </React.StrictMode>,

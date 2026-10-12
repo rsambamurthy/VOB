@@ -13,6 +13,7 @@ import { ChangeDiff, CrHistory, diffProfiles, FlagBadges } from '../components/L
 import { fmtDate } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
+import { useHelp, useHelpExtra } from '../help/HelpPanel';
 
 type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding }; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
@@ -39,7 +40,10 @@ export function VendorPortal() {
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [flash, setFlash] = useState<{ kind: 'success' | 'error' | 'info'; text: string }>();
   const [saving, setSaving] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
+  const { openHelp } = useHelp();
+  // The buyer's own "How onboarding works" steps become the first help topic for suppliers.
+  useHelpExtra(me ? [{ id: 'buyer-guide', title: `How onboarding works at ${me.buyer.name}`, summary: 'The steps your buyer has set out for registering as a supplier.', audience: ['supplier'], screens: ['^/vendor'],
+    keywords: 'guide steps how onboarding works instructions', body: me.config.guide.map((g) => `## ${g.title}\n${g.body.replace(/\s*\n\s*/g, ' ')}`).join('\n\n') }] : null);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   // Approved vendors: edits are collected locally and sent as one change request.
   const [changeMode, setChangeMode] = useState(false);
@@ -209,7 +213,7 @@ export function VendorPortal() {
         </div>
         <div className="topbar-right">
           <span className="hide-sm">{v.name}</span><StatusBadge status={v.status} />
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowGuide(true)}>Help</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => openHelp()} title="Help (F1)">Help</button>
           <button className="btn btn-ghost btn-sm" onClick={async () => { await api('/vendor-auth/logout', { method: 'POST' }).catch(() => {}); nav('/vendor/expired'); }}>Sign out</button>
         </div>
       </header>
@@ -318,7 +322,7 @@ export function VendorPortal() {
             <div className="card pad">
               <h3 className="card-title">How onboarding works</h3>
               <ol className="guide-mini">{cfg.guide.map((g) => <li key={g.title}>{g.title.replace(/^Step \d+: /, '')}</li>)}</ol>
-              <button className="link-btn small" onClick={() => setShowGuide(true)}>Read the full guide</button>
+              <button className="link-btn small" onClick={() => openHelp('buyer-guide')}>Read the full guide</button>
             </div>
           </aside>
         </div>
@@ -327,11 +331,6 @@ export function VendorPortal() {
       {me.privacy.needsConsent && <ConsentModal buyer={me.buyer.name} privacy={me.privacy} onDone={() => load()} />}
       {showNotice && <Modal title={`Privacy notice — ${me.buyer.name}`} wide onClose={() => setShowNotice(false)}><div className="notice-text">{me.privacy.text}</div></Modal>}
       {erasureOpen && <ErasureModal onClose={() => setErasureOpen(false)} onDone={() => { setErasureOpen(false); setFlash({ kind: 'info', text: 'Your deletion request has been sent. We’ll email you when it has been handled.' }); load(); }} />}
-      {showGuide && (
-        <Modal title="Vendor onboarding guide" onClose={() => setShowGuide(false)}>
-          {cfg.guide.map((g) => <div key={g.title} className="guide-step"><h4>{g.title}</h4><p>{g.body}</p></div>)}
-        </Modal>
-      )}
       {crOpen && (
         <Modal title="Submit change request?" wide onClose={() => setCrOpen(false)}
           footer={<><button className="btn btn-ghost" onClick={() => setCrOpen(false)}>Keep editing</button><button className="btn btn-primary" disabled={crBusy} onClick={submitChange}>{crBusy ? 'Submitting…' : 'Submit for review'}</button></>}>
