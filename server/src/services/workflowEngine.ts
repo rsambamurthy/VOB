@@ -12,13 +12,18 @@ import { approverIds, directApprovers, emailsFor } from './approvers.js';
 import { defineJob } from '../jobs/queue.js';
 import { nextReviewFrom, sweepOverdueChanges } from './lifecycle.js';
 import { pushLater } from '../integrations/erp/index.js';
+import { addWorkingHours, calendarFor, formatDeadline } from '../lib/calendar.js';
 import type { WorkflowLevel } from '../config/types.js';
 
 const { vendors, approvalSteps, roles, users, userRoles, tenants } = schema;
 const setVendor = (tenantId: string, id: string, data: Partial<Vendor>) =>
   db.update(vendors).set(data).where(and(eq(vendors.tenantId, tenantId), eq(vendors.id, id)));
 
-const dueFrom = (from: Date, slaHours?: number | null) => (slaHours ? new Date(from.getTime() + slaHours * 3600_000) : null);
+/** Deadline for a step: SLA hours from now, skipping the weekend when the workspace counts working days. */
+async function dueFrom(tenantId: string, from: Date, slaHours?: number | null) {
+  if (!slaHours) return null;
+  return addWorkingHours(from, slaHours, calendarFor(await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) })));
+}
 const vendorUrl = (id: string) => `${env.appBaseUrl}/staff/vendors/${id}`;
 
 /** Which configured levels apply to this vendor (evaluating each level's rule). */
@@ -28,7 +33,8 @@ export function applicableLevels(levels: WorkflowLevel[], vendor: Pick<Vendor, '
 
 async function notifyStep(step: ApprovalStep, vendor: Vendor, subjectPrefix = 'Action needed') {
   const people = await emailsFor(await approverIds(step));
-  const due = step.dueAt ? `\nPlease act by ${step.dueAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })} IST.` : '';
+  const tenant = step.dueAt ? await db.query.tenants.findFirst({ where: eq(tenants.id, vendor.tenantId) }) : null;
+  const due = step.dueAt ? `\nPlease act by ${formatDeadline(step.dueAt, tenant)}.` : '';
   for (const u of people) {
     await sendMail({ tenantId: vendor.tenantId, to: u.email, subject: `${subjectPrefix}: ${step.label} for ${vendor.name}`,
       body: `Hello ${u.name},\n\n${vendor.name} (${vendor.code}) is waiting for ${step.label}.${due}\nOpen the vendor to approve, send back or reject.`, link: vendorUrl(vendor.id) });
@@ -37,7 +43,7 @@ async function notifyStep(step: ApprovalStep, vendor: Vendor, subjectPrefix = 'A
 
 async function activate(step: ApprovalStep, vendor: Vendor) {
   const now = new Date();
-  const [s] = await db.update(approvalSteps).set({ status: 'PENDING', activatedAt: now, dueAt: dueFrom(now, step.slaHours) }).where(eq(approvalSteps.id, step.id)).returning();
+  const [s] = await db.update(approvalSteps).set({ status: 'PENDING', activatedAt: now, dueAt: await dueFrom(vendor.tenantId, now, step.slaHours) }).where(eq(approvalSteps.id, step.id)).returning();
   await notifyStep(s, vendor);
   return s;
 }

@@ -13,7 +13,11 @@ import type { CheckProvider } from '../../countries/types.js';
 const i = env.int;
 /** Kept for tests: replace India's provider. */
 export function setKycProvider(p: CheckProvider) { setCheckProvider('IN', p); }
-export const kycStatus = () => { const all = checkProviders(); return { provider: all[0]?.provider ?? 'none', live: all.some((p) => p.live), packs: all }; };
+/** Check providers for a workspace: its home pack's (with what it inherits) first, then the other countries' for foreign suppliers. */
+export const kycStatus = (homeCountry?: string | null) => {
+  const all = checkProviders(homeCountry);
+  return { provider: all[0]?.provider ?? 'none', live: all.some((p) => p.live), packs: all };
+};
 export type KycKind = string;
 
 export async function runKyc(vendor: Vendor, kind: KycKind, raw: Record<string, string>, requestedBy: string) {

@@ -4,7 +4,7 @@ import { DEFAULT_ROLES } from '../lib/permissions.js';
 import { HttpError } from '../lib/http.js';
 import { hashPassword } from '../lib/password.js';
 import { createStaffUser } from './users.js';
-import { DEFAULT_HOME, isHomeCountry } from '../countries/registry.js';
+import { DEFAULT_HOME, isHomeCountry, packFor } from '../countries/registry.js';
 import { seedInitialConfig, templateFor } from './config.js';
 import type { TenantBranding, TenantLimits } from '../db/schema.js';
 
@@ -52,7 +52,9 @@ export async function createTenant(input: CreateTenantInput) {
   const problem = await slugProblem(slug);
   if (problem) throw new HttpError(problem.includes('taken') ? 409 : 400, problem === 'That workspace ID is taken' ? problem : `Workspace ID: ${problem}`);
   const [tenant] = await db.insert(schema.tenants).values({
-    slug, name: input.name.trim(), branding: input.branding ?? {}, settings: {}, country,
+    slug, name: input.name.trim(), branding: input.branding ?? {}, country,
+    // Gulf workspaces count deadlines in working days (Fri–Sat off) from the start; Indian ones count every day.
+    settings: packFor(country).skipWeekendsByDefault ? { skipWeekends: true } : {},
     plan: input.plan ?? 'standard', limits: input.limits ?? {}, trialEndsAt: input.trialEndsAt ?? null, source: input.source ?? 'platform', notes: input.notes,
   }).returning();
   const createdRoles = await db.insert(schema.roles).values(DEFAULT_ROLES.map((r) => ({ tenantId: tenant.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, isSystem: r.key === 'ADMIN' }))).returning();

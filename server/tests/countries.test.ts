@@ -40,10 +40,10 @@ describe('country packs', () => {
   });
 
   test('online checks are declared by the pack, with the field that gets the button', () => {
-    expect(checkList().map((c) => [c.kind, c.anchor])).toEqual([['gstin', 'tax.gstin'], ['pan', 'tax.pan'], ['bank', 'bank.ifsc'], ['cin', 'tax.cin']]);
+    expect(checkList('IN').filter((c) => c.home).map((c) => [c.kind, c.anchor])).toEqual([['gstin', 'tax.gstin'], ['pan', 'tax.pan'], ['bank', 'bank.ifsc'], ['cin', 'tax.cin']]);
     const bank = checkList().find((c) => c.kind === 'bank')!;
     expect(checkInputs(bank as any, { bank: { accountNumber: '50100123456789', ifsc: 'HDFC0001234' } })).toEqual({ accountNumber: '50100123456789', ifsc: 'HDFC0001234' });
-    expect(Object.keys(readableDocuments())).toEqual(['GST_CERT', 'PAN_CARD', 'CANCELLED_CHEQUE', 'INCORPORATION_CERT', 'MSME_CERT']);
+    expect(Object.keys(readableDocuments())).toEqual(expect.arrayContaining(['GST_CERT', 'PAN_CARD', 'CANCELLED_CHEQUE', 'INCORPORATION_CERT', 'MSME_CERT']));
   });
 
   test('ERP export: the home country decides "domestic"; the bank country decides the branch code', () => {
@@ -82,7 +82,7 @@ describe('country packs', () => {
     const me = (await (await login('admin@acme.test')).get('/api/auth/me')).body;
     expect(me.tenant).toMatchObject({ country: 'IN', currency: 'INR', locale: 'en-IN' });
     const { createTenant } = await import('../src/services/tenants.js');
-    await expect(createTenant({ slug: 'riyadh-co', name: 'Riyadh Co', adminName: 'A B', adminEmail: 'a@riyadh.test', country: 'SA' })).rejects.toThrow(/can’t be set up in SA/);
+    await expect(createTenant({ slug: 'riyadh-co', name: 'Riyadh Co', adminName: 'A B', adminEmail: 'a@riyadh.test', country: 'AE' })).rejects.toThrow(/can’t be set up in AE/);
     expect(client).toBeDefined();
   });
 });

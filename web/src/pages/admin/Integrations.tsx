@@ -8,7 +8,7 @@ interface Status {
   email: { provider: string; live: boolean; from: string; counts: Record<string, number>; lastFailures: { to: string; subject: string; error: string; createdAt: string }[] };
   sms: { provider: string; live: boolean; counts: Record<string, number> };
   storage: { driver: string; scan: string; bucket?: string };
-  kyc: { provider: string; live: boolean; packs: { country: string; title: string; provider: string; live: boolean }[] };
+  kyc: { provider: string; live: boolean; packs: { code: string; country: string; title: string; provider: string; live: boolean; home: boolean }[] };
   ai: { provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean };
   jobs: { running: boolean };
   devMode: boolean;
@@ -76,13 +76,15 @@ export function Integrations() {
           <button className="btn btn-secondary btn-sm" onClick={() => run('/admin/integrations/test-storage', {}, (r) => `Storage OK — ${r.detail}.`)}>Check storage</button>
         </Card>
 
-        <Card title={`${s.kyc.packs[0]?.title ?? "Online checks"} (${s.kyc.packs[0]?.country ?? ""})`} live={s.kyc.live} provider={s.kyc.provider} env={'KYC_PROVIDER=surepass\nSUREPASS_TOKEN=...\nSUREPASS_BASE_URL=https://kyc-api.surepass.io/api/v1   # sandbox: https://sandbox.surepass.io/api/v1\n# endpoint paths can be overridden: SUREPASS_PATH_GSTIN, _PAN, _BANK, _CIN'}>
-          <p className="small muted">Vendors run checks from the form; reviewers can re-run them from the vendor page. Identical checks are reused for 24 hours and limited per vendor per day to control provider fees. Only masked identifiers are stored.</p>
-          {!s.kyc.live && <p className="small">Test mode answers instantly. Numbers whose 9th (PAN) or 13th (GSTIN) character is <code>0</code>, or bank accounts ending in <code>0</code>, come back “not found”.</p>}
-        </Card>
+        {s.kyc.packs.map((p) => (
+          <Card key={p.code} title={`${p.title} (${p.country})`} live={p.live} provider={p.provider} env={CHECK_ENV[p.code] ?? '# Live provider is connected by VendorGate — ask us when you are ready to go live.'}>
+            <p className="small muted">{p.home ? 'Used for your suppliers.' : `Used for suppliers from ${p.country}.`} Vendors run checks from the form; reviewers can re-run them from the vendor page. Identical checks are reused for 24 hours and limited per vendor per day to control provider fees. Only masked identifiers are stored.</p>
+            {!p.live && CHECK_TEST[p.code] && <p className="small">Test mode answers instantly. {CHECK_TEST[p.code]}</p>}
+          </Card>
+        ))}
 
         <Card title="AI document reading" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-4-5-20251001 for lower cost'}>
-          <p className="small muted">Reads GST, PAN, cheque, incorporation and Udyam documents, suggests values for the form, and shows reviewers where documents and form answers differ.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>
+          <p className="small muted">Reads registration, tax and bank documents (India: GST, PAN, cheque, incorporation, Udyam; Saudi Arabia: CR, VAT certificate, bank letter), suggests values for the form, and shows reviewers where documents and form answers differ.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>
           <label className="check-item"><input type="checkbox" checked={s.ai.enabledForWorkspace} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, enabledForWorkspace: on } }); setting({ aiExtraction: on }, on ? 'AI document reading turned on.' : 'AI document reading turned off.'); }} />
             <span><strong>Use AI to read uploaded documents in this workspace</strong><span className="muted small block">Documents are sent to the AI provider for reading and are not used to train models. Check this fits your data-protection obligations before turning it on.{!s.ai.live && ' (In test mode no document leaves the server.)'}</span></span></label>
         </Card>
@@ -90,3 +92,12 @@ export function Integrations() {
     </div>
   );
 }
+
+const CHECK_ENV: Record<string, string> = {
+  IN: 'KYC_PROVIDER=surepass\nSUREPASS_TOKEN=...\nSUREPASS_BASE_URL=https://kyc-api.surepass.io/api/v1   # sandbox: https://sandbox.surepass.io/api/v1\n# endpoint paths can be overridden: SUREPASS_PATH_GSTIN, _PAN, _BANK, _CIN',
+};
+const CHECK_TEST: Record<string, string> = {
+  IN: 'Numbers whose 9th (PAN) or 13th (GSTIN) character is 0, or bank accounts ending in 0, come back “not found”.',
+  GCC: 'Names containing “sanctioned”, “embargo test” or “blocked trading” come back as a possible match.',
+  SA: 'CR numbers ending in 0, and VAT numbers whose 13th digit is 9, come back “not found”.',
+};

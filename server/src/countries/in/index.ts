@@ -20,6 +20,15 @@ export const indiaPack: CountryPack = {
   currency: 'INR',
   locale: 'en-IN',
   weekend: [0],
+  // Indian workspaces have always counted deadlines on every day; switch on per workspace if wanted.
+  skipWeekendsByDefault: false,
+  timeZone: 'Asia/Kolkata',
+  timeZoneLabel: 'IST',
+  coreFields: [
+    'basic.faxNumber', 'basic.telexNumber', 'basic.msmeRegistered', 'basic.udyamNumber', 'basic.msmeCategory', 'bank.ifsc', 'bank.routingNumber',
+    'tax.hasGst', 'tax.gstin', 'tax.gstClassification', 'tax.pan', 'tax.tan', 'tax.cin',
+    'tax.concessionalTds', 'tax.tdsCertNumber', 'tax.tdsRate', 'tax.tdsValidTill', 'tax.hasTrc', 'tax.holdsNoPe', 'tax.form10f',
+  ],
 
   validators: indiaValidators,
   formats: indiaFormats,

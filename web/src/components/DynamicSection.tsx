@@ -34,7 +34,7 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
                   <div key={f.key} className={`field ${wide ? 'field-wide' : ''} ${err ? 'has-error' : ''}`}>
                     <label htmlFor={f.type === 'radio' ? undefined : id} id={`${id}-label`}>{f.label}{req && <span className="req" aria-hidden> *</span>}</label>
                     {readOnly ? (
-                      <div className="ro-value">{value || <span className="muted">—</span>} {extra?.(f)}</div>
+                      <div className="ro-value"><span dir={f.dir}>{value || <span className="muted">—</span>}</span> {extra?.(f)}</div>
                     ) : (
                       <div className="control-row">
                         <Control f={f} id={id} value={value} onChange={(v) => onChange?.(f.key, v)} invalid={!!err} />
@@ -54,7 +54,7 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
 }
 
 function Control({ f, id, value, onChange, invalid }: { f: FieldDef; id: string; value: string; onChange: (v: string) => void; invalid: boolean }) {
-  const common = { id, name: id, 'aria-invalid': invalid || undefined } as const;
+  const common = { id, name: id, 'aria-invalid': invalid || undefined, dir: f.dir } as const;
   if (f.type === 'select') {
     return (
       <select {...common} value={value} onChange={(e) => onChange(e.target.value)}>

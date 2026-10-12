@@ -177,7 +177,7 @@ adminRouter.patch('/tenant', requireStaff('tenant.settings'), ah(async (req, res
       primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value like #6d1a73').optional(),
       logoUrl: z.string().url().max(500).optional().or(z.literal('')),
     }).optional(),
-    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), reKycMonths: z.number().int().min(0).max(60).optional() }).optional(),
+    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
   }).parse(req.body);
   await db.update(tenants).set({
     ...(input.name ? { name: input.name } : {}),
@@ -210,7 +210,7 @@ adminRouter.get('/integrations', requireStaff('tenant.settings'), ah(async (req,
     email: { ...emailStatus(), counts: Object.fromEntries(recentEmail.map((r) => [r.status, r.n])), lastFailures },
     sms: { ...smsStatus(), counts: Object.fromEntries(recentSms.map((r) => [r.status, r.n])) },
     storage: storageStatus(),
-    kyc: kycStatus(),
+    kyc: kycStatus(tenant.country),
     ai: { ...aiStatus(), enabledForWorkspace: !!tenant.settings.aiExtraction },
     jobs: { running: queueRunning() },
     devMode: env.devShowOtp,

@@ -802,6 +802,66 @@ Your acceptance is sent to the customer's system straight away.
 - If the customer changes a line, it comes back to you as waiting.
 - Anything wrong with an order? Use the buyer's email on the order to contact them before accepting.`,
   },
+  /* ---------------- Country rules (Saudi Arabia and the Gulf) ---------------- */
+  {
+    id: 'expiry-hold', title: 'Automatic hold when a document lapses', audience: ['staff'], perms: ['vendors.view', 'config.manage'],
+    summary: 'Vendors go on hold when a key certificate expires, and come off hold when the renewal is approved.',
+    keywords: 'hold block expired lapsed zakat gosi nitaqat saudization cr confirmation certificate renewal payment hold automatic',
+    related: ['document-expiry', 'sanctions-screening'],
+    body: `Some documents must stay valid for a supplier to keep being paid — in Saudi workspaces the CR (annual confirmation), Zakat, GOSI and Saudization (Nitaqat) certificates.
+
+## What happens
+1. Reminders go to the supplier 30 and 7 days before the date, as for any document with an expiry.
+2. On the day it lapses, the vendor is put **on hold** automatically. The ERP is told (payment hold), the supplier and your vendor admins are emailed, and the vendor shows **On hold — document expired**.
+3. The supplier uploads the renewed document and submits it as a change request — they can do this even while on hold.
+4. When the change request is approved, the hold lifts by itself and the ERP is told.
+
+## Setting it up
+In **Configuration → Documents**, open a document, tick **Track expiry date**, then **Put the vendor on hold when it lapses**.
+
+> Holds you place yourself (Block) are never lifted automatically.`,
+  },
+  {
+    id: 'sanctions-screening', title: 'Sanctions screening', audience: ['staff'], perms: ['vendors.view'],
+    summary: 'Gulf workspaces screen every supplier’s legal name against sanctions lists on submission and at each re-check.',
+    keywords: 'sanctions screening ofac un eu uk list match aml compliance possible match clear',
+    related: ['expiry-hold'],
+    body: `In Saudi (and other Gulf) workspaces every supplier is screened against sanctions lists:
+
+- automatically when they submit for review,
+- again at every periodic re-check,
+- and on demand with **Run** in the vendor’s **Verifications** card.
+
+**Clear** means no match. **Possible match** means a reviewer must look at the details before approving — most possible matches turn out to be similar names. Record your conclusion in the approval remarks.
+
+> Until a live screening provider is connected, results come from a test list.`,
+  },
+  {
+    id: 'working-days', title: 'Deadlines in working days', audience: ['staff'], perms: ['tenant.settings', 'orders.manage'],
+    summary: 'Approval deadlines and purchase-order auto-accept can skip the weekend.',
+    contexts: ['purchasing-groups'],
+    keywords: 'weekend working days friday saturday sunday deadline sla auto accept calendar business days',
+    related: ['purchasing-groups'],
+    body: `With **Count deadlines in working days** on (Admin → Workspace → Vendor lifecycle), the hours allowed for each approval level and the days before a purchase order auto-accepts don’t count the weekend.
+
+- Saudi and other Gulf workspaces: Friday and Saturday. It is on from the start.
+- Indian workspaces: Sunday. It is off unless you turn it on.
+
+Deadlines already running keep their date; new approval steps and new orders follow the setting. Emails show deadlines in your own time zone (IST, AST…).`,
+  },
+  {
+    id: 'supplier-hold', title: 'Your account is on hold', audience: ['supplier'],
+    summary: 'Why your supplier account was put on hold and how to lift it.',
+    screens: ['^/vendor'],
+    keywords: 'on hold blocked expired certificate renew upload payment stopped',
+    body: `If a required certificate (for example Zakat, GOSI, Saudization or your CR confirmation) passes its date, your account is put on hold and payments may pause.
+
+1. Open the **Documents** tab.
+2. Upload the renewed document and enter its new expiry date.
+3. Submit it as a change request (**Request changes** → **Submit change request**).
+
+The hold is lifted as soon as the renewal is approved. You’ll get an email.`,
+  },
 ];
 
 export const articleById = (id: string) => ARTICLES.find((a) => a.id === id);

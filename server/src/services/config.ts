@@ -6,7 +6,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { HttpError } from '../lib/http.js';
 import { DEFAULT_HOME, packFor } from '../countries/registry.js';
-import { configSchema, findIssues, allFieldIds, type OnboardingConfig } from '../config/types.js';
+import { configSchema, findIssues as findIssuesFor, allFieldIds, coreFieldsFor, type OnboardingConfig } from '../config/types.js';
 
 const { tenantConfigs, roles } = schema;
 
@@ -39,6 +39,14 @@ export const getConfig = async (tenantId: string) => (await getPublished(tenantI
 
 export function invalidate(tenantId: string) { cache.delete(tenantId); }
 
+/** Core fields depend on the workspace's home country. */
+async function tenantCountry(tenantId: string) {
+  return (await db.query.tenants.findFirst({ where: eq(schema.tenants.id, tenantId), columns: { country: true } }))?.country ?? 'IN';
+}
+async function issuesFor(tenantId: string, config: OnboardingConfig, keys?: string[]) {
+  return findIssuesFor(config, keys ?? await roleKeys(tenantId), coreFieldsFor(await tenantCountry(tenantId)));
+}
+
 async function roleKeys(tenantId: string) {
   return (await db.select({ key: roles.key }).from(roles).where(eq(roles.tenantId, tenantId))).map((r) => r.key);
 }
@@ -53,7 +61,7 @@ export async function editorState(tenantId: string) {
     .from(tenantConfigs).where(eq(tenantConfigs.tenantId, tenantId)).orderBy(desc(tenantConfigs.version));
   return {
     published,
-    draft: draft ? { version: draft.version, config: draft.config, updatedAt: draft.updatedAt, issues: findIssues(draft.config, keys) } : null,
+    draft: draft ? { version: draft.version, config: draft.config, updatedAt: draft.updatedAt, issues: await issuesFor(tenantId, draft.config, keys) } : null,
     versions,
   };
 }
@@ -74,7 +82,7 @@ export async function saveDraft(tenantId: string, raw: unknown, userId: string) 
     const [{ max }] = await db.select({ max: tenantConfigs.version }).from(tenantConfigs).where(eq(tenantConfigs.tenantId, tenantId)).orderBy(desc(tenantConfigs.version)).limit(1);
     await db.insert(tenantConfigs).values({ tenantId, version: Math.max(version, max) + 1, status: 'DRAFT', config, updatedById: userId });
   }
-  return findIssues(config, await roleKeys(tenantId));
+  return issuesFor(tenantId, config);
 }
 
 export async function discardDraft(tenantId: string) {
@@ -98,7 +106,7 @@ export function diffConfigs(a: OnboardingConfig, b: OnboardingConfig): ConfigDif
 export async function publishDraft(tenantId: string, userId: string, note?: string) {
   const draft = await getDraft(tenantId);
   if (!draft) throw new HttpError(409, 'There is no draft to publish');
-  const issues = findIssues(draft.config, await roleKeys(tenantId));
+  const issues = await issuesFor(tenantId, draft.config);
   if (issues.length) throw new HttpError(422, `Fix ${issues.length} problem${issues.length > 1 ? 's' : ''} before publishing`, issues);
   const prev = await getPublished(tenantId);
   await db.transaction(async (tx) => {

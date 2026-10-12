@@ -15,7 +15,7 @@ import { assignableUsers, decide, reassign } from '../services/workflowEngine.js
 import { canAct, coveringFor } from '../services/approvers.js';
 import { getConfig } from '../services/config.js';
 import { latestChecks, runKyc } from '../integrations/kyc/index.js';
-import { checkDef, checkInputs, packFor } from '../countries/registry.js';
+import { checkDef, checkInputs, checkOffered, packFor } from '../countries/registry.js';
 import { extractionsFor } from '../integrations/ai/index.js';
 import { checkExpiry, publicCheck, upload } from './vendorPortal.js';
 import { getPublished } from '../services/config.js';
@@ -237,7 +237,7 @@ staffRouter.post('/vendors/:id/verify/:kind', requireStaff('vendors.view'), ah(a
   const v = await findVendor(s.tenant.id, req.params.id);
   if (!v) throw new HttpError(404, 'Vendor not found');
   const found = checkDef(req.params.kind);
-  if (!found) throw new HttpError(404, 'Unknown check');
+  if (!found || !checkOffered(found.def, s.tenant.country)) throw new HttpError(404, 'Unknown check');
   const kind = found.def.kind;
   const input = checkInputs(found.def, v.profile as Profile);
   if (Object.values(input).some((x) => !x)) throw new HttpError(400, `The vendor hasn't entered ${kind === 'bank' ? 'bank account details' : `a ${found.def.label}`} yet`);

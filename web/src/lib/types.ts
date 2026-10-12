@@ -8,11 +8,11 @@ export interface Rule { match: 'all' | 'any'; conditions: Condition[] }
 export type FieldType = 'text' | 'textarea' | 'select' | 'radio' | 'number' | 'email' | 'tel' | 'date' | 'url';
 export interface FieldDef {
   key: string; label: string; type: FieldType;
-  required?: boolean | Condition; showIf?: Condition; options?: string[]; validator?: string; placeholder?: string; help?: string;
+  required?: boolean | Condition; showIf?: Condition; options?: string[]; validator?: string; placeholder?: string; help?: string; dir?: 'rtl' | 'ltr' | 'auto';
 }
 export interface GroupDef { key: string; label: string; fields: FieldDef[] }
 export interface SectionDef { key: string; label: string; groups: GroupDef[] }
-export interface DocRequirement { type: string; label: string; help?: string; required?: boolean | Condition; showIf?: Condition; hasExpiry?: boolean; isRequired?: boolean }
+export interface DocRequirement { type: string; label: string; help?: string; required?: boolean | Condition; showIf?: Condition; hasExpiry?: boolean; holdOnExpiry?: boolean; isRequired?: boolean }
 export interface WorkflowLevel { id: string; label: string; roleKey: string; rule?: Rule; slaHours?: number }
 export interface ChangeRule { match: string[]; levelIds: string[] }
 export interface ChangeApproval { rules: ChangeRule[]; defaultLevelIds: string[] }
@@ -24,7 +24,7 @@ export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
-  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number } };
+  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number; skipWeekends?: boolean } };
   roles: { id: string; key: string; name: string }[];
   permissions: Permission[];
   mfaSetupRequired: boolean;

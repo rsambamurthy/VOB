@@ -5,7 +5,7 @@ import { useSession } from '../../lib/session';
 import { Alert } from '../../components/ui';
 import { PasswordHint } from '../auth/AuthLayout';
 
-interface Config { enabled: boolean; plan: string; trialDays: number | null; termsUrl: string | null; workEmailOnly: boolean }
+interface Config { enabled: boolean; plan: string; trialDays: number | null; termsUrl: string | null; workEmailOnly: boolean; countries?: { code: string; name: string }[] }
 
 function SignupLayout({ cfg, children }: { cfg?: Config; children: ReactNode }) {
   return (
@@ -42,7 +42,7 @@ const cleanSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]/g, '').slic
 
 export function Signup() {
   const [cfg, setCfg] = useState<Config>();
-  const [f, setF] = useState({ company: '', name: '', email: '', slug: '', agree: false, website: '' });
+  const [f, setF] = useState({ company: '', name: '', email: '', slug: '', country: 'IN', agree: false, website: '' });
   const [slugTouched, setSlugTouched] = useState(false);
   const [error, setError] = useState<{ text: string; field?: string }>();
   const [sentTo, setSentTo] = useState<string>();
@@ -94,6 +94,11 @@ export function Signup() {
         <div className={fieldClass('slug')}><label htmlFor="su-s">Workspace ID</label>
           <input id="su-s" className="mono" value={f.slug} onChange={(e) => { setSlugTouched(true); setF({ ...f, slug: cleanSlug(e.target.value) }); }} required minLength={3} maxLength={40} autoCapitalize="none" />
           <div className={`field-help ${slugState && !slugState.available ? 'err-text' : ''}`}>{slugState && !slugState.available ? slugState.reason : slugState?.available ? '✓ Available. Your team types this when they sign in.' : 'Your team types this when they sign in.'}</div></div>
+        {(cfg?.countries?.length ?? 0) > 1 && (
+          <div className={fieldClass('country')}><label htmlFor="su-co">Country</label>
+            <select id="su-co" value={f.country} onChange={(e) => setF({ ...f, country: e.target.value })}>{cfg!.countries!.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
+            <div className="field-help">Where your company buys from. Sets the supplier form, tax and bank checks, currency and privacy notice.</div></div>
+        )}
         <div className={fieldClass('name')}><label htmlFor="su-n">Your name</label><input id="su-n" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={100} autoComplete="name" /></div>
         <div className={fieldClass('email')}><label htmlFor="su-e">Work email</label><input id="su-e" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required autoComplete="email" />
           {cfg.workEmailOnly && <div className="field-help">Use your company address — personal Gmail, Outlook.com or Yahoo addresses aren’t accepted.</div>}</div>

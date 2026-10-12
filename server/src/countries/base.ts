@@ -46,9 +46,12 @@ export const basePack: CountryPack = {
   currency: 'USD',
   locale: 'en-GB',
   weekend: [0, 6],
+  timeZone: 'UTC',
+  timeZoneLabel: 'UTC',
   validators: baseValidators,
   formats: {
     postalCode: { pattern: /^[A-Za-z0-9 -]{3,10}$/, message: 'Enter a valid postal code' },
     bankAccount: { pattern: /^[A-Za-z0-9]{4,34}$/, message: 'Enter a valid account number' },
+    vatNumber: { pattern: /^[A-Za-z0-9 .-]{4,20}$/, message: 'Enter a valid VAT number' },
   },
 };

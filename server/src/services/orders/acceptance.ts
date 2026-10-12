@@ -7,6 +7,7 @@ import { db, schema } from '../../lib/db.js';
 import { HttpError } from '../../lib/http.js';
 import { logger } from '../../lib/logger.js';
 import { audit } from '../../lib/audit.js';
+import { addWorkingDays, calendarFor } from '../../lib/calendar.js';
 import { sendMail } from '../../lib/mailer.js';
 import { env } from '../../lib/env.js';
 import { defineJob } from '../../jobs/queue.js';
@@ -91,7 +92,8 @@ export async function runAcceptanceReminders(now = new Date()) {
 /** When a buying group's waiting period changes, re-time the POs still waiting in it. */
 export async function retimeGroup(tenantId: string, groupId: string, days: number | null) {
   const waiting = await db.select().from(purchaseOrders).where(and(eq(purchaseOrders.tenantId, tenantId), eq(purchaseOrders.buyingGroupId, groupId), eq(purchaseOrders.status, 'OPEN'), inArray(purchaseOrders.acceptance, ['PENDING', 'PARTIAL'])));
-  for (const po of waiting) await db.update(purchaseOrders).set({ acceptDueAt: days === null ? null : new Date(po.firstSeenAt.getTime() + days * DAY) }).where(eq(purchaseOrders.id, po.id));
+  const cal = calendarFor(await db.query.tenants.findFirst({ where: eq(schema.tenants.id, tenantId) }));
+  for (const po of waiting) await db.update(purchaseOrders).set({ acceptDueAt: days === null ? null : addWorkingDays(po.firstSeenAt, days, cal) }).where(eq(purchaseOrders.id, po.id));
   return waiting.length;
 }
 

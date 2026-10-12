@@ -13,7 +13,7 @@ import { buildChecklist, isSubmittable, sanitizeSection, visibleDocRequirements,
 import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks } from '../integrations/kyc/index.js';
-import { checkDef, checkList, localeFor } from '../countries/registry.js';
+import { checkDef, checkInputs, checkList, checkOffered, checksForVendor, localeFor } from '../countries/registry.js';
 import { hasFeature } from '../services/limits.js';
 import { pendingOrderCount } from '../services/orders/queries.js';
 import { queueExtraction, extractionsFor, getExtraction } from '../integrations/ai/index.js';
@@ -91,17 +91,20 @@ vendorRouter.get('/', ah(async (req, res) => {
     editable: EDITABLE.includes(v.status),
     lifecycle: v.status === 'APPROVED' ? {
       blocked: !!v.blockedAt,
+      // Held because a required document lapsed: the supplier can upload the renewal; the reason is shown.
+      hold: v.blockedAt && v.blockSource === 'EXPIRY' ? { reason: v.blockedReason } : null,
       // Internal review outcomes stay internal; the vendor sees hold, expiry and pending-change flags.
       flags: flagsFor(v, v.documents, !!(await openChangeRequest(v.id))).filter((f) => !f.code.startsWith('REVIEW_')),
       lastConfirmedAt: v.lastConfirmedAt, nextReviewAt: v.nextReviewAt,
       changeRequests: (await changeRequestsForVendor(v.id)).slice(0, 5).map((cr) => ({ id: cr.id, status: cr.status, byBuyer: !!cr.raisedById, changes: cr.changes, documentIds: cr.documentIds, note: cr.note, remarks: cr.status === 'REJECTED' && !cr.raisedById ? cr.remarks : null, createdAt: cr.createdAt, decidedAt: cr.decidedAt, steps: cr.steps.map((s) => ({ id: s.id, level: s.level, label: s.label, status: s.status })) })),
     } : null,
     buyer: { name: tenant.name, branding: tenant.branding, workspace: tenant.slug, ...localeFor(tenant.country) },
-    verifiable: checkList(),
+    // Internal compliance checks (sanctions screening) are run by the buyer, never shown to the supplier.
+    verifiable: checkList(tenant.country).filter((c) => c.scope !== 'home'),
     orders: hasFeature(tenant, 'collab') ? { enabled: true, pending: await pendingOrderCount(v.id) } : { enabled: false, pending: 0 },
     signedInAs: vendorCtx(req).contactEmail ?? v.contactEmail,
     privacy: { ...noticeFor(tenant), needsConsent: needsConsent(tenant, v), consentAt: v.consentAt, consentVersion: v.consentVersion, erasureRequestedAt: v.erasureRequestedAt },
-    checks: (await latestChecks(v.id)).map(publicCheck),
+    checks: (await latestChecks(v.id)).filter((c) => checkDef(c.kind)?.def.scope !== 'home').map(publicCheck),
     extractions: await extractionsFor(v.id, profile, config),
   });
 }));
@@ -157,7 +160,8 @@ vendorRouter.delete('/documents/:docId', ah(async (req, res) => {
 vendorRouter.post('/verify/:kind', ah(async (req, res) => {
   const v = await loadMine(req);
   const kind = z.string().max(40).parse(req.params.kind);
-  if (!checkDef(kind)) throw new HttpError(404, 'Unknown check');
+  const found = checkDef(kind);
+  if (!found || found.def.scope === 'home' || !checkOffered(found.def, vendorCtx(req).tenant.country)) throw new HttpError(404, 'Unknown check');
   const result = await runKyc(v, kind, z.record(z.string().max(40)).parse(req.body), v.contactEmail);
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'VERIFICATION_RUN', detail: { kind, status: result.status, cached: 'cached' in result }, ip: req.ip });
   res.json(publicCheck(result));
@@ -193,6 +197,11 @@ vendorRouter.post('/submit', ah(async (req, res) => {
     throw new HttpError(422, 'Please complete all required fields before submitting', checklist.filter((c) => !c.ok && c.severity === 'error'));
   }
   const resubmission = v.status === 'SENT_BACK';
+  // Automatic checks on submission (e.g. sanctions screening in Gulf workspaces), so reviewers see the result.
+  for (const { def } of checksForVendor(vendorCtx(req).tenant.country, v.profile as Profile).filter((c) => c.def.runOnSubmit)) {
+    const input = checkInputs(def, v.profile as Profile);
+    if (Object.values(input).every(Boolean)) await runKyc(v, def.kind, input, 'system (on submit)').catch(() => {});
+  }
   await startReview(v);
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: resubmission ? 'RESUBMITTED' : 'SUBMITTED', ip: req.ip });
   res.json({ ok: true });

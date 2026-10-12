@@ -62,6 +62,8 @@ export interface TenantSettings {
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
   reKycMonths?: number;
   sessionHours?: number;
+  /** Count approval deadlines and PO auto-accept days on working days only (skip the home country's weekend). */
+  skipWeekends?: boolean;
   /** Let AI read uploaded documents and suggest form values (sends documents to the AI provider). */
   aiExtraction?: boolean;
   /** Where vendor sign-in codes go. */
@@ -198,6 +200,8 @@ export const vendors = pgTable('vendors', {
   blockedAt: timestamp('blocked_at', { withTimezone: true }),
   blockedReason: text('blocked_reason'),
   blockedById: text('blocked_by_id').references(() => users.id),
+  /** Why the vendor is on hold: MANUAL (a person blocked it) or EXPIRY (a required document lapsed — released automatically on renewal). */
+  blockSource: text('block_source'),
   /** Next periodic re-verification (set on approval from the workspace's re-check interval). */
   nextReviewAt: timestamp('next_review_at', { withTimezone: true }),
   lastReviewAt: timestamp('last_review_at', { withTimezone: true }),
@@ -678,6 +682,8 @@ export const signups = pgTable('signups', {
   name: text('name').notNull(),
   company: text('company').notNull(),
   slug: text('slug').notNull(),
+  /** Home country chosen on the sign-up page (ISO code). */
+  country: text('country').notNull().default('IN'),
   tokenHash: text('token_hash').notNull().unique(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),

@@ -50,6 +50,15 @@ export interface CheckDef {
   normalise(raw: Record<string, string>): { input: Record<string, string>; masked: string; error?: string };
   /** Re-run when the vendor changes their bank details (fraud control). */
   onBankChange?: boolean;
+  /**
+   * 'supplier' (default): offered wherever the field it reads is on the form (e.g. GSTIN for Indian suppliers).
+   * 'home': offered for every supplier, but only in workspaces whose home pack includes it (e.g. sanctions screening in the Gulf).
+   */
+  scope?: 'supplier' | 'home';
+  /** Badge wording when the meaning of VERIFIED / NOT_FOUND differs (sanctions: "Clear" / "Possible match"). */
+  resultLabels?: { ok: string; fail: string };
+  /** Run automatically when the supplier submits for review. */
+  runOnSubmit?: boolean;
 }
 
 /* ---------- Document reading (AI) ---------- */
@@ -78,11 +87,18 @@ export interface CountryPack {
   locale?: string;
   /** Days off, 0 = Sunday … 6 = Saturday. */
   weekend?: number[];
+  /** New workspaces count deadlines in working days (skip the weekend). */
+  skipWeekendsByDefault?: boolean;
+  /** IANA zone used for deadlines in emails, and its short label ("IST", "AST"). */
+  timeZone?: string;
+  timeZoneLabel?: string;
+  /** HOME pack: fields its template relies on (ERP mapping, checks) — can be moved/relabelled, not deleted. */
+  coreFields?: string[];
 
   /** Format checks this pack adds (global by name). */
   validators?: Record<string, ValidatorDef>;
   /** Country-specific formats for generic fields. */
-  formats?: { postalCode?: FormatRule; bankAccount?: FormatRule };
+  formats?: { postalCode?: FormatRule; bankAccount?: FormatRule; vatNumber?: FormatRule };
   /** Consistency checks between fields for suppliers from this country. */
   crossChecks?: (p: Profile) => { field: string; message: string }[];
 

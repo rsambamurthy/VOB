@@ -15,6 +15,7 @@ import { DEFAULT_ROLES } from '../lib/permissions.js';
 import type { Role, Tenant, User } from './schema.js';
 import { seedInitialConfig } from '../services/config.js';
 import { indiaTemplate } from '../countries/in/template.js';
+import { saudiTemplate } from '../countries/sa/template.js';
 
 const defaultConfig = indiaTemplate();
 import type { OnboardingConfig } from '../config/types.js';
@@ -37,8 +38,8 @@ const token = () => crypto.randomBytes(24).toString('base64url');
 const gstin = (state: string, pan: string) => { const b = `${state}${pan}1Z`; return b + gstinCheckChar(b); };
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000);
 
-async function makeTenant(slug: string, name: string, branding: Tenant['branding'], extraRoles: { key: string; name: string; description: string; permissions: string[] }[] = [], config: OnboardingConfig = defaultConfig) {
-  const [t] = await db.insert(tenants).values({ slug, name, branding, settings: {} }).returning();
+async function makeTenant(slug: string, name: string, branding: Tenant['branding'], extraRoles: { key: string; name: string; description: string; permissions: string[] }[] = [], config: OnboardingConfig = defaultConfig, country = 'IN') {
+  const [t] = await db.insert(tenants).values({ slug, name, branding, country, settings: country === 'SA' ? { skipWeekends: true } : {} }).returning();
   const rs = await db.insert(roles).values([...DEFAULT_ROLES, ...extraRoles].map((r) => ({ tenantId: t.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, isSystem: r.key === 'ADMIN' }))).returning();
   await seedInitialConfig(t.id, config);
   return { tenant: t, role: (k: string) => rs.find((r) => r.key === k)! };
@@ -153,12 +154,39 @@ export async function seed() {
     profile: { basic: { vendorName: 'Globex Only Supplier Pvt Ltd', supplierCountry: 'India' }, bank: { bankCountry: 'India' } },
   });
 
+  /* ---- Workspace 3: najd (Saudi Arabia country pack) ---- */
+  const n = await makeTenant('najd', 'Najd Industrial Company', { productName: 'Najd Supplier Portal', primaryColor: '#0b6e4f' }, [], saudiTemplate(), 'SA');
+  const nAdmin = await makeUser(n.tenant, 'Sara Al-Qahtani', 'admin@najd.test', [n.role('ADMIN')], hash);
+  await makeUser(n.tenant, 'Omar Al-Shehri', 'tax@najd.test', [n.role('TAX_MANAGER')], hash);
+  await makeUser(n.tenant, 'Layla Al-Otaibi', 'finance@najd.test', [n.role('FINANCE_MANAGER')], hash);
+  await makeUser(n.tenant, 'Khalid Al-Dosari', 'mdm@najd.test', [n.role('MDM_MANAGER')], hash);
+  await db.insert(vendors).values([
+    {
+      tenantId: n.tenant.id, code: 'VND-00001', name: 'Al Noor Trading Company', vendorType: 'DOMESTIC', contactFirstName: 'Fahad', contactLastName: 'Al-Harbi',
+      contactEmail: 'procurement@alnoor.sa', contactMobile: '966501234567', status: 'APPROVED', decidedAt: daysAgo(20), reviewCycle: 1, inviteToken: token(), createdById: nAdmin.id, consentAt: daysAgo(25), consentVersion: 1,
+      profile: {
+        basic: { vendorName: 'Al Noor Trading Company', nameArabic: 'شركة النور للتجارة', entityType: 'Limited Liability Company (LLC)', supplierCountry: 'Saudi Arabia', address: '8228 King Fahd Road', region: 'Riyadh Region', district: 'Riyadh', postalCode: '12271', contactName: 'Fahad Al-Harbi', contactEmail: 'procurement@alnoor.sa', contactMobile: '966501234567', supplyCategory: 'Goods', paymentTerms: 'Net 30', isSme: 'Yes' },
+        bank: { bankCountry: 'Saudi Arabia', bankName: 'Al Rajhi Bank', accountHolderName: 'Al Noor Trading Company', iban: 'SA0380000000608010167519', swift: 'RJHISARI' },
+        tax: { crNumber: '7001234567', vatRegistered: 'Yes', vatNumber: '300000000000003' },
+        ownership: { owner1Name: 'Fahad Al-Harbi', owner1Nationality: 'Saudi', owner1Share: '100', moreOwners: 'No', pep: 'No', relatedToBuyer: 'No' },
+        localContent: { nitaqatBand: 'High Green', employees: '85', saudizationPct: '38' },
+        risk: { fiscalYearEnd: 'December', currency: 'SAR', turnoverYear: 'FY 2025', annualTurnover: '25000000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' },
+      },
+    },
+    {
+      tenantId: n.tenant.id, code: 'VND-00002', name: 'Gulf Steel Fabrication Est.', vendorType: 'DOMESTIC', contactFirstName: 'Abdullah', contactLastName: 'Al-Ghamdi',
+      contactEmail: 'abdullah@gulfsteel.sa', contactMobile: '966551112233', status: 'INVITED', inviteToken: token(), createdById: nAdmin.id,
+      profile: { basic: { vendorName: 'Gulf Steel Fabrication Est.', supplierCountry: 'Saudi Arabia' }, bank: { bankCountry: 'Saudi Arabia' } },
+    },
+  ]);
+
   // Platform console (/platform): the SaaS operator. 2FA is set up at first sign-in.
   await db.insert(schema.platformAdmins).values({ email: 'owner@vendorgate.test', name: 'Platform Owner', status: 'ACTIVE', passwordHash: hash });
   console.log(`\nDemo workspaces ready. Password for every demo user: ${DEMO_PASSWORD}`);
   console.log('  Platform console /platform: owner@vendorgate.test (sets up 2FA at first sign-in)');
   console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test, mdm2@acme.test, compliance@acme.test');
-  console.log('  Workspace "globex": admin@globex.test\n');
+  console.log('  Workspace "globex": admin@globex.test');
+  console.log('  Workspace "najd" (Saudi Arabia): admin@najd.test, tax@najd.test, finance@najd.test, mdm@najd.test\n');
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

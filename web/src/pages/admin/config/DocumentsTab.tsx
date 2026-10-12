@@ -21,7 +21,7 @@ export function DocumentsTab({ config, update, meta, issues }: { config: Onboard
                     <td><button className="link-btn strong" onClick={() => setEditing(i)}>{d.label}</button><div className="muted small mono">{d.type}</div>{bad.map((x, k) => <div key={k} className="field-error">{x.message}</div>)}</td>
                     <td className="small">{d.required === undefined ? <span className="muted">Optional</span> : ruleSummary(d.required, catalog)}</td>
                     <td className="small">{d.showIf ? ruleSummary(d.showIf, catalog) : 'Always'}</td>
-                    <td>{d.hasExpiry ? '✓' : <span className="muted">—</span>}</td>
+                    <td>{d.hasExpiry ? (d.holdOnExpiry ? <span title="Vendor is put on hold when it lapses">✓ hold</span> : '✓') : <span className="muted">—</span>}</td>
                     <td className="actions">
                       <button className="icon-btn" aria-label="Move up" disabled={i === 0} onClick={() => update((c) => move(c.documents, i, -1))}>↑</button>
                       <button className="icon-btn" aria-label="Move down" disabled={i === config.documents.length - 1} onClick={() => update((c) => move(c.documents, i, 1))}>↓</button>
@@ -54,7 +54,8 @@ function DocModal({ doc, taken, catalog, onClose, onSave }: { doc?: DocRequireme
     if (others.includes(type)) return setError('That code is already used');
     const out: DocRequirement = { ...d, type, label: d.label.trim() };
     if (!out.help) delete out.help;
-    if (!out.hasExpiry) delete out.hasExpiry;
+    if (!out.hasExpiry) { delete out.hasExpiry; delete out.holdOnExpiry; }
+    if (!out.holdOnExpiry) delete out.holdOnExpiry;
     delete out.isRequired;
     onSave(out);
   }
@@ -67,6 +68,7 @@ function DocModal({ doc, taken, catalog, onClose, onSave }: { doc?: DocRequireme
         <div className="field"><label htmlFor="de-code">Code</label><input id="de-code" className="mono" disabled={!!doc} placeholder={toKey(d.label || 'Document', others, true)} value={d.type} onChange={(e) => setD({ ...d, type: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_') })} /></div>
         <div className="field field-wide"><label htmlFor="de-help">Help text</label><input id="de-help" value={d.help ?? ''} onChange={(e) => setD({ ...d, help: e.target.value })} /></div>
         <label className="check-item field-wide"><input type="checkbox" checked={!!d.hasExpiry} onChange={(e) => setD({ ...d, hasExpiry: e.target.checked })} /><span><strong>Track expiry date</strong><span className="muted small block">Vendors enter a valid-until date; reminders arrive before it lapses.</span></span></label>
+        {d.hasExpiry && <label className="check-item field-wide"><input type="checkbox" checked={!!d.holdOnExpiry} onChange={(e) => setD({ ...d, holdOnExpiry: e.target.checked })} /><span><strong>Put the vendor on hold when it lapses</strong><span className="muted small block">Payments are held (the ERP is told) until a renewed document is approved; the hold then lifts by itself.</span></span></label>}
       </div>
       <RulePicker label="Required" value={d.required} allowNever onChange={(v) => setD({ ...d, required: v })} catalog={catalog} />
       <RulePicker label="Show this document" value={d.showIf} onChange={(v) => setD({ ...d, showIf: v && typeof v === 'object' ? v : undefined })} catalog={catalog} />

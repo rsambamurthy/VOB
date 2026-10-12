@@ -28,7 +28,27 @@ countries/
     template.ts    starting onboarding template (GST, TDS, DTAA sections)
     privacy.ts     DPDP privacy notice
     index.ts       the pack: currency INR, locale en-IN, ERP India localisation
+  gcc/          shared Gulf pack: Fri–Sat week, working-day deadlines, sanctions screening (home-only check)
+  sa/           Saudi Arabia (extends gcc)
+    rules.ts       VAT (15 digits, 3…3), CR (10 digits), postal code, Saudi IBAN check; CR (Wathq) + VAT (ZATCA) checks; CR/VAT/bank-letter reading
+    template.ts    Saudi template: Arabic name, National Address, CR/VAT, ownership (UBO, PEP), Nitaqat, IKTVA/LCGPA,
+                   Zakat/GOSI/Nitaqat/CR documents that put the vendor on hold when they lapse
+    index.ts       SAR, Asia/Riyadh (AST), PDPL notice, SAUDI_LOCALIZATION ERP block
 ```
+
+## Which checks a vendor gets
+- **The workspace's own checks** (its home pack and what it inherits) — always.
+- **Another country's checks** — only when the supplier is from that country (a Saudi workspace checks an Indian supplier's GSTIN).
+- `scope: 'home'` checks (sanctions screening) are internal: run on submit and at re-checks, never shown to suppliers.
+
+## Automatic hold on lapsed documents
+A document with **Put the vendor on hold when it lapses** (`holdOnExpiry`) puts an approved vendor on hold the day it
+expires (`vendors.block_source = 'EXPIRY'`, ERP told). The supplier can still send the renewal; when that change request
+is approved the hold lifts by itself. Manual blocks (`MANUAL`) are never lifted automatically.
+
+## Working-day deadlines
+`tenants.settings.skipWeekends` (on by default for Gulf workspaces) makes approval deadlines and PO auto-accept skip the
+home pack's weekend, judged in the pack's time zone. Deadline emails show the workspace's time zone (IST, AST).
 
 ## Adding a country
 
@@ -42,6 +62,6 @@ Nothing else in the app needs to change: the configuration editor, Verify button
 re-checks, AI document reading, ERP export and formatting all read from the registry.
 
 ## Not yet pack-driven (next phases)
-- Working week for approval deadlines and auto-accept (packs declare `weekend`; deadlines still count plain hours).
 - Field masking/encryption list (`lib/fieldCrypto.ts`) and the vendor register report's GSTIN/PAN/IFSC columns.
-- Choosing a country on the self-service sign-up page (workspaces from sign-up are India until a second home country exists).
+- Live Saudi providers (Wathq, ZATCA lookup) and a live sanctions-screening provider — test mode until Phase 3.
+- Arabic UI, Hijri dates (Phase 2).

@@ -10,7 +10,7 @@
  * Conditions reference profile answers as "section.field", or "vendor.vendorType".
  */
 import { z } from 'zod';
-import { validatorNames } from '../countries/registry.js';
+import { packFor, validatorNames } from '../countries/registry.js';
 
 type ValidatorName = string;
 
@@ -38,6 +38,8 @@ export interface FieldDef {
   validator?: ValidatorName;
   placeholder?: string;
   help?: string;
+  /** Text direction for the input, e.g. 'rtl' for an Arabic name. */
+  dir?: 'rtl' | 'ltr' | 'auto';
 }
 export interface GroupDef { key: string; label: string; fields: FieldDef[] }
 export interface SectionDef { key: string; label: string; groups: GroupDef[] }
@@ -47,8 +49,10 @@ export interface DocumentRequirement {
   required?: boolean | Condition;
   showIf?: Condition;
   help?: string;
-  /** Track an expiry date for this document (reminders arrive in Phase 4). */
+  /** Track an expiry date for this document (reminders 30 and 7 days before). */
   hasExpiry?: boolean;
+  /** Put the vendor on hold automatically when this document lapses, until a renewal is approved. */
+  holdOnExpiry?: boolean;
 }
 export interface WorkflowLevel {
   id: string;
@@ -81,13 +85,13 @@ export interface OnboardingConfig {
  */
 export const CORE_FIELDS = [
   'basic.vendorName', 'basic.tradingName', 'basic.entityType', 'basic.supplierCountry', 'basic.address', 'basic.region', 'basic.district', 'basic.postalCode',
-  'basic.faxNumber', 'basic.telexNumber', 'basic.msmeRegistered', 'basic.udyamNumber', 'basic.msmeCategory',
   'basic.contactName', 'basic.contactEmail', 'basic.contactMobile', 'basic.accountsEmail', 'basic.paymentTerms',
-  'bank.bankCountry', 'bank.bankName', 'bank.accountHolderName', 'bank.accountNumber', 'bank.bankBranch', 'bank.ifsc', 'bank.swift', 'bank.iban', 'bank.routingNumber',
-  'tax.hasGst', 'tax.gstin', 'tax.gstClassification', 'tax.vatNumber', 'tax.pan', 'tax.tan', 'tax.cin',
-  'tax.concessionalTds', 'tax.tdsCertNumber', 'tax.tdsRate', 'tax.tdsValidTill', 'tax.foreignTin', 'tax.hasTrc', 'tax.holdsNoPe', 'tax.form10f',
+  'bank.bankCountry', 'bank.bankName', 'bank.accountHolderName', 'bank.accountNumber', 'bank.bankBranch', 'bank.swift', 'bank.iban',
+  'tax.vatNumber', 'tax.foreignTin',
   'risk.currency', 'risk.annualTurnover',
 ] as const;
+/** Platform core fields plus the ones the workspace's home country pack relies on. */
+export const coreFieldsFor = (homeCountry?: string | null): string[] => [...CORE_FIELDS, ...(packFor(homeCountry ?? 'IN').coreFields ?? [])];
 export const CORE_SECTIONS = ['basic', 'bank', 'tax', 'risk'] as const;
 
 /** Things a condition can point at besides profile fields. */
@@ -118,6 +122,7 @@ const field = z.object({
   validator: z.string().refine((v) => validatorNames().includes(v), (v) => ({ message: `Unknown format check “${v}”` })).optional(),
   placeholder: z.string().max(120).optional(),
   help: z.string().max(300).optional(),
+  dir: z.enum(['rtl', 'ltr', 'auto']).optional(),
 });
 export const configSchema = z.object({
   sections: z.array(z.object({
@@ -127,7 +132,7 @@ export const configSchema = z.object({
   documents: z.array(z.object({
     type: DOC_KEY, label: z.string().min(1).max(120),
     required: z.union([z.boolean(), condition]).optional(), showIf: condition.optional(),
-    help: z.string().max(300).optional(), hasExpiry: z.boolean().optional(),
+    help: z.string().max(300).optional(), hasExpiry: z.boolean().optional(), holdOnExpiry: z.boolean().optional(),
   })).max(60),
   workflow: z.object({
     levels: z.array(z.object({
@@ -147,7 +152,7 @@ export const configSchema = z.object({
 
 export interface ConfigIssue { path: string; message: string }
 
-export function findIssues(cfg: OnboardingConfig, roleKeys: string[]): ConfigIssue[] {
+export function findIssues(cfg: OnboardingConfig, roleKeys: string[], coreFields: readonly string[] = coreFieldsFor('IN')): ConfigIssue[] {
   const issues: ConfigIssue[] = [];
   const fieldIds = new Map<string, FieldDef>();
   const sectionKeys = new Set<string>();
@@ -167,7 +172,7 @@ export function findIssues(cfg: OnboardingConfig, roleKeys: string[]): ConfigIss
     }
   }
   for (const s of CORE_SECTIONS) if (!sectionKeys.has(s)) issues.push({ path: `sections.${s}`, message: `The “${s}” tab is required by the platform and can’t be removed` });
-  for (const id of CORE_FIELDS) if (!fieldIds.has(id)) issues.push({ path: id, message: `Built-in field ${id} is missing — it can be relabelled or moved within its tab, but not deleted or renamed` });
+  for (const id of coreFields) if (!fieldIds.has(id)) issues.push({ path: id, message: `Built-in field ${id} is missing — it can be relabelled or moved within its tab, but not deleted or renamed` });
 
   const checkCond = (c: Condition | undefined, where: string) => {
     if (!c) return;

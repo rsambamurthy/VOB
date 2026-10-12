@@ -241,10 +241,14 @@ describe('AI document reading', () => {
     expect((await v.get('/api/vendor')).body.extractions[0].status).toBe('SKIPPED');
   });
 
-  test('catalog only targets fields that exist in the default template', async () => {
-    const defaultConfig = (await import('../src/countries/in/template.js')).indiaTemplate();
-    const ids = new Set(defaultConfig.sections.flatMap((s) => s.groups.flatMap((g) => g.fields.map((f) => `${s.key}.${f.key}`))));
-    for (const spec of Object.values(EXTRACTABLE)) for (const k of spec.keys) expect(ids.has(k.target), k.target).toBe(true);
+  test('each pack’s readable documents only target fields that exist in that pack’s template', async () => {
+    const { PACKS } = await import('../src/countries/registry.js');
+    for (const p of PACKS.filter((x) => x.template && x.documents)) {
+      const t = p.template!();
+      const ids = new Set(t.sections.flatMap((s) => s.groups.flatMap((g) => g.fields.map((f) => `${s.key}.${f.key}`))));
+      for (const spec of Object.values(p.documents!)) for (const k of spec.keys) expect(ids.has(k.target), `${p.code} ${k.target}`).toBe(true);
+    }
+    expect(Object.keys(EXTRACTABLE).length).toBeGreaterThan(5);
   });
 });
 

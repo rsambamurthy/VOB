@@ -11,13 +11,13 @@ export function Workspace() {
   const welcome = useSearchParams()[0].get('welcome') === '1';
   const [f, setF] = useState({
     name: t.name, productName: t.branding.productName ?? '', primaryColor: t.branding.primaryColor ?? '#6d1a73', logoUrl: t.branding.logoUrl ?? '',
-    requireMfa: !!t.settings.requireMfa, sessionHours: t.settings.sessionHours ?? 12, reKycMonths: t.settings.reKycMonths ?? 12,
+    requireMfa: !!t.settings.requireMfa, sessionHours: t.settings.sessionHours ?? 12, reKycMonths: t.settings.reKycMonths ?? 12, skipWeekends: !!t.settings.skipWeekends,
   });
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
   async function save(e: React.FormEvent) {
     e.preventDefault(); setMsg(undefined);
     try {
-      await api('/admin/tenant', { method: 'PATCH', body: { name: f.name, branding: { productName: f.productName || undefined, primaryColor: f.primaryColor, logoUrl: f.logoUrl }, settings: { requireMfa: f.requireMfa, sessionHours: Number(f.sessionHours), reKycMonths: Number(f.reKycMonths) } } });
+      await api('/admin/tenant', { method: 'PATCH', body: { name: f.name, branding: { productName: f.productName || undefined, primaryColor: f.primaryColor, logoUrl: f.logoUrl }, settings: { requireMfa: f.requireMfa, sessionHours: Number(f.sessionHours), reKycMonths: Number(f.reKycMonths), skipWeekends: f.skipWeekends } } });
       await refresh();
       setMsg({ kind: 'success', text: 'Workspace settings saved.' });
     } catch (err: any) { setMsg({ kind: 'error', text: err.message }); }
@@ -55,8 +55,9 @@ export function Workspace() {
         </section>
         <section className="card pad section-card">
           <h3>Vendor lifecycle</h3>
-          <p className="muted small">Approved vendors are re-checked on this cycle: GSTIN, PAN and bank details are verified again and the vendor is asked to confirm their details. Problems are flagged to approvers. Document expiry reminders go out 30 days, 7 days and on the day a document expires.</p>
+          <p className="muted small">Approved vendors are re-checked on this cycle: their online checks are run again and the vendor is asked to confirm their details. Problems are flagged to approvers. Document expiry reminders go out 30 days, 7 days and on the day a document expires.</p>
           <div className="field" style={{ maxWidth: 260 }}><label htmlFor="w-rekyc">Re-verify every (months)</label><input id="w-rekyc" type="number" min={0} max={60} value={f.reKycMonths} onChange={(e) => setF({ ...f, reKycMonths: Number(e.target.value) })} /><div className="field-help">0 turns periodic re-checks off.</div></div>
+          <label className="check-item" style={{ marginTop: 12 }}><input type="checkbox" checked={f.skipWeekends} onChange={(e) => setF({ ...f, skipWeekends: e.target.checked })} /><span><strong>Count deadlines in working days</strong><span className="muted small block">Approval deadlines and purchase-order auto-accept skip the weekend{weekendText(me!.tenant.country)}. Applies to steps and orders from now on.</span></span></label>
         </section>
         <div><button className="btn btn-primary">Save settings</button></div>
       </form>
@@ -104,3 +105,5 @@ function PrivacySettings() {
     </section>
   );
 }
+
+const weekendText = (country: string) => (country === 'IN' ? ' (Sunday)' : ['SA', 'BH', 'QA', 'KW', 'OM'].includes(country) ? ' (Friday and Saturday)' : ' (Saturday and Sunday)');

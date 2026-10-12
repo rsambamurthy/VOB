@@ -17,6 +17,7 @@ import { sendMail } from '../lib/mailer.js';
 import { passwordProblem } from '../lib/password.js';
 import { lookupLimiter, sensitiveLimiter } from '../lib/rateLimits.js';
 import { PLANS } from '../lib/plans.js';
+import { homeCountries, isHomeCountry } from '../countries/registry.js';
 import { createSession } from '../auth/session.js';
 import { createTenant, slugProblem, suggestSlug } from '../services/tenants.js';
 import { getPlatformSettings } from './settings.js';
@@ -35,7 +36,7 @@ export const isFreeEmail = (email: string) => FREE_EMAIL.has(email.split('@')[1]
 
 signupRouter.get('/config', ah(async (_req, res) => {
   const s = await getPlatformSettings();
-  res.json({ enabled: s.signupEnabled, plan: PLANS[s.signupPlan]?.label ?? s.signupPlan, trialDays: s.signupPlan === 'trial' ? s.trialDays : null, termsUrl: s.termsUrl, workEmailOnly: s.blockFreeEmail });
+  res.json({ enabled: s.signupEnabled, plan: PLANS[s.signupPlan]?.label ?? s.signupPlan, trialDays: s.signupPlan === 'trial' ? s.trialDays : null, termsUrl: s.termsUrl, workEmailOnly: s.blockFreeEmail, countries: homeCountries().map((c) => ({ code: c.code, name: c.name })) });
 }));
 
 signupRouter.get('/check-slug', lookupLimiter, ah(async (req, res) => {
@@ -54,6 +55,7 @@ signupRouter.post('/', sensitiveLimiter, ah(async (req, res) => {
     name: z.string().trim().min(2, 'Enter your name').max(100),
     email: z.string().trim().toLowerCase().email('Enter a valid email address'),
     slug: z.string().trim().toLowerCase().min(1, 'Choose a workspace ID'),
+    country: z.string().length(2).toUpperCase().refine(isHomeCountry, 'Choose a country we support').default('IN'),
     agree: z.literal(true, { errorMap: () => ({ message: 'Please accept the terms to continue' }) }),
     website: z.string().optional(), // honeypot: real people never see this field
   }).parse(req.body);
@@ -65,7 +67,7 @@ signupRouter.post('/', sensitiveLimiter, ah(async (req, res) => {
   const [recent] = await db.select({ n: count() }).from(signups).where(and(eq(signups.email, input.email), gte(signups.createdAt, new Date(Date.now() - DAY))));
   if (Number(recent.n) >= 3) return res.json({ ok: true, email: input.email });
   const token = randomToken();
-  await db.insert(signups).values({ email: input.email, name: input.name, company: input.company, slug: input.slug, tokenHash: sha256(token), expiresAt: new Date(Date.now() + DAY), ip: req.ip });
+  await db.insert(signups).values({ email: input.email, name: input.name, company: input.company, slug: input.slug, country: input.country, tokenHash: sha256(token), expiresAt: new Date(Date.now() + DAY), ip: req.ip });
   await sendMail({
     tenantId: null, to: input.email, subject: 'Confirm your email to create your VendorGate workspace',
     body: `Hello ${input.name},\n\nThanks for signing up ${input.company} for VendorGate. Confirm your email address and choose a password to finish creating your workspace (workspace ID: ${input.slug}).\n\nThe link is valid for 24 hours. If you didn’t sign up, you can ignore this email.`,
@@ -104,7 +106,7 @@ signupRouter.post('/complete', sensitiveLimiter, ah(async (req, res) => {
   let r: Awaited<ReturnType<typeof createTenant>>;
   try {
     r = await createTenant({
-      slug, name: row.company, adminName: row.name, adminEmail: row.email, adminPassword: input.password, source: 'signup',
+      slug, name: row.company, adminName: row.name, adminEmail: row.email, adminPassword: input.password, source: 'signup', country: row.country,
       plan: settings.signupPlan, trialEndsAt: settings.signupPlan === 'trial' ? new Date(Date.now() + settings.trialDays * DAY) : null,
     });
   } catch (e) {

@@ -18,12 +18,12 @@ import { rememberWorkspace, SupplierTopbar, supplierSignOut } from '../orders/Su
 
 type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string } & Partial<LocaleInfo>; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
-type Lifecycle = { blocked: boolean; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
+type Lifecycle = { blocked: boolean; hold: { reason: string | null } | null; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
 
 
 /** An online check from the country packs: which field gets the "Verify" button and which fields it sends. */
-interface Verifiable { kind: string; label: string; anchor: string; buttonLabel: string; inputs: Record<string, string> }
+interface Verifiable { kind: string; label: string; anchor: string; buttonLabel: string; inputs: Record<string, string>; home: boolean; country: string; resultLabels: { ok: string; fail: string } | null }
 const inputsFrom = (c: Verifiable, p: Profile) => Object.fromEntries(Object.entries(c.inputs).map(([k, id]) => { const [sec, f] = id.split('.'); return [k, String(p[sec]?.[f] ?? '')]; }));
 
 export function VendorPortal() {
@@ -80,7 +80,8 @@ export function VendorPortal() {
   const lc = me.lifecycle;
   const approved = v.status === 'APPROVED' && !!lc;
   const openCr = lc?.changeRequests.find((c) => c.status === 'PENDING');
-  const canChange = approved && !lc!.blocked && !openCr;
+  // On hold because a document lapsed: the supplier can still send the renewal.
+  const canChange = approved && (!lc!.blocked || !!lc!.hold) && !openCr;
   const editable = me.editable || (changeMode && canChange);
   const docsEditable = me.editable || canChange;
   const newDocs = v.documents.filter((d) => d.status === 'PENDING' && !d.changeRequestId);
@@ -137,7 +138,8 @@ export function VendorPortal() {
     } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
 
-  const verifierFor = (f: FieldDef) => me?.verifiable.find((c) => c.anchor === `${tab}.${f.key}`);
+  // The workspace's own checks, and another country's only for suppliers from that country.
+  const verifierFor = (f: FieldDef) => me?.verifiable.find((c) => c.anchor === `${tab}.${f.key}` && (c.home || c.country === String(profile.basic?.supplierCountry ?? '')));
   async function runVerify(f: FieldDef) {
     const cfg = verifierFor(f);
     if (!cfg) return;
@@ -198,7 +200,7 @@ export function VendorPortal() {
     return (
       <span className="verify">
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => runVerify(f)}>{cfg.buttonLabel}</button>
-        {r && <CheckBadge c={r} compact />}
+        {r && <CheckBadge c={r} compact labels={cfg.resultLabels} />}
       </span>
     );
   };
@@ -216,7 +218,9 @@ export function VendorPortal() {
 
         {v.status === 'SENT_BACK' && <Alert kind="warning"><strong>Changes requested:</strong> “{me.sendBackRemarks}”. Update the form and submit again.</Alert>}
         {v.status === 'UNDER_REVIEW' && <Alert kind="info">Submitted — your registration is being reviewed. Editing is locked until a decision is made.</Alert>}
-        {approved && lc!.blocked && <Alert kind="error"><strong>Your vendor account is on hold.</strong> Please contact {me.buyer.name} for details. Changes can’t be requested while on hold.</Alert>}
+        {approved && lc!.blocked && (lc!.hold
+          ? <Alert kind="error"><strong>Your vendor account is on hold — {lc!.hold.reason?.replace(/^Expired: /, '').toLowerCase()} has expired.</strong> Upload the renewed document in the Documents tab and submit it as a change request. The hold is lifted as soon as it is approved.</Alert>
+          : <Alert kind="error"><strong>Your vendor account is on hold.</strong> Please contact {me.buyer.name} for details. Changes can’t be requested while on hold.</Alert>)}
         {approved && openCr && (
           <Alert kind="info"><strong>{openCr.byBuyer ? `${me.buyer.name} is updating your details` : 'Change request under review'}</strong> ({openCr.steps.filter((s) => s.status === 'PENDING' || s.status === 'WAITING').map((s) => s.label).join(' → ') || 'review'}). Your current details stay in effect until it’s approved.{' '}
             {!openCr.byBuyer && <button className="link-btn" onClick={() => cancelCr(openCr.id)}>Withdraw request</button>}</Alert>

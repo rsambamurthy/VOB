@@ -4,10 +4,12 @@
  */
 import { basePack } from './base.js';
 import { indiaPack } from './in/index.js';
+import { gccPack } from './gcc/index.js';
+import { saudiPack } from './sa/index.js';
 import { countryByName } from './list.js';
 import type { CheckDef, CheckProvider, CountryPack, ExtractedField, Profile, ReadableDocument, ValidatorDef } from './types.js';
 
-export const PACKS: CountryPack[] = [indiaPack];
+export const PACKS: CountryPack[] = [indiaPack, gccPack, saudiPack];
 export const DEFAULT_HOME = 'IN';
 
 const byCode = new Map<string, CountryPack>([[basePack.code, basePack], ...PACKS.map((p) => [p.code, p] as const)]);
@@ -48,7 +50,7 @@ export function localeFor(code?: string | null) {
 
 /* ---------- Field formats (global by name) ---------- */
 
-const generic = (kind: 'postalCode' | 'bankAccount', label: string): ValidatorDef => ({
+const generic = (kind: 'postalCode' | 'bankAccount' | 'vatNumber', label: string): ValidatorDef => ({
   label,
   check: (v, ctx) => {
     const rule = packForCountryName(ctx.country).formats?.[kind] ?? basePack.formats![kind]!;
@@ -65,7 +67,7 @@ function buildValidators() {
     }
   };
   add(basePack.code, basePack.validators);
-  add(basePack.code, { postalCode: generic('postalCode', 'Postal / PIN code'), bankAccount: generic('bankAccount', 'Bank account number') });
+  add(basePack.code, { postalCode: generic('postalCode', 'Postal / PIN code'), bankAccount: generic('bankAccount', 'Bank account number'), vatNumber: generic('vatNumber', 'VAT number (format by country)') });
   for (const p of PACKS) add(p.code, p.validators);
   return all;
 }
@@ -84,9 +86,28 @@ for (const p of PACKS) for (const c of p.checks ?? []) {
   CHECKS.set(c.kind, { def: c, pack: p.code });
 }
 export const checkDef = (kind: string) => CHECKS.get(kind);
-export const allChecks = () => [...CHECKS.values()];
+/** Whether a check is offered in a workspace: supplier-scope checks always; home-scope ones only where the home pack includes them. */
+export function checkOffered(def: CheckDef, homeCountry?: string | null) {
+  if (def.scope !== 'home') return true;
+  return (packFor(homeCountry ?? DEFAULT_HOME).checks ?? []).some((c) => c.kind === def.kind);
+}
+/** Checks offered in a workspace (all checks when no workspace is given). */
+export const allChecks = (homeCountry?: string | null) => [...CHECKS.values()].filter(({ def }) => homeCountry === undefined || checkOffered(def, homeCountry));
+/** The workspace's own checks: those its home pack (with what it inherits) declares. */
+const isHomeCheck = (kind: string, homeCountry?: string | null) => (packFor(homeCountry ?? DEFAULT_HOME).checks ?? []).some((c) => c.kind === kind);
+/**
+ * Checks that apply to one vendor: the workspace's own checks, plus another country's checks when the
+ * supplier is from that country (a Saudi workspace verifies an Indian supplier's GSTIN; a German supplier gets neither).
+ */
+export function checksForVendor(homeCountry: string | null | undefined, profile: Profile) {
+  const supplierCountry = String(profile.basic?.supplierCountry ?? '');
+  return allChecks(homeCountry ?? null).filter(({ def, pack }) => isHomeCheck(def.kind, homeCountry) || packFor(pack).name === supplierCountry);
+}
 /** For the web app: what can be verified, which field gets the button, and which fields it reads. */
-export const checkList = () => allChecks().map(({ def, pack }) => ({ kind: def.kind, label: def.label, anchor: def.anchor, buttonLabel: def.buttonLabel ?? 'Verify', inputs: def.inputs, country: packFor(pack).name }));
+export const checkList = (homeCountry?: string | null) => allChecks(homeCountry).map(({ def, pack }) => ({
+  kind: def.kind, label: def.label, anchor: def.anchor, buttonLabel: def.buttonLabel ?? 'Verify', inputs: def.inputs, country: packFor(pack).name,
+  scope: def.scope ?? 'supplier', resultLabels: def.resultLabels ?? null, home: isHomeCheck(def.kind, homeCountry),
+}));
 
 const providers = new Map<string, CheckProvider>();
 export function checkProvider(packCode: string): CheckProvider | undefined {
@@ -96,7 +117,13 @@ export function checkProvider(packCode: string): CheckProvider | undefined {
 /** Tests and admin tooling: swap the provider for one pack. */
 export function setCheckProvider(packCode: string, p: CheckProvider) { providers.set(packCode, p); }
 /** Provider status per pack, for the Integrations page. */
-export const checkProviders = () => PACKS.filter((p) => p.checks?.length).map((p) => { const pr = checkProvider(p.code)!; return { country: p.name, title: p.checksTitle ?? `${p.name} checks`, provider: pr.name, live: pr.live }; });
+export const checkProviders = (homeCountry?: string | null) => {
+  const homeKinds = new Set((packFor(homeCountry ?? DEFAULT_HOME).checks ?? []).map((c) => c.kind));
+  return PACKS.filter((p) => p.checks?.length).map((p) => {
+    const pr = checkProvider(p.code)!;
+    return { code: p.code, country: p.name, title: p.checksTitle ?? `${p.name} checks`, provider: pr.name, live: pr.live, home: (p.checks ?? []).some((c) => homeKinds.has(c.kind)) };
+  }).filter((p) => p.home || !(packFor(p.code).checks ?? []).every((c) => c.scope === 'home')).sort((a, b) => Number(b.home) - Number(a.home));
+};
 
 /** Read a check's inputs out of a vendor profile. */
 export function checkInputs(def: CheckDef, profile: Profile) {

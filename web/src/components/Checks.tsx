@@ -2,11 +2,11 @@ import type { Check } from '../lib/types';
 import { fmtDateTime } from '../lib/format';
 
 /** An online check the workspace can run (from the country packs). */
-export interface CheckDefinition { kind: string; label: string }
+export interface CheckDefinition { kind: string; label: string; home?: boolean; country?: string; resultLabels?: { ok: string; fail: string } | null }
 
-export function CheckBadge({ c, compact }: { c: Check; compact?: boolean }) {
+export function CheckBadge({ c, compact, labels }: { c: Check; compact?: boolean; labels?: { ok: string; fail: string } | null }) {
   const cls = c.status === 'VERIFIED' ? 'v-verified' : c.status === 'ERROR' ? 'v-error' : 'v-not_found';
-  const text = c.status === 'VERIFIED' ? '✓ Verified' : c.status === 'NOT_FOUND' ? 'Not found' : c.status === 'INVALID_FORMAT' ? 'Invalid' : 'Try again';
+  const text = c.status === 'VERIFIED' ? `✓ ${labels?.ok ?? 'Verified'}` : c.status === 'NOT_FOUND' ? labels?.fail ?? 'Not found' : c.status === 'INVALID_FORMAT' ? 'Invalid' : 'Try again';
   const weakName = c.status === 'VERIFIED' && c.nameMatch !== null && c.nameMatch < 70;
   return (
     <span className="check-badge" title={c.message}>
@@ -18,18 +18,19 @@ export function CheckBadge({ c, compact }: { c: Check; compact?: boolean }) {
 }
 
 /** Reviewer view: latest result per check, with name-on-record comparison and a re-run button. */
-export function ChecksPanel({ checks, defs, onRun, busy }: { checks: Check[]; defs: CheckDefinition[]; onRun?: (kind: string) => void; busy?: string }) {
-  // Checks this workspace can run, plus any older results for checks no longer offered.
-  const all = [...defs, ...checks.filter((c) => !defs.some((d) => d.kind === c.kind)).map((c) => ({ kind: c.kind, label: c.kind.toUpperCase() }))];
+export function ChecksPanel({ checks, defs, supplierCountry, onRun, busy }: { checks: Check[]; defs: CheckDefinition[]; supplierCountry?: string; onRun?: (kind: string) => void; busy?: string }) {
+  // The workspace's own checks, another country's checks for suppliers from that country, and any check that already has a result.
+  const relevant = defs.filter((d) => d.home !== false || d.country === supplierCountry || checks.some((c) => c.kind === d.kind));
+  const all: CheckDefinition[] = [...relevant, ...checks.filter((c) => !defs.some((d) => d.kind === c.kind)).map((c) => ({ kind: c.kind, label: c.kind.toUpperCase() }))];
   return (
     <ul className="verif">
-      {all.map(({ kind: k, label }) => {
+      {all.map(({ kind: k, label, resultLabels }) => {
         const c = checks.find((x) => x.kind === k);
         return (
           <li key={k}>
             <div className="verif-row">
               <strong>{label}</strong>
-              {c ? <CheckBadge c={c} /> : <span className="muted small">Not checked</span>}
+              {c ? <CheckBadge c={c} labels={resultLabels} /> : <span className="muted small">Not checked</span>}
               {onRun && <button className="link-btn small" disabled={busy === k} onClick={() => onRun(k)}>{busy === k ? 'Checking…' : c ? 'Re-run' : 'Run'}</button>}
             </div>
             {c && (

@@ -16,8 +16,9 @@ import { approverIds, directApprovers, emailsFor, usersWithPermission } from './
 export { usersWithPermission } from './approvers.js';
 import { buildChecklist, isSubmittable, sanitizeSection, type Profile } from '../lib/profileEngine.js';
 import { runKyc } from '../integrations/kyc/index.js';
-import { allChecks, checkInputs } from '../countries/registry.js';
+import { checkInputs, checksForVendor } from '../countries/registry.js';
 import { pushLater } from '../integrations/erp/index.js';
+import { addWorkingHours, calendarFor } from '../lib/calendar.js';
 import type { OnboardingConfig } from '../config/types.js';
 
 const { vendors, documents, changeRequests, changeRequestSteps, roles, tenants, users, userRoles } = schema;
@@ -53,7 +54,8 @@ async function notifyStep(step: Pick<ChangeRequestStep, 'tenantId' | 'roleId' | 
 
 async function activate(step: ChangeRequestStep, vendor: Vendor) {
   const now = new Date();
-  const [s] = await db.update(changeRequestSteps).set({ status: 'PENDING', activatedAt: now, dueAt: step.slaHours ? new Date(now.getTime() + step.slaHours * 3600_000) : null })
+  const cal = calendarFor(await db.query.tenants.findFirst({ where: eq(tenants.id, vendor.tenantId) }));
+  const [s] = await db.update(changeRequestSteps).set({ status: 'PENDING', activatedAt: now, dueAt: step.slaHours ? addWorkingHours(now, step.slaHours, cal) : null })
     .where(eq(changeRequestSteps.id, step.id)).returning();
   await notifyStep(s, vendor);
 }
@@ -65,7 +67,8 @@ export async function openChangeRequest(vendorId: string) {
 /** `by` = a staff member proposing the change on the vendor's behalf; omitted = the vendor's own request. */
 export async function submitChangeRequest(vendor: Vendor, input: { changes: Record<string, Record<string, unknown>>; note?: string }, ip?: string, by?: { id: string; name: string }) {
   if (vendor.status !== 'APPROVED') throw new HttpError(409, by ? 'Only approved vendors can be changed this way. Use the onboarding review instead.' : 'Change requests are for approved vendors. Edit the form directly instead.');
-  if (vendor.blockedAt && !by) throw new HttpError(409, 'Your vendor account is on hold. Please contact the buyer.');
+  // On hold for a lapsed document: the supplier can still send the renewal (that's how the hold is released).
+  if (vendor.blockedAt && vendor.blockSource !== 'EXPIRY' && !by) throw new HttpError(409, 'Your vendor account is on hold. Please contact the buyer.');
   if (by && !input.note?.trim()) throw new HttpError(400, 'Give a reason for the change (e.g. “Vendor emailed a new cancelled cheque on 3 Oct”).');
   if (await openChangeRequest(vendor.id)) throw new HttpError(409, by ? 'This vendor already has a change request waiting for review. Wait for it to be decided or withdrawn first.' : 'You already have a change request waiting for review. Cancel it or wait for a decision first.');
   const { config } = await getPublished(vendor.tenantId);
@@ -116,7 +119,8 @@ export async function submitChangeRequest(vendor: Vendor, input: { changes: Reco
 
   // Fraud controls for bank changes: run a penny-drop on the new account and alert the registered contact.
   if (diff.some((d) => d.fieldId.startsWith('bank.'))) {
-    for (const { def } of allChecks().filter((c) => c.def.onBankChange)) {
+    const tenantRow = await db.query.tenants.findFirst({ where: eq(tenants.id, vendor.tenantId) });
+    for (const { def } of checksForVendor(tenantRow?.country, proposed as Profile).filter((c) => c.def.onBankChange)) {
       const input = checkInputs(def, proposed as Profile);
       if (!Object.values(input).every(Boolean)) continue;
       await runKyc({ ...vendor, profile: proposed }, def.kind, input, 'system (bank change)').catch((e) => logger.warn({ err: e }, 'bank check on change failed'));
@@ -182,6 +186,7 @@ async function applyChange(cr: ChangeRequest, vendor: Vendor) {
       .where(and(eq(documents.vendorId, vendor.id), eq(documents.docType, d.docType), eq(documents.status, 'ACTIVE')));
   }
   if (newDocs.length) await db.update(documents).set({ status: 'ACTIVE' }).where(inArray(documents.id, newDocs.map((d) => d.id)));
+  if (newDocs.length) await releaseExpiryHold(vendor.id);
   // Documents alone don't change anything the ERP holds.
   if (cr.changes.length) await pushLater(vendor.tenantId, vendor.id, 'UPDATE');
 }
@@ -256,7 +261,7 @@ export async function setBlocked(tenantId: string, vendorId: string, block: bool
   if (v.status !== 'APPROVED') throw new HttpError(409, 'Only approved vendors can be blocked. Reject or leave the registration instead.');
   if (!reason.trim()) throw new HttpError(400, 'Give a reason — it goes in the audit log');
   if (block === !!v.blockedAt) throw new HttpError(409, block ? 'Vendor is already blocked' : 'Vendor is not blocked');
-  await db.update(vendors).set(block ? { blockedAt: new Date(), blockedReason: reason, blockedById: actor.id } : { blockedAt: null, blockedReason: null, blockedById: null }).where(eq(vendors.id, v.id));
+  await db.update(vendors).set(block ? { blockedAt: new Date(), blockedReason: reason, blockedById: actor.id, blockSource: 'MANUAL' } : { blockedAt: null, blockedReason: null, blockedById: null, blockSource: null }).where(eq(vendors.id, v.id));
   await audit({ tenantId, vendorId, actor: actor.name, action: block ? 'VENDOR_BLOCKED' : 'VENDOR_UNBLOCKED', detail: { reason }, ip });
   await pushLater(tenantId, vendorId, block ? 'BLOCK' : 'UNBLOCK', actor.name);
   if (notifyVendor) {
@@ -267,6 +272,44 @@ export async function setBlocked(tenantId: string, vendorId: string, block: bool
 }
 
 /* ======================= Document expiry ======================= */
+
+/**
+ * A required document lapsed (e.g. Zakat or GOSI certificate): put the vendor on hold until a renewal is approved.
+ * Manual blocks are never touched; an existing expiry hold just gets the extra document added to its reason.
+ */
+export async function holdForExpiry(v: Vendor, label: string, expiredOn: string) {
+  const fresh = await db.query.vendors.findFirst({ where: eq(vendors.id, v.id) });
+  if (!fresh || fresh.status !== 'APPROVED') return;
+  if (fresh.blockedAt && fresh.blockSource !== 'EXPIRY') return;
+  const reason = fresh.blockedAt ? `${fresh.blockedReason}; ${label}` : `Expired: ${label}`;
+  await db.update(vendors).set({ blockedAt: fresh.blockedAt ?? new Date(), blockedReason: reason.slice(0, 500), blockedById: null, blockSource: 'EXPIRY' }).where(eq(vendors.id, v.id));
+  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'system (document expiry)', action: 'VENDOR_HELD_EXPIRY', detail: { document: label, expiredOn } });
+  if (fresh.blockedAt) return;
+  await pushLater(v.tenantId, v.id, 'BLOCK', 'system (document expiry)');
+  await sendMail({ tenantId: v.tenantId, to: v.contactEmail, subject: `Your vendor account is on hold: ${label} expired`,
+    body: `Dear ${v.contactFirstName},\n\nThe ${label} for ${v.name} expired on ${expiredOn}, so the account has been put on hold and payments may be paused.\n\nSign in, upload the renewed document and send it for review. The hold is lifted as soon as it is approved.`, link: portalUrl(v) });
+  for (const a of await usersWithPermission(v.tenantId, 'vendors.block')) {
+    await sendMail({ tenantId: v.tenantId, to: a.email, subject: `${v.name} put on hold: ${label} expired`, body: `Hello ${a.name},\n\n${v.name} (${v.code}) was put on hold automatically because its ${label} expired on ${expiredOn}. The hold is lifted when the vendor's renewed document is approved. You can also lift it yourself from the vendor page.`, link: vendorUrl(v.id) });
+  }
+}
+
+/** Lift an automatic expiry hold once no hold-on-expiry document is lapsed any more. */
+export async function releaseExpiryHold(vendorId: string) {
+  const v = await db.query.vendors.findFirst({ where: eq(vendors.id, vendorId) });
+  if (!v?.blockedAt || v.blockSource !== 'EXPIRY') return false;
+  const { config } = await getPublished(v.tenantId);
+  const holdTypes = config.documents.filter((d) => d.holdOnExpiry).map((d) => d.type);
+  const today = new Date().toISOString().slice(0, 10);
+  const lapsed = holdTypes.length ? await db.select({ id: documents.id }).from(documents)
+    .where(and(eq(documents.vendorId, v.id), eq(documents.status, 'ACTIVE'), inArray(documents.docType, holdTypes), isNotNull(documents.expiresOn), lt(documents.expiresOn, today))) : [];
+  if (lapsed.length) return false;
+  await db.update(vendors).set({ blockedAt: null, blockedReason: null, blockedById: null, blockSource: null }).where(eq(vendors.id, v.id));
+  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'system (document renewed)', action: 'VENDOR_HOLD_RELEASED', detail: { reason: v.blockedReason } });
+  await pushLater(v.tenantId, v.id, 'UNBLOCK', 'system (document renewed)');
+  await sendMail({ tenantId: v.tenantId, to: v.contactEmail, subject: 'Your vendor account is active again', body: `Dear ${v.contactFirstName},\n\nThanks for sending the renewed document. ${v.name}'s vendor account is active again.` });
+  return true;
+}
+
 
 export const daysUntil = (iso: string, now = new Date()) => Math.floor((new Date(`${iso}T00:00:00Z`).getTime() - Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) / DAY);
 
@@ -292,6 +335,7 @@ export async function runExpiryReminders(now = new Date()) {
     }
     await db.update(documents).set({ expiryNotified: d.expiryNotified | flag | (flag === 4 ? 3 : flag === 2 ? 1 : 0) }).where(eq(documents.id, d.id));
     if (flag === 4) await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'system', action: 'DOCUMENT_EXPIRED', detail: { document: label, expiredOn: d.expiresOn } });
+    if (flag === 4 && config.documents.find((x) => x.type === d.docType)?.holdOnExpiry) await holdForExpiry(v, label, d.expiresOn!);
     sent++;
   }
   return sent;
@@ -311,8 +355,9 @@ export function nextReviewFrom(from: Date, months: number | undefined) {
 export async function reviewVendor(v: Vendor, requestedBy = 'system (periodic review)') {
   const p = v.profile as Profile;
   // Every online check whose inputs this vendor has filled in (GSTIN, PAN, CIN, bank for Indian suppliers).
+  const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, v.tenantId) });
   const plan: [string, Record<string, string>, string][] = [];
-  for (const { def } of allChecks()) {
+  for (const { def } of checksForVendor(tenant?.country, p)) {
     const input = checkInputs(def, p);
     if (Object.values(input).every(Boolean)) plan.push([def.kind, input, def.label]);
   }
@@ -327,7 +372,6 @@ export async function reviewVendor(v: Vendor, requestedBy = 'system (periodic re
   const expired = await db.select({ docType: documents.docType, expiresOn: documents.expiresOn }).from(documents)
     .where(and(eq(documents.vendorId, v.id), eq(documents.status, 'ACTIVE'), isNotNull(documents.expiresOn), lt(documents.expiresOn, new Date().toISOString().slice(0, 10))));
   for (const d of expired) problems.push(`${d.docType} expired on ${d.expiresOn}`);
-  const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, v.tenantId) });
   const now = new Date();
   const status = problems.length ? 'ATTENTION' : 'OK';
   await db.update(vendors).set({ lastReviewAt: now, nextReviewAt: nextReviewFrom(now, tenant?.settings.reKycMonths), reviewStatus: status, reviewNote: problems.join(' · ').slice(0, 1000) || null }).where(eq(vendors.id, v.id));
@@ -357,11 +401,11 @@ export async function runPeriodicReviews(now = new Date(), limit = 200) {
 
 export interface Flag { code: 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
 
-export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null }, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
+export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null }, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
   const flags: Flag[] = [];
   if (v.erasureRequestedAt) flags.push({ code: 'ERASURE_REQUESTED', label: 'Deletion requested', severity: 'high' });
   if (v.status !== 'APPROVED') return flags;
-  if (v.blockedAt) flags.push({ code: 'BLOCKED', label: 'Blocked', severity: 'high' });
+  if (v.blockedAt) flags.push({ code: 'BLOCKED', label: v.blockSource === 'EXPIRY' ? 'On hold — document expired' : 'Blocked', severity: 'high' });
   const active = docs.filter((d) => d.status === 'ACTIVE' && d.expiresOn);
   const expired = active.filter((d) => daysUntil(d.expiresOn!, now) < 0);
   const soon = active.filter((d) => { const n = daysUntil(d.expiresOn!, now); return n >= 0 && n <= 30; });
@@ -373,7 +417,7 @@ export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus'
   return flags;
 }
 
-export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, 'id' | 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null })[]) {
+export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, 'id' | 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null })[]) {
   const ids = vendorRows.filter((v) => v.status === 'APPROVED').map((v) => v.id);
   if (!ids.length) return new Map(vendorRows.map((v) => [v.id, flagsFor(v, [], false)]));
   const docs = await db.select({ vendorId: documents.vendorId, status: documents.status, expiresOn: documents.expiresOn, docType: documents.docType }).from(documents)

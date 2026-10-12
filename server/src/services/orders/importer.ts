@@ -8,6 +8,7 @@
  */
 import crypto from 'node:crypto';
 import { packFor } from '../../countries/registry.js';
+import { addWorkingDays, calendarFor, formatDay } from '../../lib/calendar.js';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { ZodError } from 'zod';
 import { db, schema } from '../../lib/db.js';
@@ -46,13 +47,13 @@ export async function supplierRecipients(vendorId: string) {
 }
 
 export const supplierLink = (t: Pick<Tenant, 'slug'>, path = '/vendor/orders') => `${env.appBaseUrl}/s/${t.slug}?next=${encodeURIComponent(path)}`;
-const money = (v: string | number | null | undefined, cur: string) => `${cur} ${Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (v: string | number | null | undefined, cur: string, t?: Pick<Tenant, 'country'>) => new Intl.NumberFormat(packFor(t?.country).locale ?? 'en-GB', { style: 'currency', currency: cur }).format(Number(v ?? 0));
 
 export async function notifySupplierOfPo(tenant: Tenant, po: PurchaseOrder, kind: 'NEW' | 'REVISED' | 'REMINDER') {
   if (!po.vendorId) return;
-  const due = po.acceptDueAt ? `If you don't respond, it will be accepted automatically on ${po.acceptDueAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}.` : 'Please accept it in the supplier portal; it is not accepted automatically.';
+  const due = po.acceptDueAt ? `If you don't respond, it will be accepted automatically on ${formatDay(po.acceptDueAt, tenant)}.` : 'Please accept it in the supplier portal; it is not accepted automatically.';
   const subject = kind === 'NEW' ? `New purchase order ${po.poNumber} from ${tenant.name}` : kind === 'REVISED' ? `Purchase order ${po.poNumber} has been revised — please review` : `Reminder: purchase order ${po.poNumber} is waiting for your acceptance`;
-  const lead = kind === 'NEW' ? `${tenant.name} has sent you purchase order ${po.poNumber} for ${money(po.total, po.currency)}.`
+  const lead = kind === 'NEW' ? `${tenant.name} has sent you purchase order ${po.poNumber} for ${money(po.total, po.currency, tenant)}.`
     : kind === 'REVISED' ? `${tenant.name} has revised purchase order ${po.poNumber} (revision ${po.revision}). Lines that changed need your acceptance again.`
     : `Purchase order ${po.poNumber} for ${money(po.total, po.currency)} is still waiting for your acceptance.`;
   for (const r of await supplierRecipients(po.vendorId)) {
@@ -132,7 +133,7 @@ export async function importPurchaseOrders(tenant: Tenant, inputs: unknown[], so
         hsn: l.hsn ?? null, siteId: siteIds.get(l.erpId) ?? null, needByDate: l.needByDate ?? null, promisedDate: l.promisedDate ?? null, tolerancePct: n4(l.tolerancePct),
         receivedQty: n4(l.receivedQty ?? 0)!, billedQty: n4(l.billedQty ?? 0)!, status: l.status ?? 'OPEN',
       });
-      const dueFrom = (from: Date) => (group?.autoAcceptDays !== null && group?.autoAcceptDays !== undefined ? new Date(from.getTime() + group.autoAcceptDays * DAY) : null);
+      const dueFrom = (from: Date) => (group?.autoAcceptDays !== null && group?.autoAcceptDays !== undefined ? addWorkingDays(from, group.autoAcceptDays, calendarFor(tenant)) : null);
 
       const existing = await db.query.purchaseOrders.findFirst({ where: and(eq(purchaseOrders.tenantId, tenant.id), eq(purchaseOrders.erpId, po.erpId)) });
       const outcome = await db.transaction(async (tx) => {

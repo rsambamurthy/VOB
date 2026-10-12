@@ -6,20 +6,20 @@ import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
-import { CORE_FIELDS, CORE_SECTIONS, FIELD_TYPES, OPS, VENDOR_ATTRIBUTES, vendorTypes } from '../config/types.js';
+import { coreFieldsFor, CORE_SECTIONS, FIELD_TYPES, OPS, VENDOR_ATTRIBUTES, vendorTypes } from '../config/types.js';
 import { checkList, validatorList } from '../countries/registry.js';
 import * as cfg from '../services/config.js';
 
 const { roles, users, delegations } = schema;
 export const configRouter = Router();
 
-const editorMeta = { fieldTypes: FIELD_TYPES, validators: validatorList(), ops: OPS, coreFields: CORE_FIELDS, coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes };
+const editorMeta = (country: string) => ({ fieldTypes: FIELD_TYPES, validators: validatorList(), ops: OPS, coreFields: coreFieldsFor(country), coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes });
 
 /** Published config for rendering vendor profiles (any staff member). */
 configRouter.get('/config', requireStaff(), ah(async (req, res) => {
   const { tenant } = staffCtx(req);
   const { version, config } = await cfg.getPublished(tenant.id);
-  res.json({ version, config, vendorTypes, checks: checkList() });
+  res.json({ version, config, vendorTypes, checks: checkList(tenant.country) });
 }));
 
 /* ---------- Admin editor ---------- */
@@ -27,7 +27,7 @@ configRouter.get('/config', requireStaff(), ah(async (req, res) => {
 configRouter.get('/admin/config', requireStaff('config.manage'), ah(async (req, res) => {
   const { tenant } = staffCtx(req);
   const [state, roleRows] = await Promise.all([cfg.editorState(tenant.id), db.select({ key: roles.key, name: roles.name }).from(roles).where(eq(roles.tenantId, tenant.id)).orderBy(asc(roles.createdAt))]);
-  res.json({ ...state, roles: roleRows, meta: editorMeta });
+  res.json({ ...state, roles: roleRows, meta: editorMeta(tenant.country) });
 }));
 
 configRouter.put('/admin/config/draft', requireStaff('config.manage'), ah(async (req, res) => {
