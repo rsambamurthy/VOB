@@ -29,6 +29,9 @@ export interface Me {
   permissions: Permission[];
   mfaSetupRequired: boolean;
   devMailbox: boolean;
+  plan?: { key: string; label: string; trialEndsAt: string | null; trialExpired: boolean; features: { erp: boolean; ai: boolean; kyc: boolean } };
+  /** Read-only support session opened from the platform console. */
+  support?: { by: string; reason: string | null; endsAt: string };
 }
 
 export interface ChecklistItem { id: string; section: string; label: string; ok: boolean; message?: string; severity: 'error' | 'warning' }

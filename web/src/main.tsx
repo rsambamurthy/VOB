@@ -24,6 +24,14 @@ import { Workspace } from './pages/admin/Workspace';
 import { Audit } from './pages/admin/Audit';
 import { VendorLogin } from './pages/VendorLogin';
 import { VendorPortal, VendorSignedOut } from './pages/VendorPortal';
+import { PlatformProvider, RequirePlatform } from './platform/session';
+import { PlatformAcceptInvite, PlatformForgot, PlatformLogin, PlatformMfaSetup, PlatformReset } from './platform/Auth';
+import { PlatformShell } from './platform/Shell';
+import { PlatformOverview } from './platform/Overview';
+import { PlatformTenants } from './platform/Tenants';
+import { PlatformTenantDetail } from './platform/TenantDetail';
+import { PlatformAdmins, PlatformAudit, PlatformSettings, PlatformSignups } from './platform/Pages';
+import { Signup, SignupVerify } from './pages/signup/Signup';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -54,6 +62,25 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/integrations" element={<Integrations />} />
               <Route path="mailbox" element={<Mailbox />} />
             </Route>
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/signup/verify/:token" element={<SignupVerify />} />
+            <Route path="/platform/*" element={<PlatformProvider><Routes>
+              <Route path="login" element={<PlatformLogin />} />
+              <Route path="setup-2fa" element={<PlatformMfaSetup />} />
+              <Route path="accept-invite/:token" element={<PlatformAcceptInvite />} />
+              <Route path="forgot-password" element={<PlatformForgot />} />
+              <Route path="reset-password/:token" element={<PlatformReset />} />
+              <Route element={<RequirePlatform><PlatformShell /></RequirePlatform>}>
+                <Route index element={<PlatformOverview />} />
+                <Route path="tenants" element={<PlatformTenants />} />
+                <Route path="tenants/:id" element={<PlatformTenantDetail />} />
+                <Route path="signups" element={<PlatformSignups />} />
+                <Route path="settings" element={<PlatformSettings />} />
+                <Route path="admins" element={<PlatformAdmins />} />
+                <Route path="audit" element={<PlatformAudit />} />
+                <Route path="*" element={<Navigate to="/platform" replace />} />
+              </Route>
+            </Routes></PlatformProvider>} />
             <Route path="/onboard/:token" element={<VendorLogin />} />
             <Route path="/vendor" element={<VendorPortal />} />
             <Route path="/vendor/expired" element={<VendorSignedOut />} />

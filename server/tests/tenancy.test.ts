@@ -17,7 +17,7 @@ describe('tenant isolation', () => {
 
   test('vendor codes are per workspace', async () => {
     const both = await db.select({ code: schema.vendors.code, t: schema.vendors.tenantId }).from(schema.vendors).where(eq(schema.vendors.code, 'VND-00001'));
-    expect(new Set(both.map((b) => b.t)).size).toBe(2);
+    expect(new Set(both.map((b) => b.t)).size).toBeGreaterThanOrEqual(2); // other test files add workspaces too
   });
 
   test('admin endpoints are workspace-scoped', async () => {

@@ -151,7 +151,10 @@ export async function seed() {
     profile: { basic: { vendorName: 'Globex Only Supplier Pvt Ltd', supplierCountry: 'India' }, bank: { bankCountry: 'India' } },
   });
 
+  // Platform console (/platform): the SaaS operator. 2FA is set up at first sign-in.
+  await db.insert(schema.platformAdmins).values({ email: 'owner@vendorgate.test', name: 'Platform Owner', status: 'ACTIVE', passwordHash: hash });
   console.log(`\nDemo workspaces ready. Password for every demo user: ${DEMO_PASSWORD}`);
+  console.log('  Platform console /platform: owner@vendorgate.test (sets up 2FA at first sign-in)');
   console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test, mdm2@acme.test, compliance@acme.test');
   console.log('  Workspace "globex": admin@globex.test\n');
 }

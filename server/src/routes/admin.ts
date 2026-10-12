@@ -17,6 +17,7 @@ import { kycStatus } from '../integrations/kyc/index.js';
 import { aiStatus } from '../integrations/ai/index.js';
 import { queueRunning } from '../jobs/queue.js';
 import { env } from '../lib/env.js';
+import { assertCanAddUser, assertFeature } from '../services/limits.js';
 import { checkConnection, connectionInput, getConnection, publicConnection, saveConnection } from '../integrations/erp/index.js';
 import { send as sendErp } from '../integrations/erp/drivers.js';
 import { defaultNotice, noticeFor, retentionFor } from '../services/privacy.js';
@@ -39,6 +40,7 @@ adminRouter.get('/users', requireStaff('users.manage'), ah(async (req, res) => {
 adminRouter.post('/users', requireStaff('users.manage'), ah(async (req, res) => {
   const s = staffCtx(req);
   const input = z.object({ name: z.string().min(2).max(100), email: z.string().email(), roleIds: z.array(z.string()).min(1, 'Pick at least one role') }).parse(req.body);
+  await assertCanAddUser(s.tenant);
   const { user, inviteLink } = await createStaffUser(s.tenant, input, s.user.name);
   await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'USER_INVITED', detail: { email: user.email }, ip: req.ip });
   res.status(201).json({ id: user.id, inviteLink });
@@ -75,6 +77,7 @@ adminRouter.patch('/users/:id', requireStaff('users.manage'), ah(async (req, res
   }
   if (input.status) {
     if (u.status === 'INVITED' && input.status === 'ACTIVE') throw new HttpError(409, 'This user hasn’t accepted their invitation yet');
+    if (u.status === 'DISABLED' && input.status === 'ACTIVE') await assertCanAddUser(s.tenant);
     if (input.status === 'DISABLED') {
       if (u.id === s.user.id) throw new HttpError(409, 'You can’t disable your own account');
       await assertNotLastAdmin(s.tenant.id, u.id);
@@ -239,6 +242,7 @@ adminRouter.get('/erp', requireStaff('tenant.settings'), ah(async (req, res) => 
 
 adminRouter.put('/erp', requireStaff('tenant.settings'), ah(async (req, res) => {
   const s = staffCtx(req);
+  if (connectionInput.parse(req.body).kind !== 'none') assertFeature(s.tenant, 'erp');
   res.json(await saveConnection(s.tenant.id, connectionInput.parse(req.body), { id: s.user.id, name: s.user.name }, req.ip));
 }));
 

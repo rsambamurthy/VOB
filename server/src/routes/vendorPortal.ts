@@ -13,6 +13,7 @@ import { buildChecklist, isSubmittable, sanitizeSection, visibleDocRequirements,
 import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks, type KycKind } from '../integrations/kyc/index.js';
+import { hasFeature } from '../services/limits.js';
 import { queueExtraction, extractionsFor, getExtraction } from '../integrations/ai/index.js';
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
@@ -130,7 +131,7 @@ vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
   // Approved vendors' uploads wait in a change request; during onboarding they count straight away.
   const [doc] = await db.insert(documents).values({ tenantId: v.tenantId, vendorId: v.id, docType, ...stored, expiresOn, status: approved ? 'PENDING' : 'ACTIVE' }).returning();
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'DOCUMENT_UPLOADED', detail: { docType, fileName: stored.fileName, scan: stored.scanStatus }, ip: req.ip });
-  await queueExtraction(doc, !!vendorCtx(req).tenant.settings.aiExtraction);
+  await queueExtraction(doc, !!vendorCtx(req).tenant.settings.aiExtraction && hasFeature(vendorCtx(req).tenant, 'ai'));
   const { storagePath: _p, ...safe } = doc;
   res.status(201).json(safe);
 }));

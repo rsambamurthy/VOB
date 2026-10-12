@@ -5,6 +5,7 @@ import { db, schema } from '../../lib/db.js';
 import { env } from '../../lib/env.js';
 import { HttpError } from '../../lib/http.js';
 import { validators } from '../../lib/validators.js';
+import { hasFeature } from '../../services/limits.js';
 import type { Vendor } from '../../db/schema.js';
 import { mockKyc } from './mock.js';
 import { surepassKyc } from './surepass.js';
@@ -33,6 +34,8 @@ function normalise(kind: KycKind, raw: Record<string, string>): { input: KycInpu
 }
 
 export async function runKyc(vendor: Vendor, kind: KycKind, raw: Record<string, string>, requestedBy: string) {
+  const tenant = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, vendor.tenantId) });
+  if (tenant && !hasFeature(tenant, 'kyc')) throw new HttpError(403, 'Online verification isn’t available for this workspace', undefined, 'PLAN_LIMIT');
   const { input, masked, error } = normalise(kind, raw);
   const inputHash = crypto.createHash('sha256').update(`${kind}:${JSON.stringify(input)}`).digest('hex');
   const profile = vendor.profile as Record<string, Record<string, unknown>>;

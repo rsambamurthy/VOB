@@ -10,3 +10,5 @@ export const loginLimiter = rateLimit({ ...common, ...off, windowMs: 15 * 60_000
 export const sensitiveLimiter = rateLimit({ ...common, ...off, windowMs: 15 * 60_000, limit: 10 });
 /** Everything under /api. */
 export const apiLimiter = rateLimit({ ...common, ...off, windowMs: 60_000, limit: 300 });
+/** As-you-type availability checks (workspace ID on the sign-up page): 60 / min per IP. */
+export const lookupLimiter = rateLimit({ ...common, ...off, windowMs: 60_000, limit: 60 });

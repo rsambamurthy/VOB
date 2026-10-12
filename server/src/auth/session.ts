@@ -28,6 +28,8 @@ export interface StaffCtx {
   mfaPending: boolean;
   /** Workspace requires 2FA and this user hasn't enrolled yet: only the enrolment routes are allowed. */
   mfaSetupRequired: boolean;
+  /** Read-only support session opened by a platform admin. */
+  support?: { by: string; reason: string | null; endsAt: Date };
 }
 export interface VendorCtx { kind: 'vendor'; sessionId: string; tenant: Tenant; vendorId: string }
 
@@ -43,15 +45,17 @@ function cookieOpts(hours: number) {
 
 export async function createSession(
   req: Request, res: Response,
-  s: { kind: 'STAFF'; tenant: Tenant; userId: string; mfaPending?: boolean } | { kind: 'VENDOR'; tenant: Tenant; vendorId: string },
+  s: { kind: 'STAFF'; tenant: Tenant; userId: string; mfaPending?: boolean; support?: { adminId: string; reason: string; minutes: number } } | { kind: 'VENDOR'; tenant: Tenant; vendorId: string },
 ) {
   const token = randomToken();
-  const hours = s.kind === 'STAFF' ? s.tenant.settings.sessionHours ?? DEFAULT_SESSION_HOURS : VENDOR_SESSION_HOURS;
+  const hours = s.kind === 'STAFF' ? (s.support ? s.support.minutes / 60 : s.tenant.settings.sessionHours ?? DEFAULT_SESSION_HOURS) : VENDOR_SESSION_HOURS;
   const [row] = await db.insert(sessions).values({
     tokenHash: sha256(token), kind: s.kind, tenantId: s.tenant.id,
     userId: s.kind === 'STAFF' ? s.userId : null,
     vendorId: s.kind === 'VENDOR' ? s.vendorId : null,
     mfaPending: s.kind === 'STAFF' ? !!s.mfaPending : false,
+    supportAdminId: s.kind === 'STAFF' ? s.support?.adminId ?? null : null,
+    supportReason: s.kind === 'STAFF' ? s.support?.reason ?? null : null,
     expiresAt: new Date(Date.now() + hours * 3600_000),
     ip: req.ip, userAgent: req.get('user-agent')?.slice(0, 300),
   }).returning();
@@ -82,9 +86,12 @@ async function loadStaff(token: string): Promise<StaffCtx | undefined> {
     .from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId))
     .where(and(eq(userRoles.userId, user.id), eq(roles.tenantId, tenant.id)));
   touch(s.id, s.lastSeenAt);
+  const supporter = s.supportAdminId ? await db.query.platformAdmins.findFirst({ where: eq(schema.platformAdmins.id, s.supportAdminId) }) : undefined;
+  if (s.supportAdminId && supporter?.status !== 'ACTIVE') return;
   return {
     kind: 'staff', sessionId: s.id, tenant, mfaPending: s.mfaPending,
-    mfaSetupRequired: !!tenant.settings.requireMfa && !user.mfaEnabled,
+    mfaSetupRequired: !supporter && !!tenant.settings.requireMfa && !user.mfaEnabled,
+    support: supporter ? { by: `${supporter.name} (${supporter.email})`, reason: s.supportReason, endsAt: s.expiresAt } : undefined,
     user: { id: user.id, name: user.name, email: user.email, mfaEnabled: user.mfaEnabled, tenantId: user.tenantId },
     roles: rs.map(({ id, key, name }) => ({ id, key, name })),
     roleIds: new Set(rs.map((r) => r.id)),
@@ -124,6 +131,12 @@ export function csrfGuard(req: Request, _res: Response, next: NextFunction) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   if (req.get('x-requested-with')) return next();
   next(new HttpError(403, 'Missing X-Requested-With header'));
+}
+
+/** Support sessions can look but not change anything (sign-out is the only write allowed). */
+export function supportReadOnly(req: Request, _res: Response, next: NextFunction) {
+  if (!req.staff?.support || ['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/auth/logout') return next();
+  next(new HttpError(403, 'Support access is read-only', undefined, 'SUPPORT_READ_ONLY'));
 }
 
 export function requireStaff(...perms: Permission[]) {

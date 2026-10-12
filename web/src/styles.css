@@ -429,3 +429,36 @@ pre.code.small { font-size: 12px; }
 .notice-scroll { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: #fcfbfd; }
 .link-list { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .mono-num { font-variant-numeric: tabular-nums; }
+
+/* Platform console: its own colour so operators always know they're above every tenant. */
+.platform-root { --brand: #1d4f73; --brand-600: #163d59; --brand-50: #eef4f8; --brand-100: #d3e2ec; --sidebar: #0f2433; }
+.platform-root .login-bg { background: radial-gradient(circle at 20% 10%, #d3e2ec, transparent 50%), var(--bg); }
+.platform-root a:not(.btn) { color: var(--brand); }
+.platform-root .sidebar nav a { color: #c9d8e3; } .platform-root .me-role { color: #9fb6c7; }
+.platform-tag { background: #d3e2ec; color: #163d59; }
+.badge.plan-trial { background: var(--warn-bg); color: var(--warn); } .badge.plan-standard { background: var(--info-bg); color: var(--info); } .badge.plan-enterprise { background: #ece7f6; color: #4b2a8a; }
+.meters { display: grid; gap: 14px; margin: 10px 0 12px; }
+.meter-track { height: 8px; border-radius: 99px; background: var(--line-2); overflow: hidden; margin-top: 5px; }
+.meter-fill { display: block; height: 100%; border-radius: 99px; background: var(--brand); }
+.meter-fill.near { background: #c98a00; } .meter-fill.full { background: var(--err); }
+.feature-list { display: grid; gap: 8px; }
+.feature-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-weight: 400 !important; }
+.feature-row select { width: auto; min-width: 190px; }
+.check-row { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.check-row input { width: auto; margin-top: 3px; flex: none; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; box-shadow: var(--shadow); z-index: 60; font-size: 13.5px; }
+.toolbar select { width: auto; }
+/* Staff app: support session + trial bars */
+.support-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: #fff4cc; border-bottom: 1px solid #ecd27a; color: #5c4400; padding: 8px 28px; font-size: 13px; position: sticky; top: 0; z-index: 20; }
+.trial-bar { background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid #f0dca8; padding: 7px 28px; font-size: 13px; }
+.trial-bar.quiet { background: var(--brand-50); color: var(--ink-2); border-bottom-color: var(--line); }
+.trial-bar.ended { background: var(--err-bg); color: var(--err); border-bottom-color: #f1c7c3; }
+.welcome-steps { margin: 8px 0 0; padding-left: 20px; }
+/* Sign-up */
+.signup-card .login-side { justify-content: flex-start; padding-top: 40px; }
+.signup-points { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.signup-points li { padding-left: 24px; position: relative; opacity: .92; }
+.signup-points li::before { content: '✓'; position: absolute; left: 0; font-weight: 700; }
+.signup-trial { margin-top: auto; padding-top: 18px; font-weight: 600; opacity: 1 !important; }
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.mail-icon { font-size: 34px; color: var(--brand); }

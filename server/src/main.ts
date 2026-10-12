@@ -16,10 +16,16 @@ if (process.env.BOOTSTRAP_ADMIN_EMAIL) {
   const { db, schema } = await import('./lib/db.js');
   if (!(await db.select({ id: schema.tenants.id }).from(schema.tenants).limit(1)).length) {
     const { createTenant } = await import('./services/tenants.js');
-    const r = await createTenant({ slug: process.env.BOOTSTRAP_WORKSPACE ?? 'main', name: process.env.BOOTSTRAP_COMPANY ?? 'My Company', adminName: process.env.BOOTSTRAP_ADMIN_NAME ?? 'Administrator', adminEmail: process.env.BOOTSTRAP_ADMIN_EMAIL });
+    const r = await createTenant({ slug: process.env.BOOTSTRAP_WORKSPACE ?? 'main', name: process.env.BOOTSTRAP_COMPANY ?? 'My Company', adminName: process.env.BOOTSTRAP_ADMIN_NAME ?? 'Administrator', adminEmail: process.env.BOOTSTRAP_ADMIN_EMAIL, plan: 'enterprise', source: 'bootstrap' });
     logger.warn(`[bootstrap] Workspace "${r.tenant.slug}" created. Invitation for ${r.admin.email} (also emailed): ${r.inviteLink}`);
     console.log(`[bootstrap] Workspace "${r.tenant.slug}" created. Invitation for ${r.admin.email}: ${r.inviteLink}`);
   }
+}
+// First platform admin (the SaaS operator's console at /platform). Only acts while there are no platform admins.
+if (process.env.PLATFORM_ADMIN_EMAIL) {
+  const { ensureFirstPlatformAdmin } = await import('./platform/bootstrap.js');
+  const link = await ensureFirstPlatformAdmin(process.env.PLATFORM_ADMIN_EMAIL, process.env.PLATFORM_ADMIN_NAME ?? 'Platform Admin');
+  if (link) { logger.warn(`[platform] First platform admin invited: ${process.env.PLATFORM_ADMIN_EMAIL} (also emailed): ${link}`); console.log(`[platform] Platform admin invitation for ${process.env.PLATFORM_ADMIN_EMAIL}: ${link}`); }
 }
 const server = createApp().listen(env.port, () => {
   logger.info(`API listening on http://localhost:${env.port}`);

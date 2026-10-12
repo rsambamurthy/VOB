@@ -26,6 +26,7 @@ import { queueErpPush, recentSyncs, retrySync, syncsForVendor, syncSummary } fro
 import { actionFor } from '../integrations/erp/drivers.js';
 import { validators } from '../lib/validators.js';
 import { isSensitive, maskField, maskProfile } from '../lib/fieldCrypto.js';
+import { assertCanAddVendor, assertFeature } from '../services/limits.js';
 import { declineErasure, eraseVendor, exportVendorData, noticeFor } from '../services/privacy.js';
 
 /** Staff views get PAN / bank numbers masked; the full value needs an explicit, logged reveal. */
@@ -117,6 +118,7 @@ const createSchema = z.object({
 staffRouter.post('/vendors', requireStaff('vendors.create'), ah(async (req, res) => {
   const s = staffCtx(req);
   const input = createSchema.parse(req.body);
+  await assertCanAddVendor(s.tenant);
   const dup = await db.query.vendors.findFirst({ where: and(eq(vendors.tenantId, s.tenant.id), sql`lower(${vendors.name}) = lower(${input.name})`, ne(vendors.status, 'REJECTED')) });
   if (dup) throw new HttpError(409, `A vendor named "${dup.name}" already exists (${dup.code})`);
   const { notify, ...data } = input;
@@ -375,6 +377,7 @@ staffRouter.post('/vendors/:id/erp/push', requireStaff('vendors.export'), ah(asy
   const v = await findVendor(s.tenant.id, req.params.id);
   if (!v) throw new HttpError(404, 'Vendor not found');
   if (v.status !== 'APPROVED') throw new HttpError(409, 'Only approved vendors are sent to the ERP');
+  assertFeature(s.tenant, 'erp');
   const sync = await queueErpPush(s.tenant.id, v.id, 'MANUAL', s.user.name);
   res.status(202).json(syncSummary(sync!));
 }));

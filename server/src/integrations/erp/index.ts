@@ -11,6 +11,7 @@ import { sendMail } from '../../lib/mailer.js';
 import { env } from '../../lib/env.js';
 import { defineJob, enqueue, queueRunning } from '../../jobs/queue.js';
 import { usersWithPermission } from '../../services/approvers.js';
+import { hasFeature } from '../../services/limits.js';
 import { ErpError, SECRET_FIELDS, send, testConnection, type Connection, type ErpEvent, type ErpKind } from './drivers.js';
 
 export { ErpError, type ErpEvent, type ErpKind } from './drivers.js';
@@ -84,6 +85,8 @@ export async function queueErpPush(tenantId: string, vendorId: string, event: Er
   const conn = await getConnection(tenantId);
   if (conn.kind === 'none') { if (event === 'MANUAL') throw new HttpError(409, 'No ERP connection is set up. An administrator can add one under ERP integration.'); return null; }
   if (event !== 'MANUAL' && !conn.autoPush) return null;
+  const tenant = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, tenantId) });
+  if (tenant && !hasFeature(tenant, 'erp')) { if (event === 'MANUAL') throw new HttpError(403, 'ERP integration isn’t included in your plan. Contact us to add it.', undefined, 'PLAN_LIMIT'); return null; }
   const [sync] = await db.insert(erpSyncs).values({ tenantId, vendorId, event, kind: conn.kind, status: 'PENDING', requestedBy }).returning();
   await db.update(vendors).set({ erpSyncStatus: 'PENDING' }).where(eq(vendors.id, vendorId));
   await enqueue('erp.push', { syncId: sync.id });

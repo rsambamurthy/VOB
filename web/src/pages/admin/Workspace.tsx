@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { applyBranding, useSession } from '../../lib/session';
 import { Alert } from '../../components/ui';
+import { Link, useSearchParams } from 'react-router-dom';
 
 export function Workspace() {
   const { me, refresh } = useSession();
   const t = me!.tenant;
+  const welcome = useSearchParams()[0].get('welcome') === '1';
   const [f, setF] = useState({
     name: t.name, productName: t.branding.productName ?? '', primaryColor: t.branding.primaryColor ?? '#6d1a73', logoUrl: t.branding.logoUrl ?? '',
     requireMfa: !!t.settings.requireMfa, sessionHours: t.settings.sessionHours ?? 12, reKycMonths: t.settings.reKycMonths ?? 12,
@@ -22,6 +24,16 @@ export function Workspace() {
   return (
     <div className="page narrow-page">
       <header className="page-head"><div><h1>Workspace</h1><p className="muted">Workspace ID <strong className="mono">{t.slug}</strong> — staff enter this when signing in.</p></div></header>
+      {welcome && (
+        <Alert kind="success"><strong>Welcome to VendorGate — {t.name} is ready.</strong>
+          {me!.plan?.trialEndsAt && <> Your free trial runs until {new Date(me!.plan.trialEndsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}.</>}
+          <ol className="welcome-steps">
+            <li>Add your logo and colour below, so suppliers recognise you.</li>
+            <li><Link to="/staff/admin/users">Invite your team</Link> — reviewers, finance and approvers.</li>
+            <li><Link to="/staff/admin/config">Review the supplier form and approval flow</Link>, then <Link to="/staff/vendors">invite your first vendor</Link>.</li>
+          </ol>
+        </Alert>
+      )}
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <form onSubmit={save} className="stack">
         <section className="card pad section-card">

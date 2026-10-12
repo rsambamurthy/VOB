@@ -40,7 +40,27 @@ export function StaffShell() {
           <button className="btn btn-ghost btn-sm" onClick={async () => { await signOut(); nav('/login'); }}>Sign out</button>
         </div>
       </aside>
-      <main className="main" id="main"><Outlet /></main>
+      <main className="main" id="main">
+        {me.support && (
+          <div className="support-bar" role="status">
+            <span><strong>Support access (read-only)</strong> by {me.support.by} — ends {new Date(me.support.endsAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}{me.support.reason ? ` · “${me.support.reason}”` : ''}</span>
+            <button className="btn btn-sm btn-secondary" onClick={async () => { await signOut(); window.location.href = '/platform/tenants'; }}>End support access</button>
+          </div>
+        )}
+        {!me.support && me.plan?.key === 'trial' && me.plan.trialEndsAt && <TrialBar endsAt={me.plan.trialEndsAt} expired={me.plan.trialExpired} />}
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+
+function TrialBar({ endsAt, expired }: { endsAt: string; expired: boolean }) {
+  const days = Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000);
+  if (!expired && days > 7) return <div className="trial-bar quiet">Free trial · {days} days left</div>;
+  return (
+    <div className={`trial-bar ${expired ? 'ended' : ''}`} role="status">
+      {expired ? <>Your free trial has ended. You can still see everything, but adding vendors and users is paused. Contact us to choose a plan.</>
+        : <>Your free trial ends {days <= 1 ? 'tomorrow' : `in ${days} days`}. Contact us to choose a plan and keep everything as it is.</>}
     </div>
   );
 }

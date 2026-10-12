@@ -28,6 +28,7 @@ One Railway **service** runs the whole app (API + web, from the `Dockerfile`), n
 | `APP_BASE_URL` | `https://<your domain>` — exactly as people will open it |
 | `EMAIL_PROVIDER` | `resend` (recommended on Railway) with `RESEND_API_KEY`, or `sendgrid` with `SENDGRID_API_KEY`, or `smtp` with `SMTP_*` (Railway Pro only); plus `EMAIL_FROM`, e.g. `VendorGate <no-reply@yourdomain.com>` |
 | `BACKUP_SCHEDULE` | `30 2 * * *` (encrypted database backup every night at 02:30 IST, kept 14 days in `/data/uploads/_backups`) |
+| `PLATFORM_ADMIN_EMAIL` | your email: invited as the first platform admin (see 3a) |
 | `BOOTSTRAP_ADMIN_EMAIL` | **first deploy only**: your email |
 | `BOOTSTRAP_ADMIN_NAME` | **first deploy only**: your name |
 | `BOOTSTRAP_COMPANY` | **first deploy only**: company name |
@@ -57,10 +58,32 @@ Optional, all described in `server/.env.example`:
    - **Integrations:** send a test email.
    - **ERP integration.**
 
-To add more customer workspaces later, run this from your computer against the production database (copy the database's *public* URL from Railway):
+## 3a. Platform console and self-service sign-up
+
+The **platform console** at `https://<your domain>/platform` is where you, the operator, manage every customer workspace: create workspaces, change plans and limits, suspend and reactivate, add an administrator for a customer who lost access, and open read-only support access. It has its own accounts, separate from every workspace, and two-factor authentication is mandatory.
+
+1. Set `PLATFORM_ADMIN_EMAIL` (and optionally `PLATFORM_ADMIN_NAME`) on the app service and deploy. On start, VendorGate invites that address as the first platform admin and emails the link; the link also appears in the deploy logs. It only does this while there are no platform admins, so you can remove the variable afterwards.
+2. Open the link, set a password and set up two-factor authentication. Save the recovery codes.
+3. Invite colleagues from **Platform admins**.
+4. To let companies sign up by themselves, open **Sign-up settings**, turn on **Allow self-service sign-up**, and choose the plan (Trial by default, 14 days), your notification email and your terms link. A **Create a workspace** link then appears on the sign-in page, and `https://<your domain>/signup` works. Sign-ups must confirm their email before the workspace is created.
+
+**Plans** (defaults; change them per workspace in the console):
+
+| | Trial | Standard | Enterprise |
+|---|---|---|---|
+| Users | 5 | 25 | no limit |
+| Vendors | 25 | 1,000 | no limit |
+| Emails a day | 200 | 2,000 | no limit |
+| ERP integration, AI document reading | no | yes | yes |
+
+When a trial ends, people can still sign in and see their data, but adding vendors and users is paused until you change the plan. Workspaces that existed before this release are on Standard; the first workspace created by `BOOTSTRAP_*` is on Enterprise.
+
+**Locked out of the console?** From your computer, with `DATABASE_URL` (public URL), `ENCRYPTION_KEY` and `APP_BASE_URL` set:
 ```powershell
-$env:DATABASE_URL="<public database url>"; $env:ENCRYPTION_KEY="<key>"; npm run tenant:create -- --slug globex --name "Globex Ltd" --admin-name "…" --admin-email "…"
+npm run platform:admin -- --email you@company.com --name "Your Name"     # new invitation
+npm run platform:admin -- --email you@company.com --reset-2fa            # lost authenticator
 ```
+The older command-line way to create a workspace (`npm run tenant:create`) still works.
 
 ## 4. Day to day
 

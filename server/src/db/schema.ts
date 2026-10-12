@@ -72,6 +72,14 @@ export interface TenantSettings {
   retention?: { rejectedDays: number; abandonedDays: number };
 }
 
+/** Per-tenant overrides of the plan's limits (see lib/plans.ts). Missing = use the plan's value; null = unlimited. */
+export interface TenantLimits {
+  maxUsers?: number | null;
+  maxVendors?: number | null;
+  emailsPerDay?: number | null;
+  features?: { erp?: boolean; ai?: boolean; kyc?: boolean };
+}
+
 export const tenants = pgTable('tenants', {
   id: id(),
   slug: text('slug').notNull().unique(),
@@ -79,6 +87,15 @@ export const tenants = pgTable('tenants', {
   status: tenantStatusEnum('status').notNull().default('ACTIVE'),
   branding: jsonb('branding').$type<TenantBranding>().notNull().default({}),
   settings: jsonb('settings').$type<TenantSettings>().notNull().default({}),
+  /** trial | standard | enterprise (lib/plans.ts) */
+  plan: text('plan').notNull().default('standard'),
+  limits: jsonb('limits').$type<TenantLimits>().notNull().default({}),
+  trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
+  /** How the workspace was created: platform console, self-service sign-up, CLI or first-deploy bootstrap. */
+  source: text('source').notNull().default('platform'),
+  statusReason: text('status_reason'),
+  /** Internal notes, visible only in the platform console. */
+  notes: text('notes'),
   createdAt: createdAt(),
 });
 
@@ -132,6 +149,9 @@ export const sessions = pgTable('sessions', {
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   ip: text('ip'),
   userAgent: text('user_agent'),
+  /** Read-only support session opened from the platform console: the platform admin's id and reason. */
+  supportAdminId: text('support_admin_id'),
+  supportReason: text('support_reason'),
   createdAt: createdAt(),
 });
 
@@ -428,7 +448,81 @@ export const stepsRelations = relations(approvalSteps, ({ one }) => ({
 }));
 export const auditRelations = relations(auditLogs, ({ one }) => ({ vendor: one(vendors, { fields: [auditLogs.vendorId], references: [vendors.id] }) }));
 
+/* ---------- Platform (the SaaS operator, above all tenants) ---------- */
+
+/** People who run the platform. Separate from tenant users; 2FA is mandatory. */
+export const platformAdmins = pgTable('platform_admins', {
+  id: id(),
+  email: text('email').notNull().unique(),
+  name: text('name').notNull(),
+  status: userStatusEnum('status').notNull().default('INVITED'),
+  passwordHash: text('password_hash'),
+  mfaSecretEnc: text('mfa_secret_enc'),
+  mfaEnabled: boolean('mfa_enabled').notNull().default(false),
+  mfaRecoveryHashes: jsonb('mfa_recovery_hashes').$type<string[]>().notNull().default([]),
+  failedLogins: integer('failed_logins').notNull().default(0),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  /** One live invite / password-reset link at a time (sha256 of the token). */
+  tokenHash: text('token_hash'),
+  tokenPurpose: text('token_purpose'),
+  tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+export const platformSessions = pgTable('platform_sessions', {
+  id: id(),
+  tokenHash: text('token_hash').notNull().unique(),
+  adminId: text('admin_id').notNull().references(() => platformAdmins.id, { onDelete: 'cascade' }),
+  mfaPending: boolean('mfa_pending').notNull().default(false),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  createdAt: createdAt(),
+});
+
+/** Platform-level audit trail. tenant_id has no foreign key so entries outlive a deleted tenant. */
+export const platformAudit = pgTable('platform_audit', {
+  id: id(),
+  actor: text('actor').notNull(),
+  action: text('action').notNull(),
+  tenantId: text('tenant_id'),
+  detail: jsonb('detail'),
+  ip: text('ip'),
+  createdAt: createdAt(),
+}, (t) => [index('platform_audit_created_idx').on(t.createdAt)]);
+
+/** Self-service sign-ups waiting for (or done with) email verification. */
+export const signups = pgTable('signups', {
+  id: id(),
+  email: text('email').notNull(),
+  name: text('name').notNull(),
+  company: text('company').notNull(),
+  slug: text('slug').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  tenantId: text('tenant_id'),
+  ip: text('ip'),
+  createdAt: createdAt(),
+}, (t) => [index('signups_email_idx').on(t.email, t.createdAt)]);
+
+/** Single row (id = 'default'). */
+export const platformSettings = pgTable('platform_settings', {
+  id: text('id').primaryKey().default('default'),
+  signupEnabled: boolean('signup_enabled').notNull().default(false),
+  signupPlan: text('signup_plan').notNull().default('trial'),
+  trialDays: integer('trial_days').notNull().default(14),
+  blockFreeEmail: boolean('block_free_email').notNull().default(true),
+  notifyEmail: text('notify_email'),
+  termsUrl: text('terms_url'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Tenant = typeof tenants.$inferSelect;
+export type PlatformAdmin = typeof platformAdmins.$inferSelect;
+export type PlatformSettings = typeof platformSettings.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Vendor = typeof vendors.$inferSelect;

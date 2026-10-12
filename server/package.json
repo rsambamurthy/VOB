@@ -17,6 +17,7 @@
     "db:demo-history": "tsx src/db/demoHistory.ts",
     "db:studio": "drizzle-kit studio",
     "tenant:create": "tsx scripts/create-tenant.ts",
+    "platform:admin": "tsx scripts/platform-admin.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke": "tsx scripts/smoke.ts",

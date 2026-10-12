@@ -11,6 +11,7 @@ import { decrypt, encrypt, randomToken, sha256 } from '../lib/crypto.js';
 import { audit } from '../lib/audit.js';
 import { sendMail } from '../lib/mailer.js';
 import { env } from '../lib/env.js';
+import { effectiveLimits, trialExpired } from '../lib/plans.js';
 import { createSession, destroySession, revokeUserSessions, staffCtx } from '../auth/session.js';
 import { consumeToken, issueToken } from '../services/users.js';
 import { loginLimiter, sensitiveLimiter } from '../lib/rateLimits.js';
@@ -39,6 +40,8 @@ function me(req: Request) {
     permissions: [...s.permissions],
     mfaSetupRequired: s.mfaSetupRequired,
     devMailbox: env.devShowOtp,
+    plan: { key: s.tenant.plan, label: effectiveLimits(s.tenant).label, trialEndsAt: s.tenant.trialEndsAt, trialExpired: trialExpired(s.tenant), features: effectiveLimits(s.tenant).features },
+    support: s.support,
   };
 }
 

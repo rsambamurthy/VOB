@@ -13,7 +13,10 @@ import { env } from './lib/env.js';
 import { logger } from './lib/logger.js';
 import { HttpError } from './lib/http.js';
 import { apiLimiter } from './lib/rateLimits.js';
-import { csrfGuard, loadSessions } from './auth/session.js';
+import { csrfGuard, loadSessions, supportReadOnly } from './auth/session.js';
+import { loadPlatformSession } from './platform/session.js';
+import { platformRouter } from './platform/routes.js';
+import { signupRouter } from './platform/signup.js';
 import { staffAuthRouter } from './routes/staffAuth.js';
 import { vendorAuthRouter } from './routes/vendorAuth.js';
 import { metaRouter } from './routes/meta.js';
@@ -51,7 +54,9 @@ export function createApp() {
     try { await db.execute(sql`select 1`); res.json({ ok: true }); }
     catch { res.status(503).json({ ok: false, error: 'database unavailable' }); }
   });
-  app.use('/api', apiLimiter, csrfGuard, loadSessions);
+  app.use('/api', apiLimiter, csrfGuard, loadSessions, supportReadOnly, loadPlatformSession);
+  app.use('/api/platform', platformRouter);
+  app.use('/api/signup', signupRouter);
   app.use('/api/auth', staffAuthRouter);
   app.use('/api/vendor-auth', vendorAuthRouter);
   app.use('/api/meta', metaRouter);

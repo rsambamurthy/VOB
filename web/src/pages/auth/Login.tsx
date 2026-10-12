@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, lastWorkspace } from '../../lib/api';
 import { useSession } from '../../lib/session';
@@ -18,6 +18,8 @@ export function Login() {
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
   const next = params.get('next') || '/staff/vendors';
+  const [signupOpen, setSignupOpen] = useState(false);
+  useEffect(() => { api('/signup/config').then((c) => setSignupOpen(!!c.enabled)).catch(() => {}); }, []);
 
   async function finish() {
     const me = await refresh();
@@ -56,6 +58,7 @@ export function Login() {
           <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
           <Link to={`/forgot-password?workspace=${encodeURIComponent(workspace)}`} className="small center">Forgot password?</Link>
           <p className="small muted center">Supplier? Use the invitation link from your email instead.</p>
+          {signupOpen && <p className="small center">New to VendorGate? <Link to="/signup">Create a workspace</Link></p>}
         </form>
       ) : (
         <form onSubmit={submitCode} className="stack">

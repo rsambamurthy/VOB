@@ -19,6 +19,7 @@
     "start": "npm run -w server start",
     "test": "npm run -w server test",
     "tenant:create": "npm run -w server tenant:create --",
+    "platform:admin": "npm run -w server platform:admin --",
     "test:e2e": "npm run build && playwright test",
     "typecheck": "tsc --noEmit -p server && tsc --noEmit -p web"
   },
