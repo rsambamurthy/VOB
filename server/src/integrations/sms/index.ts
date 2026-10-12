@@ -3,6 +3,7 @@ import { db, schema } from '../../lib/db.js';
 import { env } from '../../lib/env.js';
 import { logger } from '../../lib/logger.js';
 import { defineJob, enqueue } from '../../jobs/queue.js';
+import { toInternational } from '../../countries/registry.js';
 import { msg91Driver, normaliseMobile, testSmsDriver, twilioDriver, type SmsDriver } from './drivers.js';
 
 const i = env.int;
@@ -17,7 +18,9 @@ export const smsAvailable = () => driver.live || !env.isProd;
 
 /** Sends (or, in test mode, records) a text. `vars` feed DLT template variables. */
 export async function sendSms(m: { tenantId: string | null; to: string; body: string; purpose: 'otp' | 'test'; vars?: Record<string, string> }) {
-  const to = normaliseMobile(m.to, i.SMS_DEFAULT_COUNTRY_CODE);
+  // National numbers get the workspace's own country code (+91 India, +966 Saudi Arabia).
+  const t = m.tenantId ? await db.query.tenants.findFirst({ where: eq(schema.tenants.id, m.tenantId), columns: { country: true } }) : null;
+  const to = t ? toInternational(m.to, t.country, i.SMS_DEFAULT_COUNTRY_CODE) : normaliseMobile(m.to, i.SMS_DEFAULT_COUNTRY_CODE);
   if (!/^\d{8,15}$/.test(to)) throw new Error('Invalid mobile number');
   const [row] = await db.insert(schema.smsLog).values({ tenantId: m.tenantId, to, body: m.body, purpose: m.purpose, status: driver.live ? 'QUEUED' : 'TEST', provider: driver.name }).returning({ id: schema.smsLog.id });
   if (!driver.live) { logger.info({ to: `${to.slice(0, 4)}••••${to.slice(-2)}`, purpose: m.purpose }, 'sms recorded (test mode)'); return; }

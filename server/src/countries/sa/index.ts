@@ -32,6 +32,7 @@ export const saudiPack: CountryPack = {
   homeCountry: true,
   currency: 'SAR',
   locale: 'en-GB',
+  mobile: { dialCode: '966', nationalDigits: 9, pattern: /^5\d{8}$/, example: '05x xxx xxxx' },
   timeZone: 'Asia/Riyadh',
   timeZoneLabel: 'AST',
   coreFields: ['basic.nameArabic', 'tax.crNumber', 'tax.vatRegistered', 'tax.hasTrc'],

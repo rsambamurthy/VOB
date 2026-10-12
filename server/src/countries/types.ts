@@ -89,6 +89,8 @@ export interface CountryPack {
   weekend?: number[];
   /** New workspaces count deadlines in working days (skip the weekend). */
   skipWeekendsByDefault?: boolean;
+  /** Mobile numbers: country calling code, digits in a national number (without the leading 0), an optional stricter pattern for that national number, and an example for placeholders. */
+  mobile?: { dialCode: string; nationalDigits: number; pattern?: RegExp; example: string };
   /** IANA zone used for deadlines in emails, and its short label ("IST", "AST"). */
   timeZone?: string;
   timeZoneLabel?: string;

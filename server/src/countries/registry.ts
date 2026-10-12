@@ -45,7 +45,7 @@ export const isHomeCountry = (code: string) => homeCountries().some((c) => c.cod
 /** What the web app needs to format numbers and dates for a workspace. */
 export function localeFor(code?: string | null) {
   const p = packFor(code ?? DEFAULT_HOME);
-  return { country: p.code, countryName: p.name, currency: p.currency ?? 'USD', locale: p.locale ?? 'en-GB', weekend: p.weekend ?? [0, 6], privacyLaw: p.privacy?.lawShort ?? null };
+  return { country: p.code, countryName: p.name, currency: p.currency ?? 'USD', locale: p.locale ?? 'en-GB', weekend: p.weekend ?? [0, 6], privacyLaw: p.privacy?.lawShort ?? null, mobileExample: p.mobile?.example ?? '+44 7700 900123' };
 }
 
 /* ---------- Field formats (global by name) ---------- */
@@ -58,6 +58,36 @@ const generic = (kind: 'postalCode' | 'bankAccount' | 'vatNumber', label: string
   },
 });
 
+/**
+ * Mobile/phone number. With a country code (+ or 00) any 8–15 digit number is fine. Without one, it must
+ * fit the supplier country's national format where the pack defines one (Saudi: 05x xxx xxxx).
+ */
+const phoneValidator: ValidatorDef = {
+  label: 'Phone',
+  check: (v, ctx) => {
+    const raw = v.trim();
+    const digits = raw.replace(/[^\d]/g, '');
+    if (!/^\d{8,15}$/.test(digits)) return 'Enter a valid phone number (8–15 digits; add the country code for numbers from other countries)';
+    if (/^(\+|00)/.test(raw)) return null;
+    const m = packForCountryName(ctx.country).mobile;
+    if (!m?.pattern) return null;
+    const national = digits.startsWith(m.dialCode) && digits.length === m.dialCode.length + m.nationalDigits ? digits.slice(m.dialCode.length) : digits.replace(/^0/, '');
+    return m.pattern.test(national) ? null : `${packForCountryName(ctx.country).name} mobile numbers look like ${m.example} (or add the country code)`;
+  },
+};
+
+/** International form (digits only, with country code) of a number entered in a country's national format. */
+export function toInternational(raw: string, homeCountry?: string | null, fallbackDialCode = '91') {
+  const m = packFor(homeCountry ?? DEFAULT_HOME).mobile;
+  const cc = m?.dialCode ?? fallbackDialCode, n = m?.nationalDigits ?? 10;
+  const d = raw.replace(/[^\d+]/g, '');
+  if (d.startsWith('+')) return d.slice(1);
+  if (d.startsWith('00')) return d.slice(2);
+  if (d.length === n) return `${cc}${d}`;
+  if (d.length === n + 1 && d.startsWith('0')) return `${cc}${d.slice(1)}`;
+  return d;
+}
+
 function buildValidators() {
   const all: Record<string, ValidatorDef & { pack: string }> = {};
   const add = (code: string, defs?: Record<string, ValidatorDef>) => {
@@ -67,7 +97,7 @@ function buildValidators() {
     }
   };
   add(basePack.code, basePack.validators);
-  add(basePack.code, { postalCode: generic('postalCode', 'Postal / PIN code'), bankAccount: generic('bankAccount', 'Bank account number'), vatNumber: generic('vatNumber', 'VAT number (format by country)') });
+  add(basePack.code, { phone: phoneValidator, postalCode: generic('postalCode', 'Postal / PIN code'), bankAccount: generic('bankAccount', 'Bank account number'), vatNumber: generic('vatNumber', 'VAT number (format by country)') });
   for (const p of PACKS) add(p.code, p.validators);
   return all;
 }

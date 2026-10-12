@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, schema } from '../src/lib/db.js';
 import { client, lastLinkTo, login, tokenOf } from './helpers.js';
 import { createTenant } from '../src/services/tenants.js';
-import { checksForVendor, packFor, validatorNames } from '../src/countries/registry.js';
+import { checksForVendor, packFor, toInternational, validatorNames } from '../src/countries/registry.js';
 import { validators, crossFieldChecks } from '../src/lib/validators.js';
 import { toOracleSupplier } from '../src/lib/erpMapper.js';
 import { addWorkingDays, addWorkingHours, calendarFor } from '../src/lib/calendar.js';
@@ -36,6 +36,24 @@ describe('Saudi Arabia pack', () => {
     expect(validators.vatNumber('DE123456789', { country: 'Germany' })).toBeNull();
     expect(validators.vatNumber('DE123456789', { country: 'Saudi Arabia' })).toMatch(/start and end with 3/);
     expect(crossFieldChecks({ bank: { bankCountry: 'Saudi Arabia', iban: 'AE070331234567890123456' } })[0]?.field).toBe('bank.iban');
+  });
+
+  test('mobile numbers follow the country: Saudi 05x format, +966 for SMS; India unchanged', async () => {
+    expect(validators.phone('0501234567', { country: 'Saudi Arabia' })).toBeNull();
+    expect(validators.phone('966501234567', { country: 'Saudi Arabia' })).toBeNull();
+    expect(validators.phone('9876543210', { country: 'Saudi Arabia' })).toMatch(/05x xxx xxxx/);
+    expect(validators.phone('+91 98765 43210', { country: 'Saudi Arabia' })).toBeNull();
+    expect(validators.phone('9876543210', { country: 'India' })).toBeNull();
+    expect(validators.phone('02012345678', { country: 'India' })).toBeNull();
+    expect(toInternational('050 123 4567', 'SA')).toBe('966501234567');
+    expect(toInternational('501234567', 'SA')).toBe('966501234567');
+    expect(toInternational('98765 43210', 'IN')).toBe('919876543210');
+    expect(toInternational('+44 7700 900123', 'SA')).toBe('447700900123');
+    const admin = await login(ADMIN, WS, PASSWORD);
+    const bad = await admin.post('/api/staff/vendors', { name: 'Wrong Number Co', vendorType: 'DOMESTIC', contactFirstName: 'A', contactLastName: 'B', contactEmail: 'a@wrong.test', contactMobile: '9876543210' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatch(/Saudi Arabia mobile numbers look like/);
+    expect((await (await login(ADMIN, WS, PASSWORD)).get('/api/auth/me')).body.tenant.mobileExample).toBe('05x xxx xxxx');
   });
 
   test('a Saudi workspace gets the Saudi template, SAR, AST and working-day deadlines', async () => {

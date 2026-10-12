@@ -113,13 +113,16 @@ const createSchema = z.object({
   contactFirstName: z.string().trim().min(1, 'First name is required').max(100),
   contactLastName: z.string().trim().min(1, 'Last name is required').max(100),
   contactEmail: z.string().trim().email('Enter a valid email'),
-  contactMobile: z.string().trim().refine((v) => !validators.phone(v), 'Enter a valid mobile number'),
+  contactMobile: z.string().trim().min(1, 'Enter a mobile number'),
   notify: z.boolean().default(true),
 });
 
 staffRouter.post('/vendors', requireStaff('vendors.create'), ah(async (req, res) => {
   const s = staffCtx(req);
   const input = createSchema.parse(req.body);
+  // Domestic and government vendors: the workspace's own national format (05x… in Saudi Arabia); foreign ones need a country code.
+  const mobileErr = validators.phone(input.contactMobile, { country: input.vendorType === 'IMPORT' ? '' : packFor(s.tenant.country).name });
+  if (mobileErr) throw new HttpError(400, mobileErr, [{ path: ['contactMobile'], message: mobileErr }]);
   await assertCanAddVendor(s.tenant);
   const dup = await db.query.vendors.findFirst({ where: and(eq(vendors.tenantId, s.tenant.id), sql`lower(${vendors.name}) = lower(${input.name})`, ne(vendors.status, 'REJECTED')) });
   if (dup) throw new HttpError(409, `A vendor named "${dup.name}" already exists (${dup.code})`);

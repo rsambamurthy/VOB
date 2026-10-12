@@ -22,6 +22,8 @@ export const indiaPack: CountryPack = {
   weekend: [0],
   // Indian workspaces have always counted deadlines on every day; switch on per workspace if wanted.
   skipWeekendsByDefault: false,
+  // Lenient on purpose: Indian workspaces have always accepted any 8–15 digit number here.
+  mobile: { dialCode: '91', nationalDigits: 10, example: '98765 43210' },
   timeZone: 'Asia/Kolkata',
   timeZoneLabel: 'IST',
   coreFields: [

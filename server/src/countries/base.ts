@@ -20,10 +20,6 @@ export const baseValidators: Record<string, ValidatorDef> = {
   swift: { label: 'SWIFT / BIC', upper: true, check: (v) => (/^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(v.toUpperCase()) ? null : 'SWIFT/BIC must be 8 or 11 characters, e.g. DEUTDEFF') },
   iban: { label: 'IBAN (mod-97)', upper: true, check: (v) => (ibanValid(v) ? null : 'IBAN is not valid (format or checksum)') },
   email: { label: 'Email', check: (v) => (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? null : 'Enter a valid email address') },
-  phone: {
-    label: 'Phone',
-    check: (v) => (/^\d{8,15}$/.test(v.replace(/[\s()+-]/g, '')) ? null : 'Enter a valid phone number (8–15 digits, with country code for non-Indian numbers)'),
-  },
   url: {
     label: 'Website URL',
     check: (v) => {
@@ -37,7 +33,7 @@ export const baseValidators: Record<string, ValidatorDef> = {
     label: 'Year',
     check: (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1800 && n <= new Date().getFullYear() ? null : 'Enter a valid year'; },
   },
-  // postalCode and bankAccount are added by the registry: they look up the supplier country's own format.
+  // phone, postalCode, bankAccount and vatNumber are added by the registry: they look up the supplier country's own format.
 };
 
 export const basePack: CountryPack = {

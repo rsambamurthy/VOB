@@ -96,6 +96,7 @@ export function VendorList({ mine = false }: { mine?: boolean }) {
 }
 
 function CreateVendor({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const { me } = useSession();
   const [f, setF] = useState({ name: '', vendorType: 'DOMESTIC', contactFirstName: '', contactLastName: '', contactEmail: '', contactMobile: '', notify: true });
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -121,7 +122,7 @@ function CreateVendor({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <div className="field"><label htmlFor="cv-fn">Contact first name<span className="req"> *</span></label><input id="cv-fn" required value={f.contactFirstName} onChange={set('contactFirstName')} /></div>
         <div className="field"><label htmlFor="cv-ln">Contact last name<span className="req"> *</span></label><input id="cv-ln" required value={f.contactLastName} onChange={set('contactLastName')} /></div>
         <div className="field"><label htmlFor="cv-em">Contact email<span className="req"> *</span></label><input id="cv-em" type="email" required value={f.contactEmail} onChange={set('contactEmail')} /></div>
-        <div className="field"><label htmlFor="cv-mo">Mobile number<span className="req"> *</span></label><input id="cv-mo" type="tel" required value={f.contactMobile} onChange={set('contactMobile')} placeholder="98765 43210" /></div>
+        <div className="field"><label htmlFor="cv-mo">Mobile number<span className="req"> *</span></label><input id="cv-mo" type="tel" required value={f.contactMobile} onChange={set('contactMobile')} placeholder={f.vendorType === 'IMPORT' ? '+44 7700 900123' : me?.tenant.mobileExample} /><div className="field-help">{f.vendorType === 'IMPORT' ? 'Include the country code, e.g. +44 or +91.' : `A ${me?.tenant.countryName ?? 'local'} number, or include the country code.`}</div></div>
         <label className="checkbox field-wide"><input type="checkbox" checked={f.notify} onChange={set('notify')} /> Email the invite link to the contact now</label>
       </form>
     </Modal>
