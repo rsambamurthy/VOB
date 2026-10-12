@@ -1,46 +1,103 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { NavIcon } from './NavIcon';
 import { useSession } from '../lib/session';
 import { monogram, loc } from '../lib/format';
+
+interface Item { to: string; label: string; icon: string; end?: boolean; show: boolean; tag?: string }
+interface Group { key: string; label: string; items: Item[] }
+
+/** Sidebar layout preferences, remembered on this device. */
+const PREFS_KEY = 'vg.nav';
+function loadPrefs(): { rail?: boolean; closed?: string[] } {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}'); } catch { return {}; }
+}
+function savePrefs(p: { rail?: boolean; closed?: string[] }) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* ignore */ } }
 
 export function StaffShell() {
   const { me, can, signOut } = useSession();
   const nav = useNavigate();
+  const location = useLocation();
+  const [prefs, setPrefs] = useState(loadPrefs);
+  const [menuOpen, setMenuOpen] = useState(false); // phone-size menu
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
   if (!me) return null;
   const product = me.tenant.branding.productName ?? 'VendorGate';
   const initials = me.user.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
   const collab = me.plan?.features.collab ?? false;
-  const admin = can('users.manage') || can('tenant.settings') || can('audit.view') || can('config.manage') || (collab && can('orders.manage'));
+  const rail = !!prefs.rail;
+  const update = (p: typeof prefs) => { setPrefs(p); savePrefs(p); };
+
+  const groups: Group[] = [
+    { key: 'overview', label: 'Overview', items: [
+      { to: '/staff/dashboard', label: 'Dashboard', icon: 'dashboard', show: can('reports.view') },
+      { to: '/staff/reports', label: 'Reports', icon: 'reports', show: can('reports.view') },
+    ] },
+    { key: 'vendors', label: 'Vendors', items: [
+      { to: '/staff/vendors', label: 'All vendors', icon: 'vendors', end: true, show: can('vendors.view') },
+      { to: '/staff/queue', label: 'My approvals', icon: 'approvals', show: can('vendors.view') },
+      { to: '/staff/changes', label: 'Change requests', icon: 'changes', show: can('vendors.view') },
+    ] },
+    { key: 'purchasing', label: 'Purchasing', items: [
+      { to: '/staff/orders', label: 'Purchase orders', icon: 'orders', show: collab && can('orders.view') },
+      { to: '/staff/admin/purchasing', label: 'Purchasing setup', icon: 'setup', show: collab && (can('orders.manage') || can('tenant.settings')) },
+    ] },
+    { key: 'admin', label: 'Administration', items: [
+      { to: '/staff/admin/users', label: 'Users', icon: 'users', show: can('users.manage') },
+      { to: '/staff/admin/roles', label: 'Roles', icon: 'roles', show: can('users.manage') },
+      { to: '/staff/admin/config', label: 'Configuration', icon: 'config', show: can('config.manage') },
+      { to: '/staff/admin/workspace', label: 'Workspace', icon: 'workspace', show: can('tenant.settings') },
+      { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },
+      { to: '/staff/admin/erp', label: 'ERP integration', icon: 'erp', show: can('tenant.settings') },
+      { to: '/staff/admin/audit', label: 'Audit log', icon: 'audit', show: can('audit.view') },
+      { to: '/staff/mailbox', label: 'Mailbox', icon: 'mail', show: me.devMailbox, tag: 'dev' },
+    ] },
+  ].map((g) => ({ ...g, items: g.items.filter((i) => i.show) })).filter((g) => g.items.length);
+
+  // A group is open unless the user closed it — and always open when it holds the current page.
+  const hasActive = (g: Group) => g.items.some((i) => (i.end ? location.pathname === i.to : location.pathname.startsWith(i.to)));
+  const isOpen = (g: Group) => rail || hasActive(g) || !(prefs.closed ?? []).includes(g.key);
+  const toggle = (g: Group) => {
+    const closed = new Set(prefs.closed ?? []);
+    if (closed.has(g.key)) closed.delete(g.key); else closed.add(g.key);
+    update({ ...prefs, closed: [...closed] });
+  };
+
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <div className={`shell ${rail ? 'shell-rail' : ''}`}>
+      <aside className={`sidebar staff-sidebar ${menuOpen ? 'menu-open' : ''}`}>
         <div className="brand">
           {me.tenant.branding.logoUrl ? <img src={me.tenant.branding.logoUrl} alt="" className="brand-logo" /> : <span className="brand-mark" aria-hidden>{monogram(product)}</span>}
           <span className="brand-text"><span>{product}</span><span className="brand-tenant">{me.tenant.name}</span></span>
+          <button className="icon-btn menu-btn" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><NavIcon name="menu" /></button>
         </div>
-        <nav aria-label="Main">
-          {can('reports.view') && <NavLink to="/staff/dashboard">Dashboard</NavLink>}
-          {can('vendors.view') && <NavLink to="/staff/vendors" end>Vendors</NavLink>}
-          {can('vendors.view') && <NavLink to="/staff/queue">My approvals</NavLink>}
-          {can('vendors.view') && <NavLink to="/staff/changes">Change requests</NavLink>}
-          {can('reports.view') && <NavLink to="/staff/reports">Reports</NavLink>}
-          {collab && can('orders.view') && <NavLink to="/staff/orders">Purchase orders</NavLink>}
-          {admin && <div className="nav-section">Administration</div>}
-          {can('users.manage') && <NavLink to="/staff/admin/users">Users</NavLink>}
-          {can('users.manage') && <NavLink to="/staff/admin/roles">Roles</NavLink>}
-          {can('config.manage') && <NavLink to="/staff/admin/config">Configuration</NavLink>}
-          {can('tenant.settings') && <NavLink to="/staff/admin/workspace">Workspace</NavLink>}
-          {can('tenant.settings') && <NavLink to="/staff/admin/integrations">Integrations</NavLink>}
-          {can('tenant.settings') && <NavLink to="/staff/admin/erp">ERP integration</NavLink>}
-          {collab && (can('orders.manage') || can('tenant.settings')) && <NavLink to="/staff/admin/purchasing">Purchasing setup</NavLink>}
-          {can('audit.view') && <NavLink to="/staff/admin/audit">Audit log</NavLink>}
-          {me.devMailbox && <NavLink to="/staff/mailbox">Mailbox <span className="tag">dev</span></NavLink>}
+        <nav aria-label="Main" className="staff-nav">
+          {groups.map((g) => {
+            const open = isOpen(g);
+            return (
+              <div key={g.key} className={`nav-group ${open ? 'open' : ''}`}>
+                <button className="nav-group-head" aria-expanded={open} onClick={() => toggle(g)} disabled={rail || hasActive(g)} title={hasActive(g) ? undefined : open ? `Collapse ${g.label}` : `Expand ${g.label}`}>
+                  <span>{g.label}</span>{!rail && !hasActive(g) && <NavIcon name="chevron" size={14} />}
+                </button>
+                {open && g.items.map((i) => (
+                  <NavLink key={i.to} to={i.to} end={i.end} title={rail ? i.label : undefined}>
+                    <span className="nav-label"><NavIcon name={i.icon} /><span className="nav-text">{i.label}</span></span>
+                    {i.tag && <span className="tag">{i.tag}</span>}
+                  </NavLink>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="sidebar-foot">
-          <NavLink to="/staff/account" className="me">
+          <NavLink to="/staff/account" className="me" title={rail ? me.user.name : undefined}>
             <span className="avatar" aria-hidden>{initials}</span>
-            <div><div className="me-name">{me.user.name}</div><div className="me-role">{me.roles.map((r) => r.name).join(', ') || 'No role'}</div></div>
+            <div className="me-text"><div className="me-name">{me.user.name}</div><div className="me-role">{me.roles.map((r) => r.name).join(', ') || 'No role'}</div></div>
           </NavLink>
-          <button className="btn btn-ghost btn-sm" onClick={async () => { await signOut(); nav('/login'); }}>Sign out</button>
+          <button className="btn btn-ghost btn-sm" onClick={async () => { await signOut(); nav('/login'); }} title={rail ? 'Sign out' : undefined} aria-label="Sign out">{rail ? <NavIcon name="logout" size={16} /> : 'Sign out'}</button>
+          <button className="btn btn-ghost btn-sm rail-btn" onClick={() => update({ ...prefs, rail: !rail })} aria-label={rail ? 'Expand sidebar' : 'Collapse sidebar'} title={rail ? 'Expand sidebar' : 'Collapse sidebar'}>
+            <NavIcon name={rail ? 'expand' : 'collapse'} size={16} />{!rail && <span>Collapse</span>}
+          </button>
         </div>
       </aside>
       <main className="main" id="main">
