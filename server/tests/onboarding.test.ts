@@ -21,6 +21,17 @@ describe('end-to-end onboarding', () => {
     expect((await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp === '000000' ? '111111' : '000000' })).status).toBe(401);
     expect((await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp })).status).toBe(200);
 
+    // DPDP: nothing can be entered before the privacy notice is accepted
+    const blocked = await v.put('/api/vendor/profile/basic', { address: 'x' });
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.code).toBe('CONSENT_REQUIRED');
+    const privacy = (await v.get('/api/vendor')).body.privacy;
+    expect(privacy).toMatchObject({ version: 1, needsConsent: true });
+    expect(privacy.text).toMatch(/Your rights/);
+    expect((await v.post('/api/vendor/consent', { version: 99 })).status).toBe(409);
+    expect((await v.post('/api/vendor/consent', { version: 1 })).status).toBe(200);
+    expect((await v.get('/api/vendor')).body.privacy.needsConsent).toBe(false);
+
     const early = await v.post('/api/vendor/submit');
     expect(early.status).toBe(422);
 

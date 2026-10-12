@@ -14,10 +14,20 @@ import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks, type KycKind } from '../integrations/kyc/index.js';
 import { queueExtraction, extractionsFor, getExtraction } from '../integrations/ai/index.js';
+import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
 
 export const vendorRouter = Router();
 vendorRouter.use(requireVendor);
+
+/** DPDP: nothing is collected until the vendor has accepted the current privacy notice. */
+const requireConsent = ah(async (req, _res, next) => {
+  const { vendorId, tenant } = vendorCtx(req);
+  const v = await db.query.vendors.findFirst({ where: eq(vendors.id, vendorId), columns: { consentVersion: true } });
+  if (!v || needsConsent(tenant, v)) throw new HttpError(403, 'Please read and accept the privacy notice first', undefined, 'CONSENT_REQUIRED');
+  next();
+});
+for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
 
 const EDITABLE = ['INVITED', 'IN_PROGRESS', 'SENT_BACK'];
 const ALLOWED_MIME = ['application/pdf', 'image/png', 'image/jpeg'];
@@ -84,6 +94,7 @@ vendorRouter.get('/', ah(async (req, res) => {
       changeRequests: (await changeRequestsForVendor(v.id)).slice(0, 5).map((cr) => ({ id: cr.id, status: cr.status, byBuyer: !!cr.raisedById, changes: cr.changes, documentIds: cr.documentIds, note: cr.note, remarks: cr.status === 'REJECTED' && !cr.raisedById ? cr.remarks : null, createdAt: cr.createdAt, decidedAt: cr.decidedAt, steps: cr.steps.map((s) => ({ id: s.id, level: s.level, label: s.label, status: s.status })) })),
     } : null,
     buyer: { name: tenant.name, branding: tenant.branding },
+    privacy: { ...noticeFor(tenant), needsConsent: needsConsent(tenant, v), consentAt: v.consentAt, consentVersion: v.consentVersion, erasureRequestedAt: v.erasureRequestedAt },
     checks: (await latestChecks(v.id)).map(publicCheck),
     extractions: await extractionsFor(v.id, profile, config),
   });
@@ -201,5 +212,30 @@ vendorRouter.post('/confirm-details', ah(async (req, res) => {
   if (v.status !== 'APPROVED') throw new HttpError(409, 'Only approved vendors confirm their details');
   await db.update(vendors).set({ lastConfirmedAt: new Date() }).where(eq(vendors.id, v.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'DETAILS_CONFIRMED', ip: req.ip });
+  res.json({ ok: true });
+}));
+
+/* ---------- Privacy (DPDP) ---------- */
+
+vendorRouter.post('/consent', ah(async (req, res) => {
+  const v = await loadMine(req);
+  const { version } = z.object({ version: z.number().int() }).parse(req.body);
+  await recordConsent(vendorCtx(req).tenant, v, version, req.ip);
+  res.json({ ok: true });
+}));
+
+/** Access request: everything we hold about the vendor, as a JSON download. */
+vendorRouter.get('/my-data', ah(async (req, res) => {
+  const v = await loadMine(req);
+  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'DATA_EXPORTED', detail: { by: 'vendor' }, ip: req.ip });
+  res.setHeader('Content-Disposition', `attachment; filename="${v.code}-my-data.json"`);
+  res.json(await exportVendorData(v, { forStaff: false }));
+}));
+
+/** Withdraw consent and ask for deletion; an administrator acts on it. */
+vendorRouter.post('/erasure-request', ah(async (req, res) => {
+  const v = await loadMine(req);
+  const { reason } = z.object({ reason: z.string().max(500).default('') }).parse(req.body);
+  await requestErasure(v, reason, req.ip);
   res.json({ ok: true });
 }));

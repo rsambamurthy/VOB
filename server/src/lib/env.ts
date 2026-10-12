@@ -10,6 +10,8 @@ const schema = z.object({
   APP_BASE_URL: z.string().default('http://localhost:5173'),
   /** 32-byte key (base64) for encrypting secrets at rest (TOTP secrets now; PAN/bank in Phase 6) */
   ENCRYPTION_KEY: z.string().optional(),
+  /** After rotating ENCRYPTION_KEY: the old key(s), comma-separated, so existing data can still be read until `npm run db:reencrypt` has run. */
+  ENCRYPTION_KEY_PREVIOUS: z.string().optional(),
   /** Show OTPs on screen and enable the Mailbox screen. Never enable in production. */
   DEV_SHOW_OTP: z.enum(['true', 'false']).default('true'),
   UPLOAD_DIR: z.string().default('./uploads'),
@@ -76,12 +78,19 @@ const schema = z.object({
   /** ERP push: allow targets on private / local networks (on-prem Oracle EBS behind VPN). Off by default in production. */
   ERP_ALLOW_PRIVATE_HOSTS: z.enum(['true', 'false']).optional(),
   ERP_TIMEOUT_MS: z.coerce.number().default(20000),
+
+  /** Scheduled encrypted database backups to the configured storage, e.g. "30 2 * * *" (02:30 IST). Needs pg_dump (included in the Docker image). */
+  BACKUP_SCHEDULE: z.string().optional(),
+  BACKUP_KEEP: z.coerce.number().int().min(1).default(14),
 });
 
 const parsed = schema.parse(process.env);
 const isProd = parsed.NODE_ENV === 'production';
 
 if (isProd) {
+  if (!parsed.APP_BASE_URL.startsWith('https://')) console.warn('[config] APP_BASE_URL should be the public https:// address — links in emails use it.');
+  if (parsed.EMAIL_PROVIDER === 'test') console.warn('[config] EMAIL_PROVIDER=test: no real emails are sent, so vendors cannot receive sign-in codes. Set up SMTP or SendGrid before inviting vendors.');
+  if (parsed.TRUST_PROXY !== 'true') console.warn('[config] TRUST_PROXY is not "true". Behind Railway / a load balancer, set it so rate limits and audit logs see real client IPs.');
   if (!parsed.ENCRYPTION_KEY) throw new Error('ENCRYPTION_KEY is required in production (openssl rand -base64 32)');
   if (parsed.DEV_SHOW_OTP === 'true') throw new Error('DEV_SHOW_OTP must be false in production');
 }
@@ -97,6 +106,7 @@ export const env = {
   encryptionKey: parsed.ENCRYPTION_KEY
     ? Buffer.from(parsed.ENCRYPTION_KEY, 'base64')
     : crypto.createHash('sha256').update('vendorgate-dev-only-key').digest(),
+  previousEncryptionKeys: (parsed.ENCRYPTION_KEY_PREVIOUS ?? '').split(',').map((k) => k.trim()).filter(Boolean).map((k) => Buffer.from(k, 'base64')),
   devShowOtp: parsed.DEV_SHOW_OTP === 'true',
   uploadDir: parsed.UPLOAD_DIR,
   logLevel: parsed.LOG_LEVEL,

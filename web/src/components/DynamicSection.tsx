@@ -34,7 +34,7 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
                   <div key={f.key} className={`field ${wide ? 'field-wide' : ''} ${err ? 'has-error' : ''}`}>
                     <label htmlFor={f.type === 'radio' ? undefined : id} id={`${id}-label`}>{f.label}{req && <span className="req" aria-hidden> *</span>}</label>
                     {readOnly ? (
-                      <div className="ro-value">{value || <span className="muted">—</span>}</div>
+                      <div className="ro-value">{value || <span className="muted">—</span>} {extra?.(f)}</div>
                     ) : (
                       <div className="control-row">
                         <Control f={f} id={id} value={value} onChange={(v) => onChange?.(f.key, v)} invalid={!!err} />

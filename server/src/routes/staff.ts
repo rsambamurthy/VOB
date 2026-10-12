@@ -25,6 +25,11 @@ import { CSV_COLUMNS, toCsv, toCsvRow, toOracleSupplier } from '../lib/erpMapper
 import { queueErpPush, recentSyncs, retrySync, syncsForVendor, syncSummary } from '../integrations/erp/index.js';
 import { actionFor } from '../integrations/erp/drivers.js';
 import { validators } from '../lib/validators.js';
+import { isSensitive, maskField, maskProfile } from '../lib/fieldCrypto.js';
+import { declineErasure, eraseVendor, exportVendorData, noticeFor } from '../services/privacy.js';
+
+/** Staff views get PAN / bank numbers masked; the full value needs an explicit, logged reveal. */
+const maskChanges = <T extends { fieldId: string; old: string; new: string }>(cs: T[]) => cs.map((c) => (isSensitive(c.fieldId) ? { ...c, old: maskField(c.fieldId, c.old), new: maskField(c.fieldId, c.new) } : c));
 
 const { vendors, approvalSteps, documents, auditLogs, userRoles, changeRequests, changeRequestSteps } = schema;
 
@@ -162,23 +167,26 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
   const { inviteToken, ...rest } = v;
   const canInvite = s.permissions.has('vendors.create');
   res.json({
-    vendor: { ...rest, steps: rest.steps.map(({ role, assignee, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
+    vendor: { ...rest, profile: maskProfile(rest.profile), steps: rest.steps.map(({ role, assignee, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
     checklist: buildChecklist(config, profile, v.documents.filter((d) => d.status === 'ACTIVE').map((d) => d.docType), v.vendorType),
     docRequirements: visibleDocRequirements(config, profile, v.vendorType),
     canAct: !!pending && await canAct(pending, s.user.id),
     canReassign: !!pending && s.permissions.has('approvals.manage'),
     checks: (await latestChecks(v.id)).map((c) => ({ ...publicCheck(c), requestedBy: c.requestedBy, provider: c.provider })),
-    extractions: await extractionsFor(v.id, profile, config),
+    extractions: (await extractionsFor(v.id, profile, config)).map((e) => ({ ...e, suggestions: e.suggestions.map((x) => (isSensitive(x.fieldId) ? { ...x, value: maskField(x.fieldId, x.value), current: maskField(x.fieldId, x.current) } : x)) })),
     canInvite,
     canExport: s.permissions.has('vendors.export'),
     canBlock: s.permissions.has('vendors.block'),
-    canPropose: s.permissions.has('vendors.edit') && v.status === 'APPROVED',
+    canPropose: s.permissions.has('vendors.edit') && v.status === 'APPROVED' && !v.erasedAt,
+    privacy: { consentAt: v.consentAt, consentVersion: v.consentVersion, currentVersion: noticeFor(s.tenant).version, erasureRequestedAt: v.erasureRequestedAt, erasureReason: v.erasureReason, erasedAt: v.erasedAt,
+      canErase: s.permissions.has('tenant.settings'), canExport: s.permissions.has('vendors.export') },
     me: s.user.id,
     flags: (await flagsForMany(s.tenant.id, [v])).get(v.id) ?? [],
     changeRequests: await Promise.all((await changeRequestsForVendor(v.id)).map(async (cr) => {
       const cur = cr.steps.find((st) => st.status === 'PENDING');
       return {
         ...cr,
+        changes: maskChanges(cr.changes),
         raisedBy: cr.raisedBy ? { id: cr.raisedBy.id, name: cr.raisedBy.name } : null,
         canWithdraw: cr.status === 'PENDING' && !!cr.raisedById && (cr.raisedById === s.user.id || s.permissions.has('approvals.manage')),
         steps: cr.steps.map(({ role, assignee, actedBy, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, actedBy: actedBy ? { name: actedBy.name } : null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })),
@@ -247,7 +255,7 @@ staffRouter.get('/change-requests', requireStaff('vendors.view'), ah(async (req,
     orderBy: desc(changeRequests.createdAt), limit: 200,
     with: { vendor: { columns: { id: true, name: true, code: true } }, raisedBy: { columns: { name: true } }, steps: { where: eq(changeRequestSteps.status, 'PENDING'), columns: { label: true, dueAt: true }, with: { assignee: { columns: { name: true } } } } },
   });
-  res.json(rows.map(({ steps, ...cr }) => ({ ...cr, pendingStep: steps[0] ? { label: steps[0].label, dueAt: steps[0].dueAt, overdue: !!steps[0].dueAt && steps[0].dueAt < new Date(), assignee: steps[0].assignee?.name ?? null } : null, mine: myIds.has(cr.id) })));
+  res.json(rows.map(({ steps, ...cr }) => ({ ...cr, changes: maskChanges(cr.changes), pendingStep: steps[0] ? { label: steps[0].label, dueAt: steps[0].dueAt, overdue: !!steps[0].dueAt && steps[0].dueAt < new Date(), assignee: steps[0].assignee?.name ?? null } : null, mine: myIds.has(cr.id) })));
 }));
 
 staffRouter.post('/change-requests/:id/decision', requireStaff('vendors.view'), ah(async (req, res) => {
@@ -404,4 +412,54 @@ staffRouter.get('/erp/export.csv', requireStaff('vendors.export'), ah(async (req
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="vendors_${new Date().toISOString().slice(0, 10)}.csv"`);
   res.send(toCsv([CSV_COLUMNS, ...rows.map((v) => toCsvRow(v, actionFor(v, 'MANUAL')))]));
+}));
+
+/* ---------- Reveal a masked value (logged) ---------- */
+
+staffRouter.post('/vendors/:id/reveal', requireStaff('vendors.view'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { fieldId, changeRequestId } = z.object({ fieldId: z.string(), changeRequestId: z.string().optional() }).parse(req.body);
+  if (!isSensitive(fieldId)) throw new HttpError(400, 'This field is not masked');
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v) throw new HttpError(404, 'Vendor not found');
+  let out: { value?: string; old?: string; new?: string };
+  if (changeRequestId) {
+    const cr = await db.query.changeRequests.findFirst({ where: and(eq(changeRequests.tenantId, s.tenant.id), eq(changeRequests.id, changeRequestId), eq(changeRequests.vendorId, v.id)) });
+    const c = cr?.changes.find((x) => x.fieldId === fieldId);
+    if (!c) throw new HttpError(404, 'That change was not found');
+    out = { old: c.old, new: c.new };
+  } else {
+    const [sec, key] = fieldId.split('.');
+    out = { value: String((v.profile as Profile)[sec]?.[key] ?? '') };
+  }
+  await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'SENSITIVE_REVEALED', detail: { field: fieldId, ...(changeRequestId ? { source: 'change request' } : {}) }, ip: req.ip });
+  res.json(out);
+}));
+
+/* ---------- Privacy (DPDP) ---------- */
+
+staffRouter.get('/vendors/:id/data-export', requireStaff('vendors.export'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v) throw new HttpError(404, 'Vendor not found');
+  await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'DATA_EXPORTED', detail: { by: 'staff' }, ip: req.ip });
+  res.setHeader('Content-Disposition', `attachment; filename="${v.code}-personal-data.json"`);
+  res.json(await exportVendorData(v, { forStaff: true }));
+}));
+
+staffRouter.post('/vendors/:id/erase', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { reason, confirm } = z.object({ reason: z.string().max(500), confirm: z.string() }).parse(req.body);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v) throw new HttpError(404, 'Vendor not found');
+  if (confirm.trim().toUpperCase() !== v.code) throw new HttpError(400, `Type the vendor code (${v.code}) to confirm`);
+  await eraseVendor(s.tenant.id, v.id, reason, s.user.name, { ip: req.ip });
+  res.json({ ok: true });
+}));
+
+staffRouter.post('/vendors/:id/erasure-request/decline', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { reason } = z.object({ reason: z.string().max(500) }).parse(req.body);
+  await declineErasure(s.tenant.id, req.params.id, reason, s.user.name, req.ip);
+  res.json({ ok: true });
 }));

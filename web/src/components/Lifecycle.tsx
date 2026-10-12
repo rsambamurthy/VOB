@@ -1,4 +1,9 @@
+import { useState } from 'react';
 import type { ChangeRequest, CrStatus, FieldChange, Flag, Profile, SectionDef } from '../lib/types';
+
+/** Fields the server masks for staff (PAN, bank account…); full values need a logged reveal. */
+export const MASKED_FIELDS = ['tax.pan', 'tax.tan', 'tax.foreignTin', 'bank.accountNumber', 'bank.iban'];
+export const isMasked = (v: unknown) => typeof v === 'string' && v.includes('•');
 import { fmtDate, fmtDateTime } from '../lib/format';
 import { StepBadge } from './ui';
 
@@ -45,7 +50,8 @@ export const CrBadge = ({ status }: { status: CrStatus }) => <span className={`b
 
 const SENSITIVE = (id: string) => id.startsWith('bank.') || ['tax.gstin', 'tax.pan', 'basic.vendorName'].includes(id);
 
-export function ChangeDiff({ changes, docCount = 0 }: { changes: FieldChange[]; docCount?: number }) {
+export function ChangeDiff({ changes, docCount = 0, onReveal }: { changes: FieldChange[]; docCount?: number; onReveal?: (fieldId: string) => Promise<{ old?: string; new?: string }> }) {
+  const [shown, setShown] = useState<Record<string, { old?: string; new?: string }>>({});
   return (
     <>
       {changes.length > 0 && (
@@ -54,9 +60,11 @@ export function ChangeDiff({ changes, docCount = 0 }: { changes: FieldChange[]; 
           <tbody>
             {changes.map((c) => (
               <tr key={c.fieldId}>
-                <td>{c.label}{SENSITIVE(c.fieldId) && <span className="badge sm flag-medium" title="Sensitive field — checked with extra care">sensitive</span>}</td>
-                <td className="diff-old">{c.old || <span className="muted">—</span>}</td>
-                <td className="diff-new">{c.new || <span className="muted">(cleared)</span>}</td>
+                <td>{c.label}{SENSITIVE(c.fieldId) && <span className="badge sm flag-medium" title="Sensitive field — checked with extra care">sensitive</span>}
+                  {onReveal && MASKED_FIELDS.includes(c.fieldId) && !shown[c.fieldId] && (isMasked(c.old) || isMasked(c.new)) && (
+                    <div><button type="button" className="link-btn small" title="Shows the full values. Each reveal is recorded in the audit log." onClick={async () => { const r = await onReveal(c.fieldId).catch(() => null); if (r) setShown((x) => ({ ...x, [c.fieldId]: r })); }}>Reveal</button></div>)}</td>
+                <td className="diff-old mono-num">{(shown[c.fieldId]?.old ?? c.old) || <span className="muted">—</span>}</td>
+                <td className="diff-new mono-num">{(shown[c.fieldId]?.new ?? c.new) || <span className="muted">(cleared)</span>}</td>
               </tr>
             ))}
           </tbody>

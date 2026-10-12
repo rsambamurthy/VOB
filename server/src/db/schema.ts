@@ -2,7 +2,30 @@
  * Database schema. Every business table carries tenant_id — all queries MUST filter by it
  * (see lib/tenantScope notes in README "Multi-tenancy"). Platform-level tables: tenants.
  */
-import { pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, primaryKey, date } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, primaryKey, date, customType } from 'drizzle-orm/pg-core';
+import { openChanges, openJson, openProfile, sealChanges, sealJson, sealProfile } from '../lib/fieldCrypto.js';
+
+/* JSON columns that encrypt sensitive values on write and decrypt on read (see lib/fieldCrypto.ts). */
+const parse = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v);
+type ProfileData = Record<string, Record<string, unknown>>;
+const sealedProfile = customType<{ data: ProfileData; driverData: unknown }>({
+  dataType: () => 'jsonb',
+  toDriver: (v) => JSON.stringify(sealProfile(v)),
+  fromDriver: (v) => openProfile(parse(v) as ProfileData),
+});
+type ChangeData = { fieldId: string; label: string; old: string; new: string }[];
+const sealedChanges = customType<{ data: ChangeData; driverData: unknown }>({
+  dataType: () => 'jsonb',
+  toDriver: (v) => JSON.stringify(sealChanges(v)),
+  fromDriver: (v) => openChanges(parse(v) as ChangeData),
+});
+function sealedJson<T>() {
+  return customType<{ data: T; driverData: unknown }>({
+    dataType: () => 'jsonb',
+    toDriver: (v) => JSON.stringify(sealJson(v)),
+    fromDriver: (v) => openJson<T>(parse(v)),
+  });
+}
 import { relations } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import type { OnboardingConfig } from '../config/types.js';
@@ -43,6 +66,10 @@ export interface TenantSettings {
   aiExtraction?: boolean;
   /** Where vendor sign-in codes go. */
   vendorOtpChannel?: 'email' | 'sms' | 'both';
+  /** DPDP privacy notice shown to vendors; changing the text bumps the version and asks vendors to accept again. */
+  privacy?: { version: number; text: string; contactEmail?: string; updatedAt?: string };
+  /** Days after which vendor data is anonymised: rejected registrations, and ones abandoned before submitting (0 = keep). */
+  retention?: { rejectedDays: number; abandonedDays: number };
 }
 
 export const tenants = pgTable('tenants', {
@@ -132,7 +159,8 @@ export const vendors = pgTable('vendors', {
   contactMobile: text('contact_mobile').notNull(),
   status: vendorStatusEnum('status').notNull().default('INVITED'),
   /** Profile answers keyed by section -> field (driven by config/formSchema.ts) */
-  profile: jsonb('profile').$type<Record<string, Record<string, unknown>>>().notNull().default({}),
+  /** Sensitive values (PAN, bank account…) are encrypted inside the JSON. */
+  profile: sealedProfile('profile').notNull().default({}),
   inviteToken: text('invite_token').notNull().unique(),
   reviewCycle: integer('review_cycle').notNull().default(0),
   /** Config version in force when the vendor last submitted (for audit). */
@@ -160,6 +188,14 @@ export const vendors = pgTable('vendors', {
   /** PENDING · SYNCED · FAILED · TEST — latest push outcome */
   erpSyncStatus: text('erp_sync_status'),
   erpSyncedAt: timestamp('erp_synced_at', { withTimezone: true }),
+  /* ---- Privacy / DPDP (Phase 6) ---- */
+  consentAt: timestamp('consent_at', { withTimezone: true }),
+  consentVersion: integer('consent_version'),
+  consentIp: text('consent_ip'),
+  erasureRequestedAt: timestamp('erasure_requested_at', { withTimezone: true }),
+  erasureReason: text('erasure_reason'),
+  /** Personal data removed (on request or by the retention policy); the row stays for statistics and the audit trail. */
+  erasedAt: timestamp('erased_at', { withTimezone: true }),
 }, (t) => [uniqueIndex('vendors_tenant_code_uq').on(t.tenantId, t.code), index('vendors_tenant_status_idx').on(t.tenantId, t.status)]);
 
 export const otpCodes = pgTable('otp_codes', {
@@ -229,7 +265,8 @@ export const documentExtractions = pgTable('document_extractions', {
   provider: text('provider').notNull(),
   test: boolean('test').notNull().default(false),
   docTypeDetected: text('doc_type_detected'),
-  fields: jsonb('fields').$type<{ fieldId: string; label: string; value: string; confidence: number }[]>().notNull().default([]),
+  /** Encrypted as a whole: values read from documents can include PAN and account numbers. */
+  fields: sealedJson<{ fieldId: string; label: string; value: string; confidence: number }[]>()('fields').notNull().default([]),
   summary: text('summary'),
   error: text('error'),
   appliedAt: timestamp('applied_at', { withTimezone: true }),
@@ -244,7 +281,7 @@ export const changeRequests = pgTable('change_requests', {
   vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
   /** PENDING · APPROVED · REJECTED · CANCELLED */
   status: text('status').notNull().default('PENDING'),
-  changes: jsonb('changes').$type<{ fieldId: string; label: string; old: string; new: string }[]>().notNull().default([]),
+  changes: sealedChanges('changes').notNull().default([]),
   documentIds: jsonb('document_ids').$type<string[]>().notNull().default([]),
   note: text('note'),
   /** Set when a staff member proposed the change on the vendor's behalf (null = vendor's own request). */
@@ -443,7 +480,8 @@ export const erpSyncs = pgTable('erp_syncs', {
   attempts: integer('attempts').notNull().default(0),
   target: text('target'),
   /** What was (or would be) sent — payload / CSV text, never secrets. */
-  request: jsonb('request').$type<{ body?: unknown; csv?: string; fileName?: string; headers?: Record<string, string> }>(),
+  /** Encrypted as a whole: payloads carry bank details. */
+  request: sealedJson<{ body?: unknown; csv?: string; fileName?: string; headers?: Record<string, string> } | null>()('request'),
   httpStatus: integer('http_status'),
   response: text('response'),
   error: text('error'),
@@ -455,3 +493,12 @@ export const erpSyncs = pgTable('erp_syncs', {
 export const erpSyncsRelations = relations(erpSyncs, ({ one }) => ({ vendor: one(vendors, { fields: [erpSyncs.vendorId], references: [vendors.id] }) }));
 export type ErpConnection = typeof erpConnections.$inferSelect;
 export type ErpSync = typeof erpSyncs.$inferSelect;
+
+/** Scheduled database backups written to storage (operator-level, not per workspace). */
+export const systemBackups = pgTable('system_backups', {
+  id: id(),
+  storageKey: text('storage_key').notNull(),
+  storageDriver: text('storage_driver').notNull(),
+  size: integer('size').notNull(),
+  createdAt: createdAt(),
+});

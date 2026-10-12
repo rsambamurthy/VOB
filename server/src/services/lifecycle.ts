@@ -341,7 +341,7 @@ export async function reviewVendor(v: Vendor, requestedBy = 'system (periodic re
 }
 
 export async function runPeriodicReviews(now = new Date(), limit = 200) {
-  const due = await db.select().from(vendors).where(and(eq(vendors.status, 'APPROVED'), isNotNull(vendors.nextReviewAt), lte(vendors.nextReviewAt, now))).limit(limit);
+  const due = await db.select().from(vendors).where(and(eq(vendors.status, 'APPROVED'), isNull(vendors.erasedAt), isNotNull(vendors.nextReviewAt), lte(vendors.nextReviewAt, now))).limit(limit);
   for (const v of due) {
     const t = await db.query.tenants.findFirst({ where: eq(tenants.id, v.tenantId) });
     if (t?.status !== 'ACTIVE') continue;
@@ -352,10 +352,11 @@ export async function runPeriodicReviews(now = new Date(), limit = 200) {
 
 /* ======================= "Needs attention" flags ======================= */
 
-export interface Flag { code: 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
+export interface Flag { code: 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
 
-export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'>, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
+export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null }, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
   const flags: Flag[] = [];
+  if (v.erasureRequestedAt) flags.push({ code: 'ERASURE_REQUESTED', label: 'Deletion requested', severity: 'high' });
   if (v.status !== 'APPROVED') return flags;
   if (v.blockedAt) flags.push({ code: 'BLOCKED', label: 'Blocked', severity: 'high' });
   const active = docs.filter((d) => d.status === 'ACTIVE' && d.expiresOn);
@@ -369,9 +370,9 @@ export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus'
   return flags;
 }
 
-export async function flagsForMany(tenantId: string, vendorRows: Pick<Vendor, 'id' | 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'>[]) {
+export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, 'id' | 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null })[]) {
   const ids = vendorRows.filter((v) => v.status === 'APPROVED').map((v) => v.id);
-  if (!ids.length) return new Map<string, Flag[]>();
+  if (!ids.length) return new Map(vendorRows.map((v) => [v.id, flagsFor(v, [], false)]));
   const docs = await db.select({ vendorId: documents.vendorId, status: documents.status, expiresOn: documents.expiresOn, docType: documents.docType }).from(documents)
     .where(and(eq(documents.tenantId, tenantId), inArray(documents.vendorId, ids), isNotNull(documents.expiresOn), eq(documents.status, 'ACTIVE')));
   const open = new Set((await db.select({ v: changeRequests.vendorId }).from(changeRequests).where(and(eq(changeRequests.tenantId, tenantId), eq(changeRequests.status, 'PENDING'), inArray(changeRequests.vendorId, ids)))).map((r) => r.v));
@@ -382,5 +383,6 @@ export async function flagsForMany(tenantId: string, vendorRows: Pick<Vendor, 'i
 defineJob('lifecycle.daily', async () => {
   const reminders = await runExpiryReminders();
   const reviews = await runPeriodicReviews();
-  logger.info({ reminders, reviews }, 'daily lifecycle run');
+  const erased = await (await import('./privacy.js')).runRetention();
+  logger.info({ reminders, reviews, erased }, 'daily lifecycle run');
 }, { retryLimit: 1, expireInSeconds: 1800 });

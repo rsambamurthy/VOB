@@ -6,7 +6,21 @@ import { startQueue, stopQueue } from './jobs/queue.js';
 import { sweepOverdue } from './services/workflowEngine.js';
 import { runExpiryReminders, runPeriodicReviews, sweepOverdueChanges } from './services/lifecycle.js';
 
-if (process.env.MIGRATE_ON_START === 'true') await runMigrations();
+if (process.env.CREATE_DATABASE_IF_MISSING === 'true') await (await import('./db/ensureDatabase.js')).ensureDatabase();
+if (process.env.MIGRATE_ON_START === 'true') {
+  await runMigrations();
+  await (await import('./db/dataMigrations.js')).sealExistingData();
+}
+// First deploy: create the first workspace and invite its administrator (only when the database has none).
+if (process.env.BOOTSTRAP_ADMIN_EMAIL) {
+  const { db, schema } = await import('./lib/db.js');
+  if (!(await db.select({ id: schema.tenants.id }).from(schema.tenants).limit(1)).length) {
+    const { createTenant } = await import('./services/tenants.js');
+    const r = await createTenant({ slug: process.env.BOOTSTRAP_WORKSPACE ?? 'main', name: process.env.BOOTSTRAP_COMPANY ?? 'My Company', adminName: process.env.BOOTSTRAP_ADMIN_NAME ?? 'Administrator', adminEmail: process.env.BOOTSTRAP_ADMIN_EMAIL });
+    logger.warn(`[bootstrap] Workspace "${r.tenant.slug}" created. Invitation for ${r.admin.email} (also emailed): ${r.inviteLink}`);
+    console.log(`[bootstrap] Workspace "${r.tenant.slug}" created. Invitation for ${r.admin.email}: ${r.inviteLink}`);
+  }
+}
 const server = createApp().listen(env.port, () => {
   logger.info(`API listening on http://localhost:${env.port}`);
   console.log(`[startup] API listening on http://localhost:${env.port}`);
@@ -20,7 +34,9 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 
 try {
   // Background jobs: email/SMS delivery with retries, AI document reading, SLA sweep every 5 minutes.
-  await startQueue([{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }]);
+  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }];
+  if (env.int.BACKUP_SCHEDULE) { await import('./services/backups.js'); schedules.push({ name: 'db.backup', cron: env.int.BACKUP_SCHEDULE }); }
+  await startQueue(schedules);
   if (env.jobsEnabled) console.log('[startup] job queue started');
 } catch (err) {
   logger.error({ err }, 'job queue failed to start — falling back to in-process jobs');

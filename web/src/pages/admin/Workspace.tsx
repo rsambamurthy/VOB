@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { applyBranding, useSession } from '../../lib/session';
 import { Alert } from '../../components/ui';
@@ -47,6 +47,47 @@ export function Workspace() {
         </section>
         <div><button className="btn btn-primary">Save settings</button></div>
       </form>
+      <PrivacySettings />
     </div>
+  );
+}
+
+interface PrivacyData { notice: { version: number; text: string; contactEmail: string | null; updatedAt: string | null; isDefault: boolean }; retention: { rejectedDays: number; abandonedDays: number }; template: string }
+
+/** DPDP: privacy notice vendors accept, grievance contact, and how long unfinished registrations are kept. */
+function PrivacySettings() {
+  const [d, setD] = useState<PrivacyData>();
+  const [text, setText] = useState('');
+  const [email, setEmail] = useState('');
+  const [ret, setRet] = useState({ rejectedDays: 365, abandonedDays: 180 });
+  const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
+  useEffect(() => { api<PrivacyData>('/admin/privacy').then((r) => { setD(r); setText(r.notice.text); setEmail(r.notice.contactEmail ?? ''); setRet(r.retention); }).catch((e) => setMsg({ kind: 'error', text: e.message })); }, []);
+  if (!d) return null;
+  const textChanged = text !== d.notice.text || (email || null) !== d.notice.contactEmail;
+  async function save() {
+    setMsg(undefined);
+    try {
+      const r = await api<{ notice: PrivacyData['notice']; retention: PrivacyData['retention'] }>('/admin/privacy', { method: 'PUT', body: { text, contactEmail: email, retention: ret } });
+      setD({ ...d!, ...r }); setText(r.notice.text);
+      setMsg({ kind: 'success', text: textChanged ? `Saved as version ${r.notice.version}. Vendors will be asked to accept it the next time they sign in.` : 'Saved.' });
+    } catch (e: any) { setMsg({ kind: 'error', text: e.message }); }
+  }
+  return (
+    <section className="card pad section-card" style={{ marginTop: 16 }}>
+      <h3>Privacy & data retention (DPDP)</h3>
+      <p className="muted small">Vendors must accept this notice before entering any data. Changing it creates a new version and asks every vendor to accept again. {d.notice.isDefault ? <strong>You are using the starting template — have it reviewed by your legal team.</strong> : <>Current version {d.notice.version}{d.notice.updatedAt ? `, updated ${new Date(d.notice.updatedAt).toLocaleDateString('en-IN')}` : ''}.</>}</p>
+      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      <div className="field"><label htmlFor="pv-text">Privacy notice</label><textarea id="pv-text" rows={14} value={text} onChange={(e) => setText(e.target.value)} /></div>
+      <div className="field-grid">
+        <div className="field"><label htmlFor="pv-email">Grievance officer email</label><input id="pv-email" type="email" value={email} placeholder="privacy@yourcompany.com" onChange={(e) => setEmail(e.target.value)} /></div>
+        <div />
+        <div className="field"><label htmlFor="pv-rej">Erase rejected registrations after (days)</label><input id="pv-rej" type="number" min={0} max={3650} value={ret.rejectedDays} onChange={(e) => setRet({ ...ret, rejectedDays: Number(e.target.value) })} /><div className="field-help">0 = keep. Personal data is removed; counts and the audit trail stay.</div></div>
+        <div className="field"><label htmlFor="pv-ab">Erase abandoned registrations after (days of inactivity)</label><input id="pv-ab" type="number" min={0} max={3650} value={ret.abandonedDays} onChange={(e) => setRet({ ...ret, abandonedDays: Number(e.target.value) })} /><div className="field-help">Invited, in progress or sent back, with no activity. 0 = keep.</div></div>
+      </div>
+      <div className="btn-row">
+        <button className="btn btn-primary" onClick={save}>{textChanged ? 'Save as new version' : 'Save'}</button>
+        <button className="btn btn-ghost" onClick={() => setText(d.template)}>Reset to template</button>
+      </div>
+    </section>
   );
 }

@@ -40,6 +40,7 @@ describe('tenant isolation', () => {
     const token = tokenOf((await lastLinkTo('di@x.test'))!);
     const otp = (await v.post('/api/vendor-auth/request-otp', { token })).body.devOtp;
     await v.post('/api/vendor-auth/verify-otp', { token, code: otp });
+    await v.post('/api/vendor/consent', { version: (await v.get('/api/vendor')).body.privacy.version });
     const up = await v.upload('/api/vendor/documents', 'PAN_CARD');
     expect(up.status).toBe(201);
 

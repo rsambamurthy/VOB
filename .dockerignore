@@ -3,3 +3,10 @@ node_modules
 **/dist
 server/uploads
 server/.env
+backups
+server/uploads-test
+server/uploads-e2e
+playwright-report
+test-results
+.git
+.github

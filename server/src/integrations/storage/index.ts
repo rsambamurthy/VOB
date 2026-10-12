@@ -25,6 +25,7 @@ export function driverFor(name: string): StorageDriver {
 
 export const storageStatus = () => ({ driver: primary.name, scan: i.SCAN_PROVIDER, bucket: i.STORAGE_DRIVER === 's3' ? i.S3_BUCKET : i.STORAGE_DRIVER === 'azure' ? i.AZURE_STORAGE_CONTAINER : undefined });
 export const storageCheck = () => primary.check();
+export const primaryStorage = () => primary;
 
 const EXT: Record<string, string> = { 'application/pdf': '.pdf', 'image/png': '.png', 'image/jpeg': '.jpg' };
 

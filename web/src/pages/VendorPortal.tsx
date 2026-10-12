@@ -14,7 +14,8 @@ import { fmtDate } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding }; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding }; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
+type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
 
@@ -46,6 +47,8 @@ export function VendorPortal() {
   const [crNote, setCrNote] = useState('');
   const [crErrors, setCrErrors] = useState<Record<string, string>>({});
   const [crBusy, setCrBusy] = useState(false);
+  const [showNotice, setShowNotice] = useState(false);
+  const [erasureOpen, setErasureOpen] = useState(false);
 
   const load = useCallback(async (reset = false) => {
     try {
@@ -302,6 +305,17 @@ export function VendorPortal() {
               <div className="card pad"><h3 className="card-title">Approval progress</h3><ApprovalTimeline steps={v.steps} levels={cfg.levels} /></div>
             )}
             <div className="card pad">
+              <h3 className="card-title">Your data</h3>
+              <p className="small muted">{me.privacy.consentAt ? <>You accepted the privacy notice on {fmtDate(me.privacy.consentAt)}.</> : 'Privacy notice not yet accepted.'}</p>
+              <div className="link-list">
+                <button className="link-btn small" onClick={() => setShowNotice(true)}>Read the privacy notice</button>
+                <a className="link-btn small" href="/api/vendor/my-data" download>Download my data</a>
+                {me.privacy.erasureRequestedAt
+                  ? <span className="small muted">Deletion requested on {fmtDate(me.privacy.erasureRequestedAt)} — we’ll email you.</span>
+                  : <button className="link-btn small danger" onClick={() => setErasureOpen(true)}>Withdraw consent & request deletion</button>}
+              </div>
+            </div>
+            <div className="card pad">
               <h3 className="card-title">How onboarding works</h3>
               <ol className="guide-mini">{cfg.guide.map((g) => <li key={g.title}>{g.title.replace(/^Step \d+: /, '')}</li>)}</ol>
               <button className="link-btn small" onClick={() => setShowGuide(true)}>Read the full guide</button>
@@ -310,6 +324,9 @@ export function VendorPortal() {
         </div>
       </div>
 
+      {me.privacy.needsConsent && <ConsentModal buyer={me.buyer.name} privacy={me.privacy} onDone={() => load()} />}
+      {showNotice && <Modal title={`Privacy notice — ${me.buyer.name}`} wide onClose={() => setShowNotice(false)}><div className="notice-text">{me.privacy.text}</div></Modal>}
+      {erasureOpen && <ErasureModal onClose={() => setErasureOpen(false)} onDone={() => { setErasureOpen(false); setFlash({ kind: 'info', text: 'Your deletion request has been sent. We’ll email you when it has been handled.' }); load(); }} />}
       {showGuide && (
         <Modal title="Vendor onboarding guide" onClose={() => setShowGuide(false)}>
           {cfg.guide.map((g) => <div key={g.title} className="guide-step"><h4>{g.title}</h4><p>{g.body}</p></div>)}
@@ -342,5 +359,51 @@ export function VendorSignedOut() {
       <h2>You’re signed out</h2>
       <p className="muted">To continue your registration, open the invitation link from your email again. You’ll get a new one-time code.</p>
     </div></div>
+  );
+}
+
+/** DPDP: shown before anything is collected and whenever the notice changes. Cannot be dismissed. */
+function ConsentModal({ buyer, privacy, onDone }: { buyer: string; privacy: Privacy; onDone: () => void }) {
+  const [agree, setAgree] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  async function accept() {
+    setBusy(true);
+    try { await api('/vendor/consent', { body: { version: privacy.version } }); onDone(); }
+    catch (e: any) { setError(e.message); setBusy(false); }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div className="modal modal-wide" role="dialog" aria-modal="true" aria-label="Privacy notice">
+        <div className="modal-head"><h3>{privacy.consentVersion ? 'Our privacy notice has changed' : `Before you start: how ${buyer} uses your data`}</h3></div>
+        <div className="modal-body">
+          {error && <Alert kind="error">{error}</Alert>}
+          <div className="notice-text notice-scroll">{privacy.text}</div>
+          <label className="check-item"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+            <span>I have read the privacy notice and agree to {buyer} processing this information for supplier registration, payments and legal compliance.</span></label>
+        </div>
+        <div className="modal-foot">
+          <a className="btn btn-ghost" href="/api/vendor-auth/logout" onClick={async (e) => { e.preventDefault(); await api('/vendor-auth/logout', { method: 'POST' }).catch(() => {}); window.location.href = '/vendor/expired'; }}>Not now</a>
+          <button className="btn btn-primary" disabled={!agree || busy} onClick={accept}>{busy ? 'Saving…' : 'Accept and continue'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ErasureModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string>();
+  async function send() {
+    try { await api('/vendor/erasure-request', { body: { reason } }); onDone(); } catch (e: any) { setError(e.message); }
+  }
+  return (
+    <Modal title="Withdraw consent and request deletion" onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-danger" onClick={send}>Send request</button></>}>
+      {error && <Alert kind="error">{error}</Alert>}
+      <p>We will delete the personal data held for your registration. If you are an active supplier, some records (for example, those needed for tax and payments) may have to be kept for the period the law requires; we will tell you if so.</p>
+      <p className="small muted">Tip: download your data first if you want a copy.</p>
+      <div className="field"><label htmlFor="er-reason">Reason (optional)</label><textarea id="er-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+    </Modal>
   );
 }

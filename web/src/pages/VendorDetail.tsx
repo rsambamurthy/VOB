@@ -9,13 +9,14 @@ import { Checklist } from '../components/Checklist';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import type { ChangeRequest, Check, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
-import { ChangeDiff, CrBadge, diffProfiles, FlagBadges } from '../components/Lifecycle';
+import { ChangeDiff, CrBadge, diffProfiles, FlagBadges, isMasked, MASKED_FIELDS } from '../components/Lifecycle';
 import { ErpCard } from '../components/Erp';
 import { useSession } from '../lib/session';
 import { ChecksPanel } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 
-type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; me: string; flags: Flag[]; changeRequests: ChangeRequest[] };
+type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; me: string;
+  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[] };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
@@ -36,6 +37,8 @@ export function VendorDetail() {
   const [draft, setDraft] = useState<Profile>();
   const [propErrors, setPropErrors] = useState<Record<string, string>>({});
   const [proposeOpen, setProposeOpen] = useState(false);
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
+  const [privacyAction, setPrivacyAction] = useState<'erase' | 'decline'>();
   const [flash, setFlash] = useState<{ kind: 'success' | 'error'; text: string }>();
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
@@ -47,6 +50,16 @@ export function VendorDetail() {
   const tabs = [...config.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' },
     ...(d.changeRequests.length ? [{ key: 'changes', label: `Changes${openCrs.length ? ` (${openCrs.length})` : ''}` }] : []), { key: 'history', label: 'History' }];
   const approved = v.status === 'APPROVED';
+  const shownProfile = Object.keys(revealed).length ? Object.fromEntries(Object.entries(v.profile).map(([sec, vals]) => [sec, { ...vals, ...Object.fromEntries(Object.entries(revealed).filter(([k]) => k.startsWith(`${sec}.`)).map(([k, x]) => [k.split('.')[1], x])) }])) : v.profile;
+  async function reveal(fieldId: string, changeRequestId?: string) {
+    try { return await api<{ value?: string; old?: string; new?: string }>(`/staff/vendors/${id}/reveal`, { body: { fieldId, changeRequestId } }); }
+    catch (e: any) { setFlash({ kind: 'error', text: e.message }); throw e; }
+  }
+  const revealExtra = (sectionKey: string) => (f: { key: string }) => {
+    const fid = `${sectionKey}.${f.key}`;
+    if (proposing || !MASKED_FIELDS.includes(fid) || revealed[fid] !== undefined || !isMasked(v.profile[sectionKey]?.[f.key])) return null;
+    return <button type="button" className="link-btn small" title="Shows the full value. Each reveal is recorded in the audit log." onClick={async () => { const r = await reveal(fid); setRevealed((x) => ({ ...x, [fid]: r.value ?? '' })); }}>Reveal</button>;
+  };
   const proposing = !!draft;
   const myStaged = v.documents.filter((x) => x.status === 'PENDING' && !x.changeRequestId && x.uploadedById === d.me);
   const proposedChanges = draft ? diffProfiles(config.sections, v.profile, draft) : [];
@@ -65,7 +78,9 @@ export function VendorDetail() {
     try { await api(`/staff/vendors/${id}/documents/${docId}`, { method: 'DELETE' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
   async function submitProposal(note: string) {
-    const changes = Object.fromEntries([...new Set(proposedChanges.map((c) => c.fieldId.split('.')[0]))].map((sec) => [sec, draft![sec] ?? {}]));
+    // Only the fields that changed (untouched masked values must never be sent back as "new" values).
+    const changes: Record<string, Record<string, string>> = {};
+    for (const c of proposedChanges) { const [sec, key] = c.fieldId.split('.'); (changes[sec] ??= {})[key] = c.new; }
     try {
       await api(`/staff/vendors/${id}/change-requests`, { body: { changes, note } });
       setProposeOpen(false); setDraft(undefined); setPropErrors({});
@@ -114,6 +129,11 @@ export function VendorDetail() {
         </div>
       </header>
       {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
+      {d.privacy.erasedAt && <Alert kind="info"><strong>Personal data erased</strong> on {fmtDateTime(d.privacy.erasedAt)}. Only the code, status and dates are kept for reporting and the audit trail.</Alert>}
+      {d.privacy.erasureRequestedAt && (
+        <Alert kind="warning"><strong>The vendor asked for their data to be deleted</strong> on {fmtDateTime(d.privacy.erasureRequestedAt)}{d.privacy.erasureReason ? ` — “${d.privacy.erasureReason}”` : ''}. Under DPDP, respond without undue delay.
+          {d.privacy.canErase && <div className="btn-row" style={{ marginTop: 8 }}><button className="btn btn-danger btn-sm" onClick={() => setPrivacyAction('erase')}>Erase data…</button><button className="btn btn-secondary btn-sm" onClick={() => setPrivacyAction('decline')}>Decline with reason…</button></div>}</Alert>
+      )}
       {approved && v.blockedAt && <Alert kind="error"><strong>Blocked</strong> since {fmtDateTime(v.blockedAt)}{v.blockedReason ? ` — “${v.blockedReason}”` : ''}. Payments and new POs are on hold in the ERP export.</Alert>}
       {approved && v.reviewStatus === 'ATTENTION' && <Alert kind="warning"><strong>Re-check needs attention:</strong> {v.reviewNote}</Alert>}
       {proposing && (
@@ -150,7 +170,7 @@ export function VendorDetail() {
             {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'active' : ''} onClick={() => setTab(t.key)}>{t.label}</button>)}
           </div>
           <div className="pad">
-            {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={draft ?? v.profile} vendorType={v.vendorType} readOnly={!proposing} errors={propErrors}
+            {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={draft ?? shownProfile} vendorType={v.vendorType} readOnly={!proposing} errors={propErrors} extra={revealExtra(s.key)}
               onChange={(f, val) => setDraft((p) => p && ({ ...p, [s.key]: { ...(p[s.key] ?? {}), [f]: val } }))} />)}
             {tab === 'documents' && <DocumentsPanel requirements={d.docRequirements} documents={v.documents} showHistory editable={proposing} onUpload={stageUpload} onDelete={unstage}
               canDelete={(x) => x.status === 'PENDING' && !x.changeRequestId && x.uploadedById === d.me} uploadLabel="Attach replacement" />}
@@ -166,7 +186,7 @@ export function VendorDetail() {
                 {cr.sensitive && cr.status === 'PENDING' && <Alert kind="warning">Includes sensitive fields. For bank changes, confirm the account holder name on the bank check under Verifications and, if in doubt, call the vendor on their registered number before approving.</Alert>}
                 {cr.note && <p className="small">{cr.raisedBy ? 'Reason' : 'Vendor’s note'}: “{cr.note}”</p>}
                 {cr.status === 'PENDING' && cr.raisedBy?.id === d.me && <p className="small muted">You proposed this change, so another approver has to decide each step. An approvals manager can reassign a step if you’re the only one in that role.</p>}
-                <ChangeDiff changes={cr.changes} />
+                <ChangeDiff changes={cr.changes} onReveal={(fid) => reveal(fid, cr.id)} />
                 {cr.documentIds.length > 0 && (
                   <div className="small"><strong>New documents:</strong> {cr.documentIds.map((did) => { const doc = v.documents.find((x) => x.id === did); return doc ? <a key={did} className="cr-doc" href={docUrl(did)} target="_blank" rel="noreferrer">{d.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType} ({doc.fileName})</a> : null; })}</div>
                 )}
@@ -204,6 +224,18 @@ export function VendorDetail() {
             </div>
           )}
           {approved && <ErpCard key={`${v.id}-${v.updatedAt}`} vendorId={v.id} onFlash={setFlash} canConfigure={can('tenant.settings')} />}
+          {!d.privacy.erasedAt && (
+            <div className="card pad">
+              <h3 className="card-title">Privacy</h3>
+              <dl className="kv small">
+                <dt>Consent</dt><dd>{d.privacy.consentAt ? <>v{d.privacy.consentVersion} on {fmtDate(d.privacy.consentAt)}{d.privacy.consentVersion !== d.privacy.currentVersion && <span className="badge sm flag-medium">old notice</span>}</> : <span className="muted">Not yet given</span>}</dd>
+              </dl>
+              <div className="link-list">
+                {d.privacy.canExport && <a className="link-btn small" href={`/api/staff/vendors/${v.id}/data-export`} download>Download personal data (access request)</a>}
+                {d.privacy.canErase && !d.privacy.erasureRequestedAt && <button className="link-btn small danger" onClick={() => setPrivacyAction('erase')}>Erase personal data…</button>}
+              </div>
+            </div>
+          )}
           <div className="card pad"><div className="row-between card-title"><h3>Approval flow</h3>{d.canReassign && <button className="link-btn small" onClick={() => setReassigning(true)}>Reassign</button>}</div><ApprovalTimeline steps={v.steps} levels={config.workflow.levels.map((l) => l.label)} /></div>
           <div className="card pad">
             <h3 className="card-title">Verifications</h3>
@@ -221,6 +253,7 @@ export function VendorDetail() {
         </aside>
       </div>
 
+      {privacyAction && <PrivacyModal mode={privacyAction} vendor={v} onClose={() => setPrivacyAction(undefined)} onDone={(m) => { setPrivacyAction(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {blockMode && <BlockModal mode={blockMode} vendorId={v.id} onClose={() => setBlockMode(undefined)} onDone={(m) => { setBlockMode(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {proposeOpen && <ProposeModal changes={proposedChanges} docCount={myStaged.length} onClose={() => setProposeOpen(false)} onSubmit={submitProposal} />}
       {crAction && <CrDecisionModal {...crAction} onClose={() => setCrAction(undefined)} onDone={(m) => { setCrAction(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
@@ -355,6 +388,37 @@ function ProposeModal({ changes, docCount, onClose, onSubmit }: { changes: Chang
       <div className="field"><label htmlFor="prop-note">Reason and source<span className="req"> *</span></label>
         <textarea id="prop-note" rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} autoFocus placeholder="e.g. Vendor emailed a new cancelled cheque on 3 Oct (ticket #1234)" />
         <div className="field-help">Kept in the audit trail and shown to approvers. The vendor’s contact is emailed that their details are being updated; bank changes also get a penny-drop check.</div></div>
+    </Modal>
+  );
+}
+
+function PrivacyModal({ mode, vendor, onClose, onDone }: { mode: 'erase' | 'decline'; vendor: VendorFull; onClose: () => void; onDone: (msg: string) => void }) {
+  const [reason, setReason] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true); setError(undefined);
+    try {
+      if (mode === 'erase') { await api(`/staff/vendors/${vendor.id}/erase`, { body: { reason, confirm } }); onDone('Personal data erased.'); }
+      else { await api(`/staff/vendors/${vendor.id}/erasure-request/decline`, { body: { reason } }); onDone('Request declined. The vendor has been emailed the reason.'); }
+    } catch (e: any) { setError(e.message); setBusy(false); }
+  }
+  const erase = mode === 'erase';
+  return (
+    <Modal title={erase ? `Erase personal data — ${vendor.name}` : 'Decline the deletion request'} onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className={`btn ${erase ? 'btn-danger' : 'btn-primary'}`} disabled={busy || (erase && confirm.trim().toUpperCase() !== vendor.code)} onClick={go}>{busy ? 'Working…' : erase ? 'Erase permanently' : 'Decline'}</button></>}>
+      {error && <Alert kind="error">{error}</Alert>}
+      {erase ? (
+        <>
+          <Alert kind="warning">This permanently removes the name, contacts, profile, bank and tax details, documents, verification results and emails. It cannot be undone. Dates, status and the audit trail (without personal details) are kept.</Alert>
+          {vendor.status === 'APPROVED' && <p className="small">Approved suppliers must be <strong>blocked</strong> first, and tax law usually requires keeping supplier records for about 8 years — check with finance.</p>}
+          <div className="field"><label htmlFor="pv-reason">Reason<span className="req"> *</span></label><textarea id="pv-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Vendor’s deletion request of 5 Oct" /></div>
+          <div className="field"><label htmlFor="pv-confirm">Type <strong className="mono">{vendor.code}</strong> to confirm</label><input id="pv-confirm" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" /></div>
+        </>
+      ) : (
+        <div className="field"><label htmlFor="pv-reason">Reason (sent to the vendor)<span className="req"> *</span></label><textarea id="pv-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. You are an active supplier; invoices and payment records must be kept for 8 years under the GST and Income-tax Acts." /></div>
+      )}
     </Modal>
   );
 }

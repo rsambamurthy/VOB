@@ -9,6 +9,7 @@ async function vendorSession(admin: Awaited<ReturnType<typeof login>>, name: str
   const v = client();
   const { devOtp } = (await v.post('/api/vendor-auth/request-otp', { token })).body;
   await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp });
+  await v.post('/api/vendor/consent', { version: (await v.get('/api/vendor')).body.privacy.version });
   return { v, id: r.body.vendor.id as string };
 }
 

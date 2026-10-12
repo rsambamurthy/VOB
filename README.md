@@ -14,7 +14,7 @@ A multi-tenant SaaS for supplier onboarding: buyer companies invite vendors, and
 | **3. Integrations** | Postgres job queue with retries; branded HTML email (SMTP / SendGrid); SMS sign-in codes (MSG91 DLT / Twilio); S3 / R2 / Azure storage with content-type sniffing, script-PDF blocking and optional ClamAV; GSTIN / PAN / penny-drop / MCA checks (Surepass) with caching, limits, masking and name matching; Claude reading uploaded documents to suggest values and flag mismatches. All in **test mode** until keys are added | ✅ |
 | **4. Vendor lifecycle** | Approved vendors request changes, which are re-approved by the levels the changed fields need (bank → Finance + MDM, with automatic penny-drop and a security email). Document renewals with expiry dates and 30 / 7 / 0-day reminders. Periodic re-verification with vendor confirmation. Block / unblock with ERP payment holds. "Needs attention" flags across the vendor list | ✅ |
 | **5. Reports & ERP** | Dashboard with an onboarding funnel, turnaround, time per approval level, ageing and approver workload. Eight reports with Excel download. Automatic ERP push to Oracle EBS, a signed webhook or CSV (download or SFTP), with test mode, retries, a delivery log and the ERP vendor id stored on the vendor | ✅ |
-| 6. Hardening | Field-level encryption, DPDP, E2E tests, CI, deployment | ⏳ next |
+| **6. Hardening** | PAN and bank numbers encrypted in the database, with key rotation. Staff see masked values and every "Reveal" is logged. DPDP: privacy notice and recorded consent, data export, erasure on request and by retention policy. Backups and restore. Browser tests, GitHub CI and a dependency audit. Railway deployment | ✅ |
 
 ## Quick start (Windows / macOS / Linux)
 
@@ -85,6 +85,30 @@ Background work (email, SMS, AI reading, the 5-minute SLA sweep) runs on a **Pos
 Optional local services: `docker compose --profile scan up -d clamav` (virus scanning) and `docker compose --profile storage up -d minio` (S3-compatible storage to try `STORAGE_DRIVER=s3`).
 
 **Test-mode tips:** a PAN whose 9th character is `0`, a GSTIN whose 13th character is `0`, or a bank account ending in `0` returns "not found", so you can see the failure path.
+
+## Security, privacy and operations (Phase 6)
+
+- **Encryption at rest:** PAN, TAN, foreign TIN, bank account number and IBAN are AES-256-GCM-encrypted inside the profile JSON. Old and new values in change requests, ERP payloads and AI extraction results are encrypted the same way. The code reads plain values, because the column types do the work (`lib/fieldCrypto.ts`).
+  - `npm run db:setup` encrypts any older plain values.
+  - Key rotation: see `DEPLOY.md`, and use `npm run db:reencrypt`.
+- **Masking:** staff screens, the change-request queue and AI suggestions show `AAF••••••Q` and `••••••3456`. **Reveal** shows the full value and writes `SENSITIVE_REVEALED` to the audit log. Reports stay masked. The ERP push and ERP export send full values, behind the `vendors.export` permission.
+- **DPDP:**
+  - **Consent:** vendors must accept the workspace's privacy notice (Workspace → Privacy & data retention) before entering anything. Editing the notice creates a new version and asks every vendor to accept again. Consent version, time and IP are recorded.
+  - **Data export:** vendors can **Download my data**. Staff with `vendors.export` can download a fuller export that includes the audit trail.
+  - **Deletion requests:** a vendor can **withdraw consent and request deletion**. Administrators are emailed and can **Erase** or **Decline with a reason**. Approved suppliers must be blocked first, and registrations under review must be decided first.
+  - **Erasure** anonymises the vendor: name, contacts, profile, documents, checks and emails are removed. Codes, status, dates and the audit trail (without personal details) are kept.
+  - **Retention:** a daily job erases rejected registrations after 365 days and abandoned ones after 180 days. Both periods are configurable, and 0 turns them off.
+- **Backups:**
+  - `npm run db:backup` saves the database and uploaded files to `backups/<date>/`; add `-- --encrypt` to encrypt it.
+  - `npm run db:restore -- <folder> --yes` restores a backup.
+  - In production, set `BACKUP_SCHEDULE` for nightly encrypted dumps to storage, keeping `BACKUP_KEEP` (default 14).
+- **Tests and CI:** `npm run test:e2e` runs the browser tests (Playwright) on their own server and database: onboarding with consent, masking and Reveal, dashboard, Excel, ERP preview and privacy settings. The first time, run `npx playwright install chromium`.
+  - `.github/workflows/ci.yml` runs type checks, the 80 API tests, the build, the browser tests, `npm audit --omit=dev` and a Docker build on every push.
+- **Dependencies:** production dependencies report 0 known vulnerabilities. React Router was upgraded to v7, and `uuid` is pinned to 11.1.1 for exceljs. The remaining `esbuild` advisory affects only the `drizzle-kit` developer tool.
+- **Deployment:** see **[DEPLOY.md](DEPLOY.md)** (Railway: app + Postgres + `/data` volume).
+  - `/api/health` checks the database.
+  - The image runs as a non-root user and includes `pg_dump` 18.
+  - `BOOTSTRAP_*` variables create the first workspace on an empty database.
 
 ## Reports and ERP (Phase 5)
 
@@ -163,8 +187,12 @@ Each workspace has its own **versioned** configuration: tabs → groups → fiel
 | Command | What it does |
 |---|---|
 | `npm run dev` | API + web with hot reload |
-| `npm test` | 69 automated tests covering reports and Excel export, ERP push (webhook signatures, Oracle payload, CSV, failures and retry), vendor lifecycle (change requests, renewals, expiry reminders, re-checks, block/unblock), email/SMS/storage/KYC/AI integrations, validators, auth, 2FA, tenant isolation, permissions, configuration editing and publishing, rule-based approval flows, SLA escalation, reassignment, delegation and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
+| `npm test` | 80 automated tests covering encryption at rest, masking and reveal, DPDP consent, export and erasure, backups, reports and Excel export, ERP push (webhook signatures, Oracle payload, CSV, failures and retry), vendor lifecycle (change requests, renewals, expiry reminders, re-checks, block/unblock), email/SMS/storage/KYC/AI integrations, validators, auth, 2FA, tenant isolation, permissions, configuration editing and publishing, rule-based approval flows, SLA escalation, reassignment, delegation and the full onboarding flow. They use a separate `vendor_onboarding_test` database (see below) |
 | `npm run db:setup` | Apply new migrations; load demo data only into an empty database. Never deletes anything |
+| `npm run db:backup` / `npm run db:restore -- <folder> --yes` | Back up / restore the database and uploaded documents |
+| `npm run db:reencrypt` | Re-encrypt sensitive data after rotating `ENCRYPTION_KEY` |
+| `npm run test:e2e` | Build and run the browser tests (first time: `npx playwright install chromium`) |
+| `npm run typecheck` | TypeScript checks for server and web |
 | `npm run db:demo-history` | Add a year of demo onboarding history to the `acme` workspace for the dashboard (adds only, runs once) |
 | `npm run db:reset -- --yes` | **Wipe** the database and reload the demo data (dev only; refuses without `--yes`) |
 | `npm run -w server db:migrate` | Apply pending migrations (use this in production) |
@@ -209,7 +237,7 @@ web/src/
 
 | Area | Now | Phase |
 |---|---|---|
-| PAN / bank encryption at rest | Plain columns | 6 |
+| Indian-region hosting | Railway (Singapore); the same Docker image runs on AWS Mumbai or Azure Pune | — |
 
 ## Deploy
 

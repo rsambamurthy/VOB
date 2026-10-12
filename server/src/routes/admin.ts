@@ -19,6 +19,7 @@ import { queueRunning } from '../jobs/queue.js';
 import { env } from '../lib/env.js';
 import { checkConnection, connectionInput, getConnection, publicConnection, saveConnection } from '../integrations/erp/index.js';
 import { send as sendErp } from '../integrations/erp/drivers.js';
+import { defaultNotice, noticeFor, retentionFor } from '../services/privacy.js';
 
 const { users, roles, userRoles, auditLogs, tenants, approvalSteps } = schema;
 export const adminRouter = Router();
@@ -255,4 +256,26 @@ adminRouter.get('/erp/preview', requireStaff('tenant.settings'), ah(async (req, 
   if (!v) throw new HttpError(404, 'No approved vendor to preview with yet');
   const r = await sendErp({ ...conn, testMode: true }, v, 'MANUAL', { syncId: 'preview', tenantSlug: s.tenant.slug });
   res.json({ vendor: { id: v.id, name: v.name, code: v.code }, ...r });
+}));
+
+/* ---------- Privacy notice & retention (DPDP) ---------- */
+
+adminRouter.get('/privacy', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const t = staffCtx(req).tenant;
+  res.json({ notice: noticeFor(t), retention: retentionFor(t), template: defaultNotice(t.name, noticeFor(t).contactEmail ?? undefined) });
+}));
+
+adminRouter.put('/privacy', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const input = z.object({
+    text: z.string().trim().min(200, 'The privacy notice is too short to cover what DPDP requires').max(20000),
+    contactEmail: z.string().trim().email('Enter the grievance officer’s email').or(z.literal('')),
+    retention: z.object({ rejectedDays: z.number().int().min(0).max(3650), abandonedDays: z.number().int().min(0).max(3650) }),
+  }).parse(req.body);
+  const cur = noticeFor(s.tenant);
+  const changed = input.text !== cur.text || (input.contactEmail || null) !== cur.contactEmail;
+  const privacy = changed ? { version: cur.version + 1 /* vendors are asked to accept the new version */, text: input.text, contactEmail: input.contactEmail || undefined, updatedAt: new Date().toISOString() } : s.tenant.settings.privacy;
+  await db.update(schema.tenants).set({ settings: { ...s.tenant.settings, privacy, retention: input.retention } }).where(eq(schema.tenants.id, s.tenant.id));
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'PRIVACY_SETTINGS_UPDATED', detail: { noticeVersion: privacy?.version ?? cur.version, newVersion: changed ? 'yes' : 'no', ...input.retention }, ip: req.ip });
+  res.json({ notice: { ...noticeFor({ name: s.tenant.name, settings: { ...s.tenant.settings, privacy } }) }, retention: input.retention });
 }));

@@ -58,6 +58,7 @@ export async function approvedVendor(name: string, email: string) {
   const v = client();
   const { devOtp } = (await v.post('/api/vendor-auth/request-otp', { token })).body;
   await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp });
+  await v.post('/api/vendor/consent', { version: (await v.get('/api/vendor')).body.privacy.version });
   const pan = 'AAFCL1234Q'; const g = `27${pan}1Z`;
   await v.put('/api/vendor/profile/basic', { entityType: 'Company (Pvt / Public Ltd)', address: '1 Main Rd', region: 'Maharashtra', district: 'Pune', postalCode: '411001', msmeRegistered: 'No', supplyCategory: 'Goods' });
   await v.put('/api/vendor/profile/bank', { bankName: 'HDFC Bank', accountHolderName: name, accountNumber: '501000123456', bankBranch: 'Pune', ifsc: 'HDFC0000001' });

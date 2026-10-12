@@ -1,3 +1,5 @@
+import { sql } from 'drizzle-orm';
+import { db } from './lib/db.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -44,7 +46,11 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  // Used by Railway / load balancers: 200 only when the database answers.
+  app.get('/api/health', async (_req, res) => {
+    try { await db.execute(sql`select 1`); res.json({ ok: true }); }
+    catch { res.status(503).json({ ok: false, error: 'database unavailable' }); }
+  });
   app.use('/api', apiLimiter, csrfGuard, loadSessions);
   app.use('/api/auth', staffAuthRouter);
   app.use('/api/vendor-auth', vendorAuthRouter);

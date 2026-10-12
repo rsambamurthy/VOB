@@ -4,3 +4,7 @@ dist
 uploads
 *.log
 server/uploads-test/
+backups/
+server/uploads-e2e/
+playwright-report/
+test-results/
