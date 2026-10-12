@@ -14,7 +14,7 @@ interface Status {
   devMode: boolean;
 }
 
-const PROVIDER_NAMES: Record<string, string> = { test: 'Test mode', smtp: 'SMTP', sendgrid: 'SendGrid', msg91: 'MSG91', twilio: 'Twilio', local: 'Server disk', s3: 'S3-compatible', azure: 'Azure Blob', mock: 'Test mode', surepass: 'Surepass', anthropic: 'Claude (Anthropic)' };
+const PROVIDER_NAMES: Record<string, string> = { test: 'Test mode', smtp: 'SMTP', sendgrid: 'SendGrid', resend: 'Resend', msg91: 'MSG91', twilio: 'Twilio', local: 'Server disk', s3: 'S3-compatible', azure: 'Azure Blob', mock: 'Test mode', surepass: 'Surepass', anthropic: 'Claude (Anthropic)' };
 
 function Card({ title, live, provider, children, env }: { title: string; live: boolean; provider: string; children: ReactNode; env: string }) {
   return (
@@ -52,7 +52,7 @@ export function Integrations() {
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {!s.jobs.running && !s.devMode && <Alert kind="warning">The background job queue isn’t running — emails and document reading are processed in-line. Check server logs.</Alert>}
       <div className="int-grid">
-        <Card title="Email" live={s.email.live} provider={s.email.provider} env={'EMAIL_PROVIDER=smtp            # or sendgrid\nEMAIL_FROM="Acme Supplier Portal <no-reply@yourdomain.com>"\nSMTP_HOST=email-smtp.ap-south-1.amazonaws.com   # SES, M365, Gmail…\nSMTP_USER=...\nSMTP_PASS=...\n# or: SENDGRID_API_KEY=SG....'}>
+        <Card title="Email" live={s.email.live} provider={s.email.provider} env={'EMAIL_PROVIDER=resend          # or sendgrid / smtp\nEMAIL_FROM="Acme Supplier Portal <no-reply@yourdomain.com>"\nRESEND_API_KEY=re_...\n# or: SENDGRID_API_KEY=SG....\n# or SMTP (not on Railway Free/Hobby): SMTP_HOST, SMTP_USER, SMTP_PASS'}>
           <p className="small muted">From: {s.email.from}<br />This workspace: {counts(s.email.counts)}</p>
           {s.email.lastFailures.length > 0 && <ul className="plain-list small">{s.email.lastFailures.map((f, i) => <li key={i}><span className="diff-text">Failed</span> {f.subject} → {f.to}<span className="muted block">{f.error} · {fmtDateTime(f.createdAt)}</span></li>)}</ul>}
           <button className="btn btn-secondary btn-sm" onClick={() => run('/admin/integrations/test-email', {}, (r) => s.email.live ? `Test email sent to ${r.to}.` : `Test email recorded for ${r.to} — see Mailbox (test mode).`)}>Send me a test email</button>

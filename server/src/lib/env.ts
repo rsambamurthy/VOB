@@ -23,7 +23,7 @@ const schema = z.object({
   /** Run background jobs through the Postgres queue (pg-boss). false = run them in-process immediately. */
   JOBS_ENABLED: z.enum(['true', 'false']).default('true'),
 
-  EMAIL_PROVIDER: z.enum(['test', 'smtp', 'sendgrid']).default('test'),
+  EMAIL_PROVIDER: z.enum(['test', 'smtp', 'sendgrid', 'resend']).default('test'),
   EMAIL_FROM: z.string().default('VendorGate <no-reply@vendorgate.local>'),
   EMAIL_REPLY_TO: z.string().optional(),
   SMTP_HOST: z.string().optional(),
@@ -32,6 +32,7 @@ const schema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_SECURE: z.enum(['true', 'false']).default('false'),
   SENDGRID_API_KEY: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
 
   SMS_PROVIDER: z.enum(['test', 'msg91', 'twilio']).default('test'),
   MSG91_AUTH_KEY: z.string().optional(),
@@ -89,7 +90,7 @@ const isProd = parsed.NODE_ENV === 'production';
 
 if (isProd) {
   if (!parsed.APP_BASE_URL.startsWith('https://')) console.warn('[config] APP_BASE_URL should be the public https:// address — links in emails use it.');
-  if (parsed.EMAIL_PROVIDER === 'test') console.warn('[config] EMAIL_PROVIDER=test: no real emails are sent, so vendors cannot receive sign-in codes. Set up SMTP or SendGrid before inviting vendors.');
+  if (parsed.EMAIL_PROVIDER === 'test') console.warn('[config] EMAIL_PROVIDER=test: no real emails are sent, so vendors cannot receive sign-in codes. Set up Resend, SendGrid or SMTP before inviting vendors.');
   if (parsed.TRUST_PROXY !== 'true') console.warn('[config] TRUST_PROXY is not "true". Behind Railway / a load balancer, set it so rate limits and audit logs see real client IPs.');
   if (!parsed.ENCRYPTION_KEY) throw new Error('ENCRYPTION_KEY is required in production (openssl rand -base64 32)');
   if (parsed.DEV_SHOW_OTP === 'true') throw new Error('DEV_SHOW_OTP must be false in production');
@@ -120,6 +121,7 @@ const need = (cond: boolean, msg: string) => { if (cond) throw new Error(`Config
 const i = parsed;
 need(i.EMAIL_PROVIDER === 'smtp' && !i.SMTP_HOST, 'EMAIL_PROVIDER=smtp needs SMTP_HOST (and usually SMTP_USER / SMTP_PASS)');
 need(i.EMAIL_PROVIDER === 'sendgrid' && !i.SENDGRID_API_KEY, 'EMAIL_PROVIDER=sendgrid needs SENDGRID_API_KEY');
+need(i.EMAIL_PROVIDER === 'resend' && !i.RESEND_API_KEY, 'EMAIL_PROVIDER=resend needs RESEND_API_KEY');
 need(i.SMS_PROVIDER === 'msg91' && (!i.MSG91_AUTH_KEY || !i.MSG91_OTP_TEMPLATE_ID), 'SMS_PROVIDER=msg91 needs MSG91_AUTH_KEY and MSG91_OTP_TEMPLATE_ID');
 need(i.SMS_PROVIDER === 'twilio' && (!i.TWILIO_ACCOUNT_SID || !i.TWILIO_AUTH_TOKEN || !i.TWILIO_FROM), 'SMS_PROVIDER=twilio needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM');
 need(i.STORAGE_DRIVER === 's3' && (!i.S3_BUCKET || !i.S3_ACCESS_KEY_ID || !i.S3_SECRET_ACCESS_KEY), 'STORAGE_DRIVER=s3 needs S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY');

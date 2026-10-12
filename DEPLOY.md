@@ -10,7 +10,7 @@ One Railway **service** runs the whole app (API + web, from the `Dockerfile`), n
    node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
    ```
    This key encrypts PAN and bank numbers, ERP passwords and backups. **If you lose it, that data can't be recovered.** Never change it without following "Rotating the key" below.
-3. Choose an email provider. In production, vendors get their sign-in codes by email, so set up SMTP (for example Zoho, Google Workspace or Amazon SES) or SendGrid.
+3. Choose an email provider. **Railway blocks outbound SMTP on Free, Trial and Hobby plans**, so use an HTTPS email API: **Resend** (`EMAIL_PROVIDER=resend`, `RESEND_API_KEY`) or SendGrid. SMTP works only on Railway Pro.
 
 ## 1. Create the project
 
@@ -26,7 +26,7 @@ One Railway **service** runs the whole app (API + web, from the `Dockerfile`), n
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`, or, to keep VendorGate in its own database on a shared Postgres server: `postgresql://${{Postgres.PGUSER}}:${{Postgres.PGPASSWORD}}@${{Postgres.RAILWAY_PRIVATE_DOMAIN}}:5432/vendorgate` together with `CREATE_DATABASE_IF_MISSING=true` |
 | `ENCRYPTION_KEY` | the key from step 0 |
 | `APP_BASE_URL` | `https://<your domain>` — exactly as people will open it |
-| `EMAIL_PROVIDER` | `smtp` or `sendgrid`, plus `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` or `SENDGRID_API_KEY` |
+| `EMAIL_PROVIDER` | `resend` (recommended on Railway) with `RESEND_API_KEY`, or `sendgrid` with `SENDGRID_API_KEY`, or `smtp` with `SMTP_*` (Railway Pro only); plus `EMAIL_FROM`, e.g. `VendorGate <no-reply@yourdomain.com>` |
 | `BACKUP_SCHEDULE` | `30 2 * * *` (encrypted database backup every night at 02:30 IST, kept 14 days in `/data/uploads/_backups`) |
 | `BOOTSTRAP_ADMIN_EMAIL` | **first deploy only**: your email |
 | `BOOTSTRAP_ADMIN_NAME` | **first deploy only**: your name |

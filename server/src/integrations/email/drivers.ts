@@ -41,3 +41,20 @@ export function sendgridDriver(cfg: { apiKey: string }, fetchImpl: typeof fetch 
     },
   };
 }
+
+/** Resend (resend.com) HTTPS API — works on hosts that block outbound SMTP (e.g. Railway Free/Hobby). */
+export function resendDriver(cfg: { apiKey: string }, fetchImpl: typeof fetch = fetch): EmailDriver {
+  return {
+    name: 'resend', live: true,
+    async send(m) {
+      const res = await fetchImpl('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: m.from, to: [m.to], subject: m.subject, html: m.html, text: m.text, ...(m.replyTo ? { reply_to: m.replyTo } : {}) }),
+      });
+      const body = await res.json().catch(() => ({})) as { id?: string; message?: string; name?: string };
+      if (!res.ok) throw new Error(`Resend ${res.status}: ${(body.message ?? body.name ?? '').slice(0, 300)}`);
+      return { id: body.id };
+    },
+  };
+}

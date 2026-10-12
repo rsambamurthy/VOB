@@ -8,12 +8,13 @@ import { env } from '../../lib/env.js';
 import { logger } from '../../lib/logger.js';
 import { defineJob, enqueue } from '../../jobs/queue.js';
 import { renderEmail } from './template.js';
-import { sendgridDriver, smtpDriver, testDriver, type EmailDriver } from './drivers.js';
+import { resendDriver, sendgridDriver, smtpDriver, testDriver, type EmailDriver } from './drivers.js';
 
 const i = env.int;
 let driver: EmailDriver =
   i.EMAIL_PROVIDER === 'smtp' ? smtpDriver({ host: i.SMTP_HOST!, port: i.SMTP_PORT, secure: i.SMTP_SECURE === 'true', user: i.SMTP_USER, pass: i.SMTP_PASS })
   : i.EMAIL_PROVIDER === 'sendgrid' ? sendgridDriver({ apiKey: i.SENDGRID_API_KEY! })
+  : i.EMAIL_PROVIDER === 'resend' ? resendDriver({ apiKey: i.RESEND_API_KEY! })
   : testDriver;
 
 /** For tests. */

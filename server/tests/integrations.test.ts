@@ -3,7 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { client, login, lastLinkTo, tokenOf } from './helpers.js';
 import { db, schema } from '../src/lib/db.js';
 import { sendMail, setEmailDriver, renderEmail } from '../src/integrations/email/index.js';
-import { testDriver, sendgridDriver } from '../src/integrations/email/drivers.js';
+import { testDriver, sendgridDriver, resendDriver } from '../src/integrations/email/drivers.js';
 import { msg91Driver, twilioDriver, normaliseMobile, testSmsDriver } from '../src/integrations/sms/drivers.js';
 import { setSmsDriver } from '../src/integrations/sms/index.js';
 import { sniffType, pdfLooksActive } from '../src/integrations/storage/scan.js';
@@ -73,6 +73,18 @@ describe('email', () => {
     const body = JSON.parse(init.body);
     expect(body.from).toEqual({ name: 'Acme', email: 'no-reply@acme.test' });
     expect(body.tracking_settings.click_tracking.enable).toBe(false);
+  });
+
+  test('Resend request shape and errors', async () => {
+    const f = vi.fn(async () => jsonResponse(200, { id: 're-1' }));
+    const r = await resendDriver({ apiKey: 're_x' }, f as any).send({ to: 'x@y.test', from: 'VendorGate <no-reply@acme.test>', replyTo: 'help@acme.test', subject: 'S', html: '<p>h</p>', text: 't' });
+    expect(r.id).toBe('re-1');
+    const [url, init] = f.mock.calls[0] as any;
+    expect(url).toBe('https://api.resend.com/emails');
+    expect(init.headers.Authorization).toBe('Bearer re_x');
+    expect(JSON.parse(init.body)).toMatchObject({ from: 'VendorGate <no-reply@acme.test>', to: ['x@y.test'], reply_to: 'help@acme.test', subject: 'S' });
+    const bad = vi.fn(async () => jsonResponse(403, { name: 'validation_error', message: 'The integratatech.ai domain is not verified.' }));
+    await expect(resendDriver({ apiKey: 're_x' }, bad as any).send({ to: 'x@y.test', from: 'a@b.test', subject: 'S', html: '', text: '' })).rejects.toThrow(/Resend 403: The integratatech.ai domain is not verified/);
   });
 });
 
