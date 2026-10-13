@@ -18,6 +18,9 @@ import { indiaTemplate } from '../countries/in/template.js';
 import { saudiTemplate } from '../countries/sa/template.js';
 import { uaeTemplate } from '../countries/ae/index.js';
 import { bahrainTemplate } from '../countries/bh/index.js';
+import { qatarTemplate } from '../countries/qa/index.js';
+import { kuwaitTemplate } from '../countries/kw/index.js';
+import { omanTemplate } from '../countries/om/index.js';
 
 const defaultConfig = indiaTemplate();
 import type { OnboardingConfig } from '../config/types.js';
@@ -182,7 +185,7 @@ export async function seed() {
     },
   ]);
 
-  /* ---- Workspaces 4 and 5: dunes (UAE) and pearl (Bahrain) ---- */
+  /* ---- Gulf workspaces: dunes (UAE), pearl (Bahrain), doha (Qatar), salmiya (Kuwait), muscat (Oman) ---- */
   for (const w of [
     { slug: 'dunes', name: 'Dunes Facilities Management LLC', country: 'AE', color: '#a35a1f', config: uaeTemplate(), people: ['Mariam Al Mansoori', 'Rashid Al Hammadi', 'Aisha Al Nuaimi', 'Saeed Al Ketbi'],
       vendor: { code: 'VND-00001', name: 'Falcon Technical Services LLC', first: 'Imran', last: 'Qureshi', email: 'imran@falcontech.ae', mobile: '971501234567',
@@ -200,6 +203,30 @@ export async function seed() {
           ownership: { owner1Name: 'Ahmed Al Mahmood', owner1Nationality: 'Bahraini', owner1Share: '100', moreOwners: 'No', pep: 'No', relatedToBuyer: 'No' },
           localContent: { employees: '45', bahrainisationPct: '30', lmraCompliant: 'Yes' },
           risk: { fiscalYearEnd: 'December', currency: 'BHD', turnoverYear: 'FY 2025', annualTurnover: '2400000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' } } } },
+    { slug: 'doha', name: 'Doha Marine Services W.L.L.', country: 'QA', color: '#7a1f3d', config: qatarTemplate(), people: ['Maryam Al Thani', 'Khalifa Al Kuwari', 'Hessa Al Marri', 'Jassim Al Sulaiti'],
+      vendor: { code: 'VND-00001', name: 'West Bay Trading W.L.L.', first: 'Omar', last: 'Al Kubaisi', email: 'omar@westbay.qa', mobile: '97455123456',
+        profile: { basic: { vendorName: 'West Bay Trading W.L.L.', nameArabic: 'الخليج الغربي للتجارة ذ.م.م', entityType: 'Limited Liability Company (W.L.L.)', supplierCountry: 'Qatar', address: 'Building 22, Street 840', postalCode: '63', region: 'West Bay, Doha', district: 'Doha', contactName: 'Omar Al Kubaisi', contactEmail: 'omar@westbay.qa', contactMobile: '97455123456', supplyCategory: 'Goods' },
+          bank: { bankCountry: 'Qatar', bankName: 'Doha Bank', accountHolderName: 'West Bay Trading W.L.L.', iban: 'QA58DOHB00001234567890ABCDEFG', swift: 'DOHBQAQA' },
+          tax: { crNumber: '123456', licenceNumber: '45871', establishmentId: '23-1234-56', tinNumber: '5012345671' },
+          ownership: { owner1Name: 'Omar Al Kubaisi', owner1Nationality: 'Qatari', owner1Share: '100', moreOwners: 'No', pep: 'No', relatedToBuyer: 'No' },
+          localContent: { employees: '60', qatarizationPct: '12', tawteenRegistered: 'No' },
+          risk: { fiscalYearEnd: 'December', currency: 'QAR', turnoverYear: 'FY 2025', annualTurnover: '9500000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' } } } },
+    { slug: 'salmiya', name: 'Salmiya Logistics Co. W.L.L.', country: 'KW', color: '#1f7a4d', config: kuwaitTemplate(), people: ['Dana Al Sabah', 'Yousef Al Mutairi', 'Shaikha Al Enezi', 'Bader Al Rashidi'],
+      vendor: { code: 'VND-00001', name: 'Sharq Supplies Co. W.L.L.', first: 'Faisal', last: 'Al Ajmi', email: 'faisal@sharqsupplies.kw', mobile: '96555123456',
+        profile: { basic: { vendorName: 'Sharq Supplies Co. W.L.L.', nameArabic: 'شركة شرق للتجهيزات ذ.م.م', entityType: 'With Limited Liability Company (W.L.L.)', supplierCountry: 'Kuwait', address: 'Block 3, Street 25, Building 12', postalCode: '15300', region: 'Sharq, Capital Governorate', district: 'Kuwait City', paciNumber: '12345678', contactName: 'Faisal Al Ajmi', contactEmail: 'faisal@sharqsupplies.kw', contactMobile: '96555123456', supplyCategory: 'Goods' },
+          bank: { bankCountry: 'Kuwait', bankName: 'Commercial Bank of Kuwait', accountHolderName: 'Sharq Supplies Co. W.L.L.', iban: 'KW81CBKU0000000000001234560101', swift: 'COMBKWKW' },
+          tax: { crNumber: '123451', licenceNumber: '2019/4567', signatoryName: 'Faisal Al Ajmi' },
+          ownership: { owner1Name: 'Faisal Al Ajmi', owner1Nationality: 'Kuwaiti', owner1Share: '100', moreOwners: 'No', pep: 'No', relatedToBuyer: 'No' },
+          localContent: { employees: '35', kuwaitizationPct: '8', kuwaitiProducts: 'No' },
+          risk: { fiscalYearEnd: 'December', currency: 'KWD', turnoverYear: 'FY 2025', annualTurnover: '750000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' } } } },
+    { slug: 'muscat', name: 'Muscat Energy Services LLC', country: 'OM', color: '#a31f1f', config: omanTemplate(), people: ['Aisha Al Busaidi', 'Salim Al Harthy', 'Huda Al Lawati', 'Said Al Rawahi'],
+      vendor: { code: 'VND-00001', name: 'Al Khuwair Engineering LLC', first: 'Hamed', last: 'Al Balushi', email: 'hamed@khuwaireng.om', mobile: '96891234567',
+        profile: { basic: { vendorName: 'Al Khuwair Engineering LLC', nameArabic: 'الخوير للهندسة ش.م.م', entityType: 'Limited Liability Company (LLC)', supplierCountry: 'Oman', address: 'Building 1234, Way 3017, Al Khuwair', postalCode: '133', region: 'Muscat', district: 'Bawshar', contactName: 'Hamed Al Balushi', contactEmail: 'hamed@khuwaireng.om', contactMobile: '96891234567', supplyCategory: 'Services' },
+          bank: { bankCountry: 'Oman', bankName: 'Bank Muscat', accountHolderName: 'Al Khuwair Engineering LLC', iban: 'OM260180000000129912345', swift: 'BMUSOMRX' },
+          tax: { crNumber: '1234567', vatRegistered: 'Yes', vatNumber: 'OM1100012379' },
+          ownership: { owner1Name: 'Hamed Al Balushi', owner1Nationality: 'Omani', owner1Share: '100', moreOwners: 'No', pep: 'No', relatedToBuyer: 'No' },
+          localContent: { employees: '80', omanisationPct: '40', icvCertified: 'Yes', icvScore: '28' },
+          risk: { fiscalYearEnd: 'December', currency: 'OMR', turnoverYear: 'FY 2025', annualTurnover: '1600000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' } } } },
   ]) {
     const ws = await makeTenant(w.slug, w.name, { primaryColor: w.color }, [], w.config, w.country);
     const wsAdmin = await makeUser(ws.tenant, w.people[0], `admin@${w.slug}.test`, [ws.role('ADMIN')], hash);
@@ -219,7 +246,8 @@ export async function seed() {
   console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test, mdm2@acme.test, compliance@acme.test');
   console.log('  Workspace "globex": admin@globex.test');
   console.log('  Workspace "najd" (Saudi Arabia): admin@najd.test, tax@najd.test, finance@najd.test, mdm@najd.test');
-  console.log('  Workspace "dunes" (UAE): admin@dunes.test · Workspace "pearl" (Bahrain): admin@pearl.test (plus tax@, finance@, mdm@)\n');
+  console.log('  Workspace "dunes" (UAE): admin@dunes.test · Workspace "pearl" (Bahrain): admin@pearl.test');
+  console.log('  Workspace "doha" (Qatar): admin@doha.test · "salmiya" (Kuwait): admin@salmiya.test · "muscat" (Oman): admin@muscat.test (each also has tax@, finance@, mdm@)\n');
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

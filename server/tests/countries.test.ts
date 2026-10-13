@@ -82,7 +82,7 @@ describe('country packs', () => {
     const me = (await (await login('admin@acme.test')).get('/api/auth/me')).body;
     expect(me.tenant).toMatchObject({ country: 'IN', currency: 'INR', locale: 'en-IN' });
     const { createTenant } = await import('../src/services/tenants.js');
-    await expect(createTenant({ slug: 'doha-co', name: 'Doha Co', adminName: 'A B', adminEmail: 'a@doha.test', country: 'QA' })).rejects.toThrow(/can’t be set up in QA/);
+    await expect(createTenant({ slug: 'amman-co', name: 'Amman Co', adminName: 'A B', adminEmail: 'a@amman.test', country: 'JO' })).rejects.toThrow(/can’t be set up in JO/);
     expect(client).toBeDefined();
   });
 });

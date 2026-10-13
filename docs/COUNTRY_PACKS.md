@@ -40,6 +40,14 @@ countries/
                 TRN (15 digits from 1) + corporate tax TRN, ICV/Emiratisation, UAE PDPL, UAE_LOCALIZATION
   bh/           Bahrain (extends gcc): Fri–Sat week, BHD (3 decimals), +973; CR via Sijilat (12345-1, hold on lapse),
                 15-digit VAT account no., Block addresses, Bahrainisation/SIO, PDPL (Law 30/2018), BAHRAIN_LOCALIZATION
+  qa/           Qatar (extends gcc): QAR, +974; no VAT — 10-digit TIN (5…) from the GTA; CR + commercial licence (both hold on
+                lapse), establishment card, tax card, Zone addresses, Qatarization/TAWTEEN, PDPPL (Law 13/2016),
+                QATAR_LOCALIZATION + foreign-tax block (withholding on non-residents)
+  kw/           Kuwait (extends gcc): KWD (3 decimals), +965; no VAT ("Registrations" tab); CR + commercial licence (hold on
+                lapse), signatory certificate, PACI number, Kuwaitization; no general privacy law (notice written as good
+                practice, no law heading), KUWAIT_LOCALIZATION
+  om/           Oman (extends gcc): OMR (3 decimals), GST time, +968; CR (hold on lapse) + OCCI, VAT (OM + 10), Omanisation/ICV,
+                PDPL (Royal Decree 6/2022), OMAN_LOCALIZATION + foreign-tax block
 ```
 
 ## Which checks a vendor gets
@@ -69,5 +77,5 @@ re-checks, AI document reading, ERP export and formatting all read from the regi
 
 ## Not yet pack-driven (next phases)
 - Field masking/encryption list (`lib/fieldCrypto.ts`) and the vendor register report's GSTIN/PAN/IFSC columns.
-- Live providers (Wathq, ZATCA, FTA TRN, Sijilat, NBR) and a live sanctions-screening provider — test mode until Phase 3.
+- Live providers (Wathq, ZATCA, FTA TRN, Sijilat, NBR, MOCI Qatar/Kuwait, Dhareeba, Invest Easy, Oman Tax Authority) and a live sanctions-screening provider — test mode until Phase 3.
 - Arabic UI, Hijri dates (Phase 2).

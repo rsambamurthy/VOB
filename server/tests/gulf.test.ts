@@ -14,7 +14,7 @@ const vendor = (profile: Record<string, Record<string, unknown>>) => ({ id: 'x',
 
 describe('UAE and Bahrain packs', () => {
   test('both can host a workspace; both inherit Gulf sanctions screening', () => {
-    expect(homeCountries().map((c) => c.code)).toEqual(['IN', 'SA', 'AE', 'BH']);
+    expect(homeCountries().map((c) => c.code)).toEqual(['IN', 'SA', 'AE', 'BH', 'QA', 'KW', 'OM']);
     expect(packFor('AE')).toMatchObject({ currency: 'AED', timeZoneLabel: 'GST', weekend: [6, 0], skipWeekendsByDefault: true });
     expect(packFor('BH')).toMatchObject({ currency: 'BHD', timeZoneLabel: 'AST', weekend: [5, 6], skipWeekendsByDefault: true });
     const kinds = (home: string, country: string) => checksForVendor(home, { basic: { supplierCountry: country } }).map((c) => c.def.kind);
@@ -99,6 +99,6 @@ describe('UAE and Bahrain packs', () => {
       expect((await admin.post(`/api/staff/vendors/${ok.body.vendor.id}/verify/sanctions`)).body.status).toBe('VERIFIED');
     }
     const signup = (await client().get('/api/signup/config')).body;
-    expect(signup.countries.map((c: any) => c.code)).toEqual(['IN', 'SA', 'AE', 'BH']);
+    expect(signup.countries.map((c: any) => c.code)).toEqual(['IN', 'SA', 'AE', 'BH', 'QA', 'KW', 'OM']);
   });
 });

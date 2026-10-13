@@ -26,6 +26,42 @@ const CASES = [
     },
     docs: ['Commercial Registration (CR) certificate', 'VAT registration certificate (NBR)', 'CPR or passport', 'Bank letter showing the IBAN', 'Ownership (beneficial owner) declaration'],
   },
+  {
+    ws: 'doha', country: 'Qatar', mobile: '55123456', law: 'Law No. 13 of 2016', weekend: '(Friday and Saturday)',
+    tabs: ['Qatarization & Local Content'], taxTab: 'Tax', verifyButtons: 2,
+    profile: {
+      basic: { entityType: 'Limited Liability Company (W.L.L.)', address: 'Building 22, Street 840', postalCode: '63', region: 'West Bay', district: 'Doha', supplyCategory: 'Goods' },
+      bank: { bankName: 'Doha Bank', iban: 'QA58DOHB00001234567890ABCDEFG' },
+      tax: { crNumber: '123456', licenceNumber: '45871', establishmentId: '23-1234-56', tinNumber: '5012345671' },
+      localContent: { employees: '60' },
+      risk: { currency: 'QAR' },
+    },
+    docs: ['Commercial Registration (CR) certificate', 'Commercial licence', 'Establishment card', 'Tax card (GTA)', 'QID or passport', 'Bank letter showing the IBAN', 'Ownership (beneficial owner) declaration'],
+  },
+  {
+    ws: 'salmiya', country: 'Kuwait', mobile: '55123456', law: 'Kuwaiti law', weekend: '(Friday and Saturday)',
+    tabs: ['Kuwaitization'], taxTab: 'Registrations', verifyButtons: 1,
+    profile: {
+      basic: { entityType: 'With Limited Liability Company (W.L.L.)', address: 'Block 3, Street 25, Building 12', postalCode: '15300', region: 'Sharq', district: 'Kuwait City', supplyCategory: 'Goods' },
+      bank: { bankName: 'Commercial Bank of Kuwait', iban: 'KW81CBKU0000000000001234560101' },
+      tax: { crNumber: '123451', licenceNumber: '2019/4567', signatoryName: 'Sam Lee' },
+      localContent: { employees: '35' },
+      risk: { currency: 'KWD' },
+    },
+    docs: ['Commercial licence', 'Commercial Registration certificate (extract)', 'Authorised signatory certificate', 'Kuwait Chamber (KCCI) membership certificate', 'Civil ID or passport', 'Bank letter showing the IBAN', 'Ownership (beneficial owner) declaration'],
+  },
+  {
+    ws: 'muscat', country: 'Oman', mobile: '91234567', law: 'Royal Decree 6/2022', weekend: '(Friday and Saturday)',
+    tabs: ['Omanisation & In-Country Value'], taxTab: 'Tax', verifyButtons: 2,
+    profile: {
+      basic: { entityType: 'Limited Liability Company (LLC)', address: 'Building 1234, Way 3017, Al Khuwair', postalCode: '133', region: 'Muscat', district: 'Bawshar', supplyCategory: 'Services' },
+      bank: { bankName: 'Bank Muscat', iban: 'OM260180000000129912345' },
+      tax: { crNumber: '1234567', vatRegistered: 'Yes', vatNumber: 'OM1100012379' },
+      localContent: { employees: '80', icvCertified: 'No' },
+      risk: { currency: 'OMR' },
+    },
+    docs: ['Commercial Registration (CR) certificate', 'VAT registration certificate', 'Oman Chamber (OCCI) membership certificate', 'Resident card or passport', 'Bank letter showing the IBAN', 'Ownership (beneficial owner) declaration'],
+  },
 ];
 
 for (const c of CASES) {

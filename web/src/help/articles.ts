@@ -808,7 +808,7 @@ Your acceptance is sent to the customer's system straight away.
     summary: 'Vendors go on hold when a key certificate or licence expires, and come off hold when the renewal is approved.',
     keywords: 'hold block expired lapsed zakat gosi nitaqat saudization cr confirmation certificate trade licence license renewal payment hold automatic uae bahrain',
     related: ['document-expiry', 'sanctions-screening'],
-    body: `Some documents must stay valid for a supplier to keep being paid — in Saudi workspaces the CR (annual confirmation), Zakat, GOSI and Saudization (Nitaqat) certificates; in the UAE the trade licence; in Bahrain the CR.
+    body: `Some documents must stay valid for a supplier to keep being paid — in Saudi workspaces the CR (annual confirmation), Zakat, GOSI and Saudization (Nitaqat) certificates; in the UAE the trade licence; in Bahrain and Oman the CR; in Qatar the CR and commercial licence; in Kuwait the commercial licence.
 
 ## What happens
 1. Reminders go to the supplier 30 and 7 days before the date, as for any document with an expiry.
@@ -844,7 +844,7 @@ In **Configuration → Documents**, open a document, tick **Track expiry date**,
     related: ['purchasing-groups'],
     body: `With **Count deadlines in working days** on (Admin → Workspace → Vendor lifecycle), the hours allowed for each approval level and the days before a purchase order auto-accepts don’t count the weekend.
 
-- Saudi Arabia and Bahrain: Friday and Saturday. UAE: Saturday and Sunday. It is on from the start in Gulf workspaces.
+- Saudi Arabia, Bahrain, Qatar, Kuwait and Oman: Friday and Saturday. UAE: Saturday and Sunday. It is on from the start in Gulf workspaces.
 - Indian workspaces: Sunday. It is off unless you turn it on.
 
 Deadlines already running keep their date; new approval steps and new orders follow the setting. Emails show deadlines in your own time zone (IST, AST…).`,

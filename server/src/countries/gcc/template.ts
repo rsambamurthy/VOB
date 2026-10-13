@@ -89,6 +89,8 @@ export interface GulfTemplateSpec {
   currencies: string[];
   guide: { title: string; body: string }[];
   levels: { taxLabel: string };
+  /** Title of the tax tab (default "Tax"); e.g. "Registrations" where there is no VAT. */
+  taxSectionLabel?: string;
 }
 
 /** Builds a Gulf workspace's starting template from the shared parts and the country's own. */
@@ -147,7 +149,7 @@ export function gulfTemplate(s: GulfTemplateSpec): OnboardingConfig {
       }],
     },
     {
-      key: 'tax', label: 'Tax',
+      key: 'tax', label: s.taxSectionLabel ?? 'Tax',
       groups: [
         ...s.taxGroups,
         {

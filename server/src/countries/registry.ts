@@ -8,10 +8,13 @@ import { gccPack } from './gcc/index.js';
 import { saudiPack } from './sa/index.js';
 import { uaePack } from './ae/index.js';
 import { bahrainPack } from './bh/index.js';
+import { qatarPack } from './qa/index.js';
+import { kuwaitPack } from './kw/index.js';
+import { omanPack } from './om/index.js';
 import { countryByName } from './list.js';
 import type { CheckDef, CheckProvider, CountryPack, ExtractedField, Profile, ReadableDocument, ValidatorDef } from './types.js';
 
-export const PACKS: CountryPack[] = [indiaPack, gccPack, saudiPack, uaePack, bahrainPack];
+export const PACKS: CountryPack[] = [indiaPack, gccPack, saudiPack, uaePack, bahrainPack, qatarPack, kuwaitPack, omanPack];
 export const DEFAULT_HOME = 'IN';
 
 const byCode = new Map<string, CountryPack>([[basePack.code, basePack], ...PACKS.map((p) => [p.code, p] as const)]);
@@ -47,7 +50,7 @@ export const isHomeCountry = (code: string) => homeCountries().some((c) => c.cod
 /** What the web app needs to format numbers and dates for a workspace. */
 export function localeFor(code?: string | null) {
   const p = packFor(code ?? DEFAULT_HOME);
-  return { country: p.code, countryName: p.name, currency: p.currency ?? 'USD', locale: p.locale ?? 'en-GB', weekend: p.weekend ?? [0, 6], privacyLaw: p.privacy?.lawShort ?? null, mobileExample: p.mobile?.example ?? '+44 7700 900123' };
+  return { country: p.code, countryName: p.name, currency: p.currency ?? 'USD', locale: p.locale ?? 'en-GB', weekend: p.weekend ?? [0, 6], privacyLaw: p.privacy?.lawShort || null, mobileExample: p.mobile?.example ?? '+44 7700 900123' };
 }
 
 /* ---------- Field formats (global by name) ---------- */
