@@ -2,7 +2,8 @@ import rateLimit from 'express-rate-limit';
 import { env } from './env.js';
 
 const common = { standardHeaders: 'draft-7' as const, legacyHeaders: false, message: { error: 'Too many requests. Please wait a few minutes and try again.' } };
-const off = env.isTest ? { skip: () => true } : {};
+// Off in unit tests, and in the browser-test server (E2E_NO_RATE_LIMITS, ignored in production) which signs in dozens of times.
+const off = env.isTest || (process.env.E2E_NO_RATE_LIMITS === 'true' && !env.isProd) ? { skip: () => true } : {};
 
 /** Login + MFA: 20 attempts / 15 min per IP (per-account lockout is separate). */
 export const loginLimiter = rateLimit({ ...common, ...off, windowMs: 15 * 60_000, limit: 20 });

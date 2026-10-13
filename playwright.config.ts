@@ -25,7 +25,7 @@ export default defineConfig({
     stderr: 'pipe',
     env: {
       NODE_ENV: 'development', PORT: String(PORT), DATABASE_URL: DB, APP_BASE_URL: `http://localhost:${PORT}`,
-      DEV_SHOW_OTP: 'true', JOBS_ENABLED: 'false', UPLOAD_DIR: './uploads-e2e', LOG_LEVEL: 'warn',
+      DEV_SHOW_OTP: 'true', JOBS_ENABLED: 'false', E2E_NO_RATE_LIMITS: 'true', UPLOAD_DIR: './uploads-e2e', LOG_LEVEL: 'warn',
     },
   },
 });

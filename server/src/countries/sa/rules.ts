@@ -1,6 +1,7 @@
 /** Saudi formats, consistency checks, online checks (test mode until Wathq/ZATCA providers are connected) and readable documents. */
 import type { CheckDef, CheckProvider, CheckResult, ExtractKey, Profile, ReadableDocument, ValidatorDef } from '../types.js';
 import { mask } from '../in/checks.js';
+import { ibanCountryCheck } from '../gcc/shared.js';
 
 export const saValidators: Record<string, ValidatorDef> = {
   saVat: { label: 'Saudi VAT number', check: (v) => (/^3\d{13}3$/.test(v.replace(/\s+/g, '')) ? null : 'Saudi VAT numbers are 15 digits and start and end with 3, e.g. 300000000000003') },
@@ -12,14 +13,7 @@ export const saFormats = {
   vatNumber: { pattern: /^3\d{13}3$/, message: 'Saudi VAT numbers are 15 digits and start and end with 3' },
 };
 
-export function saCrossChecks(p: Profile) {
-  const issues: { field: string; message: string }[] = [];
-  const iban = String(p.bank?.iban ?? '').replace(/\s+/g, '').toUpperCase();
-  if (String(p.bank?.bankCountry ?? '') === 'Saudi Arabia' && iban && !/^SA\d{2}[A-Z0-9]{20}$/.test(iban)) {
-    issues.push({ field: 'bank.iban', message: 'A Saudi bank account’s IBAN starts with SA and has 24 characters' });
-  }
-  return issues;
-}
+export const saCrossChecks = ibanCountryCheck('Saudi Arabia', 'SA', 24);
 
 /* ---------- Online checks ---------- */
 
@@ -64,14 +58,9 @@ const K = {
   cr: { key: 'crNumber', description: '10-digit commercial registration (unified national) number', target: 'tax.crNumber', transform: onlyDigits, validate: ok(saValidators.saCr) },
   vat: { key: 'vatNumber', description: '15-digit VAT registration number', target: 'tax.vatNumber', transform: onlyDigits, validate: ok(saValidators.saVat) },
   city: { key: 'city', description: 'City of the head office', target: 'basic.district' },
-  holder: { key: 'accountHolderName', description: 'Account holder (beneficiary) name', target: 'bank.accountHolderName' },
-  iban: { key: 'iban', description: 'IBAN, starting with SA (24 characters)', target: 'bank.iban', transform: (v: string) => v.toUpperCase().replace(/\s+/g, ''), validate: (v: string) => /^SA\d{2}[A-Z0-9]{20}$/.test(v) },
-  bankName: { key: 'bankName', description: 'Name of the bank', target: 'bank.bankName' },
-  swift: { key: 'swift', description: 'SWIFT / BIC code of the bank', target: 'bank.swift', transform: (v: string) => v.toUpperCase().replace(/\s+/g, '') },
 } satisfies Record<string, ExtractKey>;
 
 export const saDocuments: Record<string, ReadableDocument> = {
   CR_CERT: { label: 'Saudi commercial registration (CR) certificate', keys: [K.cr, K.legalName, K.nameArabic, K.city] },
   VAT_CERT: { label: 'Saudi VAT registration certificate (ZATCA)', keys: [K.vat, K.legalName, K.nameArabic] },
-  BANK_LETTER: { label: 'bank letter or IBAN certificate', keys: [K.holder, K.iban, K.bankName, K.swift] },
 };

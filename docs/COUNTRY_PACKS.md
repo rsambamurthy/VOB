@@ -34,6 +34,12 @@ countries/
     template.ts    Saudi template: Arabic name, National Address, CR/VAT, ownership (UBO, PEP), Nitaqat, IKTVA/LCGPA,
                    Zakat/GOSI/Nitaqat/CR documents that put the vendor on hold when they lapse
     index.ts       SAR, Asia/Riyadh (AST), PDPL notice, SAUDI_LOCALIZATION ERP block
+  gcc/shared.ts   Gulf IBAN-by-country check, bank-letter reading
+  gcc/template.ts shared Gulf template builder (bank, tax, ownership/UBO/PEP, risk) used by UAE and Bahrain
+  ae/           UAE (extends gcc): Sat–Sun week, AED, GST time, +971; trade licence (emirate / free zone, hold on lapse),
+                TRN (15 digits from 1) + corporate tax TRN, ICV/Emiratisation, UAE PDPL, UAE_LOCALIZATION
+  bh/           Bahrain (extends gcc): Fri–Sat week, BHD (3 decimals), +973; CR via Sijilat (12345-1, hold on lapse),
+                15-digit VAT account no., Block addresses, Bahrainisation/SIO, PDPL (Law 30/2018), BAHRAIN_LOCALIZATION
 ```
 
 ## Which checks a vendor gets
@@ -63,5 +69,5 @@ re-checks, AI document reading, ERP export and formatting all read from the regi
 
 ## Not yet pack-driven (next phases)
 - Field masking/encryption list (`lib/fieldCrypto.ts`) and the vendor register report's GSTIN/PAN/IFSC columns.
-- Live Saudi providers (Wathq, ZATCA lookup) and a live sanctions-screening provider — test mode until Phase 3.
+- Live providers (Wathq, ZATCA, FTA TRN, Sijilat, NBR) and a live sanctions-screening provider — test mode until Phase 3.
 - Arabic UI, Hijri dates (Phase 2).

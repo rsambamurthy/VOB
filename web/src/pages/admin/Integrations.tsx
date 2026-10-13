@@ -84,7 +84,7 @@ export function Integrations() {
         ))}
 
         <Card title="AI document reading" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-4-5-20251001 for lower cost'}>
-          <p className="small muted">Reads registration, tax and bank documents (India: GST, PAN, cheque, incorporation, Udyam; Saudi Arabia: CR, VAT certificate, bank letter), suggests values for the form, and shows reviewers where documents and form answers differ.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>
+          <p className="small muted">Reads registration, tax and bank documents (India: GST, PAN, cheque, incorporation, Udyam; Saudi Arabia: CR, VAT certificate; UAE: trade licence, TRN certificate; Bahrain: CR, VAT certificate; Gulf bank letters), suggests values for the form, and shows reviewers where documents and form answers differ.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>
           <label className="check-item"><input type="checkbox" checked={s.ai.enabledForWorkspace} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, enabledForWorkspace: on } }); setting({ aiExtraction: on }, on ? 'AI document reading turned on.' : 'AI document reading turned off.'); }} />
             <span><strong>Use AI to read uploaded documents in this workspace</strong><span className="muted small block">Documents are sent to the AI provider for reading and are not used to train models. Check this fits your data-protection obligations before turning it on.{!s.ai.live && ' (In test mode no document leaves the server.)'}</span></span></label>
         </Card>
@@ -100,4 +100,6 @@ const CHECK_TEST: Record<string, string> = {
   IN: 'Numbers whose 9th (PAN) or 13th (GSTIN) character is 0, or bank accounts ending in 0, come back “not found”.',
   GCC: 'Names containing “sanctioned”, “embargo test” or “blocked trading” come back as a possible match.',
   SA: 'CR numbers ending in 0, and VAT numbers whose 13th digit is 9, come back “not found”.',
+  AE: 'TRNs whose 11th digit is 9 come back “not found”.',
+  BH: 'CR numbers ending in 0 (before the branch), and VAT numbers whose 10th digit is 9, come back “not found”.',
 };

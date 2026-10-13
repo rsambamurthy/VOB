@@ -4,6 +4,7 @@
  * deadlines in working days, and sanctions screening of every supplier.
  */
 import type { CheckDef, CheckProvider, CheckResult, CountryPack } from '../types.js';
+import { gccDocuments } from './shared.js';
 
 /** Test-mode list: names that come back as a possible match, so the "hit" path can be tried. */
 const TEST_LIST = ['sanctioned', 'embargo test', 'blocked trading'];
@@ -38,4 +39,5 @@ export const gccPack: CountryPack = {
   checks: [sanctionsCheck],
   checkProvider: () => gccMockChecks,
   checksTitle: 'Sanctions screening',
+  documents: gccDocuments,
 };

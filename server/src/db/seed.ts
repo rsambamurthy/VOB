@@ -16,6 +16,8 @@ import type { Role, Tenant, User } from './schema.js';
 import { seedInitialConfig } from '../services/config.js';
 import { indiaTemplate } from '../countries/in/template.js';
 import { saudiTemplate } from '../countries/sa/template.js';
+import { uaeTemplate } from '../countries/ae/index.js';
+import { bahrainTemplate } from '../countries/bh/index.js';
 
 const defaultConfig = indiaTemplate();
 import type { OnboardingConfig } from '../config/types.js';
@@ -39,7 +41,7 @@ const gstin = (state: string, pan: string) => { const b = `${state}${pan}1Z`; re
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000);
 
 async function makeTenant(slug: string, name: string, branding: Tenant['branding'], extraRoles: { key: string; name: string; description: string; permissions: string[] }[] = [], config: OnboardingConfig = defaultConfig, country = 'IN') {
-  const [t] = await db.insert(tenants).values({ slug, name, branding, country, settings: country === 'SA' ? { skipWeekends: true } : {} }).returning();
+  const [t] = await db.insert(tenants).values({ slug, name, branding, country, settings: country === 'IN' ? {} : { skipWeekends: true } }).returning();
   const rs = await db.insert(roles).values([...DEFAULT_ROLES, ...extraRoles].map((r) => ({ tenantId: t.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, isSystem: r.key === 'ADMIN' }))).returning();
   await seedInitialConfig(t.id, config);
   return { tenant: t, role: (k: string) => rs.find((r) => r.key === k)! };
@@ -180,13 +182,44 @@ export async function seed() {
     },
   ]);
 
+  /* ---- Workspaces 4 and 5: dunes (UAE) and pearl (Bahrain) ---- */
+  for (const w of [
+    { slug: 'dunes', name: 'Dunes Facilities Management LLC', country: 'AE', color: '#a35a1f', config: uaeTemplate(), people: ['Mariam Al Mansoori', 'Rashid Al Hammadi', 'Aisha Al Nuaimi', 'Saeed Al Ketbi'],
+      vendor: { code: 'VND-00001', name: 'Falcon Technical Services LLC', first: 'Imran', last: 'Qureshi', email: 'imran@falcontech.ae', mobile: '971501234567',
+        profile: { basic: { vendorName: 'Falcon Technical Services LLC', nameArabic: 'فالكون للخدمات الفنية ذ.م.م', entityType: 'Limited Liability Company (LLC)', supplierCountry: 'United Arab Emirates', address: 'Office 1204, Bay Square 7, Business Bay', region: 'Dubai', district: 'Dubai', contactName: 'Imran Qureshi', contactEmail: 'imran@falcontech.ae', contactMobile: '971501234567', supplyCategory: 'Services', freeZone: 'No' },
+          bank: { bankCountry: 'United Arab Emirates', bankName: 'Emirates NBD', accountHolderName: 'Falcon Technical Services LLC', iban: 'AE070331234567890123456', swift: 'EBILAEAD' },
+          tax: { licenceNumber: '784512', licenceAuthority: 'Dubai Economy and Tourism', vatRegistered: 'Yes', vatNumber: '100123456700003' },
+          ownership: { owner1Name: 'Imran Qureshi', owner1Nationality: 'Pakistani', owner1Share: '51', owner2Name: 'Khalid Al Suwaidi', owner2Nationality: 'Emirati', owner2Share: '49', moreOwners: 'No', pep: 'No', relatedToBuyer: 'No' },
+          localContent: { icvCertified: 'Yes', icvScore: '34', employees: '120' },
+          risk: { fiscalYearEnd: 'December', currency: 'AED', turnoverYear: 'FY 2025', annualTurnover: '18000000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' } } } },
+    { slug: 'pearl', name: 'Pearl Gulf Industries B.S.C.', country: 'BH', color: '#1f5fa8', config: bahrainTemplate(), people: ['Fatima Al Khalifa', 'Hussain Abdulla', 'Noor Al Sayed', 'Ali Janahi'],
+      vendor: { code: 'VND-00001', name: 'Seef Engineering W.L.L.', first: 'Ahmed', last: 'Al Mahmood', email: 'ahmed@seefeng.bh', mobile: '97333123456',
+        profile: { basic: { vendorName: 'Seef Engineering W.L.L.', nameArabic: 'سيف للهندسة ذ.م.م', entityType: 'With Limited Liability Company (W.L.L.)', supplierCountry: 'Bahrain', address: 'Building 1234, Road 2810', postalCode: '428', region: 'Seef, Capital Governorate', district: 'Manama', contactName: 'Ahmed Al Mahmood', contactEmail: 'ahmed@seefeng.bh', contactMobile: '97333123456', supplyCategory: 'Goods & Services' },
+          bank: { bankCountry: 'Bahrain', bankName: 'National Bank of Bahrain', accountHolderName: 'Seef Engineering W.L.L.', iban: 'BH67BMAG00001299123456', swift: 'NBOBBHBM' },
+          tax: { crNumber: '12345-1', vatRegistered: 'Yes', vatNumber: '200000445300002' },
+          ownership: { owner1Name: 'Ahmed Al Mahmood', owner1Nationality: 'Bahraini', owner1Share: '100', moreOwners: 'No', pep: 'No', relatedToBuyer: 'No' },
+          localContent: { employees: '45', bahrainisationPct: '30', lmraCompliant: 'Yes' },
+          risk: { fiscalYearEnd: 'December', currency: 'BHD', turnoverYear: 'FY 2025', annualTurnover: '2400000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' } } } },
+  ]) {
+    const ws = await makeTenant(w.slug, w.name, { primaryColor: w.color }, [], w.config, w.country);
+    const wsAdmin = await makeUser(ws.tenant, w.people[0], `admin@${w.slug}.test`, [ws.role('ADMIN')], hash);
+    await makeUser(ws.tenant, w.people[1], `tax@${w.slug}.test`, [ws.role('TAX_MANAGER')], hash);
+    await makeUser(ws.tenant, w.people[2], `finance@${w.slug}.test`, [ws.role('FINANCE_MANAGER')], hash);
+    await makeUser(ws.tenant, w.people[3], `mdm@${w.slug}.test`, [ws.role('MDM_MANAGER')], hash);
+    await db.insert(vendors).values({
+      tenantId: ws.tenant.id, code: w.vendor.code, name: w.vendor.name, vendorType: 'DOMESTIC', contactFirstName: w.vendor.first, contactLastName: w.vendor.last,
+      contactEmail: w.vendor.email, contactMobile: w.vendor.mobile, status: 'APPROVED', decidedAt: daysAgo(15), reviewCycle: 1, inviteToken: token(), createdById: wsAdmin.id, consentAt: daysAgo(18), consentVersion: 1, profile: w.vendor.profile,
+    });
+  }
+
   // Platform console (/platform): the SaaS operator. 2FA is set up at first sign-in.
   await db.insert(schema.platformAdmins).values({ email: 'owner@vendorgate.test', name: 'Platform Owner', status: 'ACTIVE', passwordHash: hash });
   console.log(`\nDemo workspaces ready. Password for every demo user: ${DEMO_PASSWORD}`);
   console.log('  Platform console /platform: owner@vendorgate.test (sets up 2FA at first sign-in)');
   console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test, mdm2@acme.test, compliance@acme.test');
   console.log('  Workspace "globex": admin@globex.test');
-  console.log('  Workspace "najd" (Saudi Arabia): admin@najd.test, tax@najd.test, finance@najd.test, mdm@najd.test\n');
+  console.log('  Workspace "najd" (Saudi Arabia): admin@najd.test, tax@najd.test, finance@najd.test, mdm@najd.test');
+  console.log('  Workspace "dunes" (UAE): admin@dunes.test · Workspace "pearl" (Bahrain): admin@pearl.test (plus tax@, finance@, mdm@)\n');
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

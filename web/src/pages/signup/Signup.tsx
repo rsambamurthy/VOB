@@ -16,7 +16,7 @@ function SignupLayout({ cfg, children }: { cfg?: Config; children: ReactNode }) 
           <h2>Vendor onboarding your finance team can trust</h2>
           <ul className="signup-points">
             <li>Suppliers register themselves through a secure link</li>
-            <li>Tax, company and bank checks before anyone approves (GSTIN and PAN in India, CR and VAT in Saudi Arabia)</li>
+            <li>Tax, company and bank checks before anyone approves (GSTIN and PAN in India; CR, trade licence and VAT in the Gulf)</li>
             <li>Approval levels, reminders and a full audit trail</li>
             <li>Approved vendors sent straight to your ERP</li>
           </ul>

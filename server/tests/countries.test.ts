@@ -23,7 +23,7 @@ describe('country packs', () => {
     const before = ['gstin', 'pan', 'tan', 'cin', 'ifsc', 'swift', 'iban', 'upi', 'udyam', 'email', 'phone', 'url', 'postalCode', 'bankAccount', 'year'];
     expect(validatorNames().sort()).toEqual(expect.arrayContaining(before));
     expect(Object.keys(packFor('IN').validators!)).toEqual(expect.arrayContaining(['iban', 'swift', 'gstin']));
-    expect([...UPPERCASE_VALIDATORS].sort()).toEqual(['cin', 'gstin', 'iban', 'ifsc', 'pan', 'swift', 'tan', 'udyam']);
+    expect([...UPPERCASE_VALIDATORS].sort()).toEqual(['aeLicence', 'cin', 'gstin', 'iban', 'ifsc', 'pan', 'swift', 'tan', 'udyam']);
   });
 
   test('postal code and bank account follow the supplier country', () => {
@@ -82,7 +82,7 @@ describe('country packs', () => {
     const me = (await (await login('admin@acme.test')).get('/api/auth/me')).body;
     expect(me.tenant).toMatchObject({ country: 'IN', currency: 'INR', locale: 'en-IN' });
     const { createTenant } = await import('../src/services/tenants.js');
-    await expect(createTenant({ slug: 'riyadh-co', name: 'Riyadh Co', adminName: 'A B', adminEmail: 'a@riyadh.test', country: 'AE' })).rejects.toThrow(/can’t be set up in AE/);
+    await expect(createTenant({ slug: 'doha-co', name: 'Doha Co', adminName: 'A B', adminEmail: 'a@doha.test', country: 'QA' })).rejects.toThrow(/can’t be set up in QA/);
     expect(client).toBeDefined();
   });
 });

@@ -6,10 +6,12 @@ import { basePack } from './base.js';
 import { indiaPack } from './in/index.js';
 import { gccPack } from './gcc/index.js';
 import { saudiPack } from './sa/index.js';
+import { uaePack } from './ae/index.js';
+import { bahrainPack } from './bh/index.js';
 import { countryByName } from './list.js';
 import type { CheckDef, CheckProvider, CountryPack, ExtractedField, Profile, ReadableDocument, ValidatorDef } from './types.js';
 
-export const PACKS: CountryPack[] = [indiaPack, gccPack, saudiPack];
+export const PACKS: CountryPack[] = [indiaPack, gccPack, saudiPack, uaePack, bahrainPack];
 export const DEFAULT_HOME = 'IN';
 
 const byCode = new Map<string, CountryPack>([[basePack.code, basePack], ...PACKS.map((p) => [p.code, p] as const)]);

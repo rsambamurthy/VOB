@@ -29,4 +29,4 @@ Phase 1 (purchase orders and acceptance, Oracle EBS first) is live.
 - **Phase 1 (done):** shared Gulf pack + Saudi Arabia: Saudi template, CR/VAT checks (test mode), UBO/PEP, sanctions screening, automatic hold on lapsed Zakat/GOSI/Nitaqat/CR, working-day deadlines, SAR/AST, PDPL notice, country on sign-up, demo workspace "najd".
 - **Phase 2:** Arabic supplier portal (RTL, bilingual names, Hijri dates, Arabic document reading).
 - **Phase 3:** live verification providers (Wathq, sanctions, bank/IBAN).
-- **Phase 4:** Bahrain, Qatar, UAE packs. **Phase 5:** in-region hosting when a customer requires it.
+- **Phase 4:** UAE and Bahrain packs (done); Qatar, Kuwait, Oman next on the shared Gulf template. **Phase 5:** in-region hosting when a customer requires it.
