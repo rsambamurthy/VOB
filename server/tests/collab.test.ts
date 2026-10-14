@@ -216,7 +216,8 @@ describe('supplier invoices', () => {
     expect(row?.status).toBe('PARTLY_PAID');
     expect(Number(row?.paidAmount)).toBe(3050);
     expect((await api('post', '/payments').send({ erpId: 'PAY-1', supplierCode: 'SUP-COL-1', reference: 'UTR998877', paymentDate: '2026-10-20', currency: 'INR', amount: 3000, invoices: [{ invoiceNumber: 'HX/26-27/001', amount: 3000 }] })).body.unchanged).toBe(1);
-    await api('post', '/payments').send({ erpId: 'PAY-2', supplierCode: 'SUP-COL-1', reference: 'UTR998878', paymentDate: '2026-10-25', currency: 'INR', amount: 2850, invoices: [{ invoiceNumber: 'HX/26-27/001', amount: 2850 }] });
+    // The vendor code (or ERP vendor id) works too, as it does for purchase orders.
+    await api('post', '/payments').send({ erpId: 'PAY-2', supplierCode: vendor.code, reference: 'UTR998878', paymentDate: '2026-10-25', currency: 'INR', amount: 2850, invoices: [{ invoiceNumber: 'HX/26-27/001', amount: 2850 }] });
     row = await db.query.supplierInvoices.findFirst({ where: eq(schema.supplierInvoices.id, invId) });
     expect(row?.status).toBe('PAID');
     const mail = await db.query.emailOutbox.findFirst({ where: eq(schema.emailOutbox.to, 'ops@helix.test'), orderBy: desc(schema.emailOutbox.createdAt) });

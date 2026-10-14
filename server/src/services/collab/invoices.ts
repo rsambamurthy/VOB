@@ -21,8 +21,9 @@ import { supplierLink, supplierRecipients } from '../orders/importer.js';
 import { usersWithPermission } from '../approvers.js';
 import { r4 } from './shipments.js';
 import { langForVendorId, mailDate, mailSupplier, snippet } from '../../i18n/emails.js';
+import { matchVendor } from '../orders/importer.js';
 
-const { purchaseOrders, poLines, shipments, shipmentLines, supplierInvoices, supplierInvoiceLines, supplierPayments, supplierCodes, vendors } = schema;
+const { purchaseOrders, poLines, shipments, shipmentLines, supplierInvoices, supplierInvoiceLines, supplierPayments, vendors } = schema;
 const DAY = 86_400_000;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 /** Invoices that count against the order (everything except rejected / cancelled). */
@@ -297,7 +298,9 @@ export async function recordPayments(tenant: Tenant, items: PaymentInput[]) {
   const out = { created: 0, unchanged: 0, failed: 0, errors: [] as string[] };
   for (const [i, p] of items.entries()) {
     try {
-      const code = await db.query.supplierCodes.findFirst({ where: and(eq(supplierCodes.tenantId, tenant.id), eq(supplierCodes.code, p.supplierCode.trim())) });
+      // Same lookup as purchase orders: a mapped supplier code, else the vendor's ERP id or vendor code.
+      const vendorId = await matchVendor(tenant.id, [p.supplierCode.trim()]);
+      const code = vendorId ? { vendorId } : null;
       if (!code) throw new Error(`supplier code ${p.supplierCode} isn’t linked to a vendor`);
       if (await db.query.supplierPayments.findFirst({ where: and(eq(supplierPayments.tenantId, tenant.id), eq(supplierPayments.erpId, p.erpId)), columns: { id: true } })) { out.unchanged++; continue; }
       const allocated = r2(p.invoices.reduce((t, x) => t + x.amount, 0));

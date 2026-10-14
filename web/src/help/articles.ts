@@ -138,6 +138,10 @@ Changes apply as soon as you click **Save**.`,
 2. When you invite a vendor, **Supplier's language** sets it for that supplier.
 3. Suppliers can switch at any time with the button in the portal header; their choice is kept.
 
+![Choosing the supplier's language when inviting](/help/24-invite-language.jpg)
+
+![An order in the Arabic supplier portal](/help/21-arabic-portal.jpg)
+
 ## Your own fields
 Built-in Gulf wording already has Arabic. For fields, sections, documents and guide items you add, fill in the **Arabic** boxes in Configuration. Leave a box blank to use the built-in Arabic (or English when there is none).
 
@@ -199,6 +203,8 @@ Built-in Gulf wording already has Arabic. For fields, sections, documents and gu
 
 ## Form fields
 The tabs suppliers see are listed on the left; their fields on the right. For each field you can set the label, whether it's required, a format check (GSTIN, PAN, IFSC and so on) and a rule to show it only in some cases, for example only for foreign suppliers. Use **+ Add tab** for a new section.
+
+In a Gulf workspace each field, tab, document and guide item also has **Arabic** boxes for suppliers who use the portal in Arabic. Built-in fields already have Arabic; fill in the boxes for the ones you add. See [Arabic for suppliers](#supplier-language).
 
 ## Publish
 1. Edit anything; the bar at the top shows you have an unpublished draft.
@@ -272,10 +278,11 @@ Every published version is kept with who published it and their note. Click **Re
     id: 'invite-vendor', title: 'Inviting a vendor', audience: ['staff'], perms: ['vendors.create'],
     summary: 'Create a vendor and email them a secure registration link.',
     screens: ['^/staff/vendors/?$'],
-    keywords: 'new vendor add vendor create supplier invite invitation register onboard resend link email contact',
+    keywords: 'new vendor add vendor create supplier invite invitation register onboard resend link email contact language arabic',
     related: ['vendor-list', 'vendor-statuses', 'supplier-signin'],
     body: `1. Go to **Vendors** and click **+ New vendor**.
 2. Enter the vendor name, type (Domestic, Import or Government) and the contact's name, email and mobile.
+   In a Gulf workspace, choose the **Supplier's language** too (English or Arabic) — it sets the invitation, portal and emails. See [Arabic for suppliers](#supplier-language).
 3. Leave **Email the invite link to the contact now** ticked and click **Create & notify contact**.
 
 @video(/help/a-invite.mp4 | Inviting a vendor)
@@ -459,7 +466,7 @@ Suppliers renew a document by sending a change request with the new file.`,
     summary: 'Privacy notice, access requests, erasure and retention.',
     keywords: 'privacy dpdp gdpr consent notice personal data access request download erase erasure delete deletion retention grievance officer anonymise',
     related: ['audit-log', 'supplier-your-data', 'masked-data'],
-    body: `- **Privacy notice**: under Workspace → *Privacy & data retention (DPDP)*. Suppliers accept it before filling the form; editing it creates a new version they accept again. Add your **Grievance officer email** here.
+    body: `- **Privacy notice**: under Workspace → *Privacy & data retention (DPDP)*. Suppliers accept it before filling the form; editing it creates a new version they accept again. Add your **Grievance officer email** here. Gulf workspaces also have a **Privacy notice in Arabic** for suppliers using the portal in Arabic.
 - **Access request**: on a vendor's page, **Download personal data (access request)** gives a JSON file of everything held. Suppliers can download their own from their portal.
 - **Erasure request**: when a supplier asks for deletion, the vendor appears under **Needs attention**. An administrator clicks **Erase personal data…** (reason required; can't be undone) or **Decline with reason…** when records must be kept by law.
 - **Retention**: rejected registrations are erased after 365 days and abandoned ones after 180 days by default. Set 0 to keep.
@@ -634,6 +641,21 @@ To replace a file before submitting, remove it and upload the new one. After app
     related: ['supplier-privacy'],
     body: `- **Download my data** gives you a copy of everything the buyer holds about you.
 - **Withdraw consent & request deletion** asks the buyer to erase your data. Some records of approved suppliers must be kept by law, in which case the buyer will tell you why. Download your data first if you want a copy.`,
+  },
+  {
+    id: 'supplier-portal-language', title: 'Using the portal in Arabic or English', audience: ['supplier'],
+    summary: 'Switch language from the top bar; emails follow your choice.',
+    screens: ['^/vendor', '^/s/', '^/onboard'],
+    keywords: 'language arabic english العربية switch change rtl hijri date email sms',
+    related: ['supplier-sign-in', 'supplier-fill'],
+    body: `Where your customer offers it, you can use the supplier portal in **English or Arabic**.
+
+- Click the language button in the top bar (**العربية** or **English**) at any time. On the sign-in page the same button is above the form.
+- Your choice is remembered: sign-in codes, emails and SMS from the portal come in the same language.
+- In Arabic, dates show the Hijri date beside the Gregorian one. Enter dates as Gregorian in date boxes.
+- Answers you type in Arabic are kept as typed. Choices such as a legal form are stored the same way in both languages, so switching never changes your answers.
+
+![An order in Arabic](/help/21-arabic-portal.jpg)`,
   },
   {
     id: 'supplier-troubleshooting', title: 'Supplier troubleshooting', audience: ['supplier', 'public'],
@@ -812,6 +834,9 @@ Each acceptance — and later each shipment notice and approved invoice — is s
 
 - **Quantity**: never more than ordered (plus tolerance) minus what's already invoiced — these are refused outright. For goods, invoicing more than has been received so far is flagged.
 - **Price**: a unit price above the order price by more than your tolerance (Purchasing setup → **Invoice matching**, default 2%) is flagged.
+
+![An invoice with exceptions under Matching](/help/22-invoice-matching.jpg)
+
 - **Arithmetic and duplicates**: the lines and tax must add up to the invoice total; the same invoice number can't be submitted twice; the same date and amount under another number is flagged.
 - **India e-invoice**: the IRN must be 64 characters. If the supplier pastes the signed QR text, its GSTIN, invoice number, IRN and value are compared with the invoice. (The QR's digital signature isn't verified.)
 

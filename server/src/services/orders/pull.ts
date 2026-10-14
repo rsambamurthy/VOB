@@ -78,6 +78,11 @@ export async function loadSamplePurchaseOrders(tenant: Tenant, by: string, count
   const codes = await db.select().from(supplierCodes).where(eq(supplierCodes.tenantId, tenant.id));
   const base = Date.now() % 100000;
   const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  // Local tax and delivery sites so a Gulf demo doesn't show Indian GST and plants.
+  const india = (tenant.country ?? 'IN') === 'IN';
+  const vat = ({ SA: 15, AE: 5, BH: 10, OM: 5 } as Record<string, number>)[tenant.country ?? ''];
+  const tax = india ? { name: 'GST 18%', rate: 18 } : vat ? { name: `VAT ${vat}%`, rate: vat } : { name: 'No VAT', rate: 0 };
+  const sitesFor = india ? [['PUN1', 'Pune Plant'], ['CHN1', 'Chennai Warehouse']] : [['MAIN', 'Main Warehouse'], ['PLT1', 'Plant 1']];
   const pos = Array.from({ length: count }, (_, i) => {
     const v = vs[i % vs.length];
     const vendorNum = codes.find((c) => c.vendorId === v.id)?.code ?? v.erpVendorId ?? v.code;
@@ -85,8 +90,8 @@ export async function loadSamplePurchaseOrders(tenant: Tenant, by: string, count
     const lines = (picks.length ? picks : [ITEMS[i % ITEMS.length]]).map((it, k) => {
       const qty = it.item ? [500, 1200, 2500, 40, 12][(i + k) % 5] : 1;
       return { PO_LINE_ID: `${base + i * 10 + k + 1}`, LINE_NUM: k + 1, ITEM_NUMBER: it.item, ITEM_DESCRIPTION: it.desc, UNIT_MEAS_LOOKUP_CODE: it.uom, QUANTITY: qty, UNIT_PRICE: it.price,
-        CATEGORY: `${it.cat}.GENERAL`, LINE_TYPE: it.item ? 'Goods' : 'Services', TAX_NAME: 'GST 18%', TAX_RATE: 18, HSN_CODE: it.hsn, CLOSED_CODE: 'OPEN', CANCEL_FLAG: 'N',
-        SHIPMENTS: [{ LINE_LOCATION_ID: `${base + i * 10 + k + 1}01`, SHIP_TO_ORGANIZATION_CODE: k % 2 ? 'CHN1' : 'PUN1', SHIP_TO_ORGANIZATION_NAME: k % 2 ? 'Chennai Warehouse' : 'Pune Plant', NEED_BY_DATE: day(14 + i * 3 + k), QUANTITY: qty, QUANTITY_RECEIVED: 0, QUANTITY_BILLED: 0, QTY_RCV_TOLERANCE: 5 }] };
+        CATEGORY: `${it.cat}.GENERAL`, LINE_TYPE: it.item ? 'Goods' : 'Services', TAX_NAME: tax.name, TAX_RATE: tax.rate, HSN_CODE: india ? it.hsn : null, CLOSED_CODE: 'OPEN', CANCEL_FLAG: 'N',
+        SHIPMENTS: [{ LINE_LOCATION_ID: `${base + i * 10 + k + 1}01`, SHIP_TO_ORGANIZATION_CODE: sitesFor[k % 2][0], SHIP_TO_ORGANIZATION_NAME: sitesFor[k % 2][1], NEED_BY_DATE: day(14 + i * 3 + k), QUANTITY: qty, QUANTITY_RECEIVED: 0, QUANTITY_BILLED: 0, QTY_RCV_TOLERANCE: 5 }] };
     });
     return { PO_HEADER_ID: `${900000 + base + i}`, SEGMENT1: `${4500 + (base % 1000)}${String(i + 1).padStart(3, '0')}`, REVISION_NUM: 0, TYPE_LOOKUP_CODE: 'STANDARD',
       VENDOR_NUM: vendorNum, VENDOR_SITE_CODE: 'MAIN', ORG_ID: '101', OPERATING_UNIT: `${tenant.name} ${packFor(tenant.country).name}`, AGENT_NAME: by, CURRENCY_CODE: packFor(tenant.country).currency ?? 'USD',

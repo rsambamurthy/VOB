@@ -62,7 +62,7 @@ export async function notifySupplierOfPo(tenant: Tenant, po: PurchaseOrder, kind
 }
 
 /** Finds the vendor for a set of ERP supplier identifiers. */
-async function matchVendor(tenantId: string, codes: string[]) {
+export async function matchVendor(tenantId: string, codes: string[]) {
   if (!codes.length) return null;
   const mapped = await db.select({ vendorId: supplierCodes.vendorId }).from(supplierCodes).where(and(eq(supplierCodes.tenantId, tenantId), inArray(supplierCodes.code, codes))).limit(1);
   if (mapped[0]) return mapped[0].vendorId;
