@@ -15,6 +15,7 @@ import { CheckBadge } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
 import { rememberWorkspace, SupplierTopbar, supplierSignOut } from '../orders/SupplierShell';
+import { PoweredBy } from '../components/Brand';
 
 type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string } & Partial<LocaleInfo>; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
@@ -320,6 +321,7 @@ export function VendorPortal() {
           </aside>
         </div>
       </div>
+      <footer className="page-foot"><PoweredBy /></footer>
 
       {me.privacy.needsConsent && <ConsentModal buyer={me.buyer.name} privacy={me.privacy} onDone={() => load()} />}
       {showNotice && <Modal title={`Privacy notice — ${me.buyer.name}`} wide onClose={() => setShowNotice(false)}><div className="notice-text">{me.privacy.text}</div></Modal>}
@@ -356,6 +358,7 @@ export function VendorSignedOut() {
       <h2>You’re signed out</h2>
       <p className="muted">Open the invitation link from your email again, or sign in with your email address. You’ll get a new one-time code.</p>
       {ws && <a className="btn btn-primary btn-block" href={`/s/${ws}${next ? `?next=${encodeURIComponent(next)}` : ''}`}>Sign in with your email</a>}
+      <div className="auth-foot"><PoweredBy /></div>
     </div></div>
   );
 }

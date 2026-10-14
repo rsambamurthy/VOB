@@ -6,6 +6,7 @@ import { monogram } from '../../lib/format';
 import type { Branding } from '../../lib/types';
 import { Alert } from '../../components/ui';
 import { rememberWorkspace } from '../../orders/SupplierShell';
+import { PoweredBy, PRODUCT, ProductName } from '../../components/Brand';
 
 /** Returning suppliers sign in with their email and a one-time code: /s/:workspace */
 export function SupplierLogin() {
@@ -45,11 +46,12 @@ export function SupplierLogin() {
       <div className="card login-card split">
         <div className="login-side">
           <div className="brand brand-lg light">
-            {ws?.branding.logoUrl ? <img src={ws.branding.logoUrl} alt="" className="brand-logo" /> : <span className="brand-mark">{monogram(ws?.branding.productName)}</span>}
-            <span>{ws?.branding.productName ?? 'VendorGate'}</span>
+            {ws?.branding.logoUrl ? <img src={ws.branding.logoUrl} alt="" className="brand-logo" /> : (ws?.branding.productName ?? PRODUCT) !== PRODUCT && <span className="brand-mark">{monogram(ws?.branding.productName)}</span>}
+            <ProductName name={ws?.branding.productName} light />
           </div>
           <h2>{ws ? `${ws.name} supplier portal` : 'Supplier portal'}</h2>
           <p>See and accept purchase orders, and keep your company details up to date.</p>
+          <PoweredBy light />
         </div>
         <div className="login-main">
           {!ws && !error && <div className="spinner" />}

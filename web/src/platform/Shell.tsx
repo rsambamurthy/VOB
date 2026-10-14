@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { usePlatform } from './session';
+import { PoweredBy, Wordmark } from '../components/Brand';
 
 export function PlatformShell() {
   const { me, signOut } = usePlatform();
@@ -10,8 +11,7 @@ export function PlatformShell() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden>VG</span>
-          <span className="brand-text"><span>VendorGate</span><span className="brand-tenant">Platform console</span></span>
+          <span className="brand-text"><Wordmark light /><span className="brand-tenant">Platform console</span></span>
         </div>
         <nav aria-label="Platform">
           <NavLink to="/platform" end>Overview</NavLink>
@@ -28,6 +28,7 @@ export function PlatformShell() {
             <div><div className="me-name">{me.admin.name}</div><div className="me-role">{me.admin.email}</div></div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={async () => { await signOut(); nav('/platform/login'); }}>Sign out</button>
+          <PoweredBy light />
         </div>
       </aside>
       <main className="main" id="main"><Outlet /></main>

@@ -39,7 +39,7 @@ export function RequireStaff({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-const DEFAULT_BRAND = '#6d1a73';
+const DEFAULT_BRAND = '#1f2758';
 export function applyBranding(b?: Branding) {
   const color = b?.primaryColor && /^#[0-9a-f]{6}$/i.test(b.primaryColor) ? b.primaryColor : DEFAULT_BRAND;
   document.documentElement.style.setProperty('--brand', color);

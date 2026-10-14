@@ -83,7 +83,7 @@ export async function seed() {
     id: 'compliance', label: 'Compliance Review', roleKey: 'COMPLIANCE', slaHours: 72,
     rule: { match: 'all', conditions: [{ field: 'vendor.vendorType', op: 'eq', value: 'IMPORT' }] },
   });
-  const { tenant: acme, role } = await makeTenant('acme', 'Acme Industries Ltd', { productName: 'VendorGate', primaryColor: '#6d1a73' },
+  const { tenant: acme, role } = await makeTenant('acme', 'Acme Industries Ltd', { productName: 'VendorGate', primaryColor: '#1f2758' },
     [{ key: 'COMPLIANCE', name: 'Compliance Officer', description: 'Extra checks for foreign vendors', permissions: ['vendors.view'] }], acmeConfig);
   const admin = await makeUser(acme, 'Anita Rao', 'admin@acme.test', [role('ADMIN')], hash);
   await makeUser(acme, 'Deepak Menon', 'vendoradmin@acme.test', [role('VENDOR_ADMIN')], hash);

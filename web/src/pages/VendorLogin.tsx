@@ -5,6 +5,7 @@ import { applyBranding } from '../lib/session';
 import { monogram } from '../lib/format';
 import type { Branding } from '../lib/types';
 import { Alert } from '../components/ui';
+import { PoweredBy, PRODUCT, ProductName } from '../components/Brand';
 
 export function VendorLogin() {
   const { token = '' } = useParams();
@@ -37,11 +38,12 @@ export function VendorLogin() {
       <div className="card login-card split">
         <div className="login-side">
           <div className="brand brand-lg light">
-            {invite?.buyer.branding.logoUrl ? <img src={invite.buyer.branding.logoUrl} alt="" className="brand-logo" /> : <span className="brand-mark">{monogram(invite?.buyer.branding.productName)}</span>}
-            <span>{invite?.buyer.branding.productName ?? 'VendorGate'}</span>
+            {invite?.buyer.branding.logoUrl ? <img src={invite.buyer.branding.logoUrl} alt="" className="brand-logo" /> : (invite?.buyer.branding.productName ?? PRODUCT) !== PRODUCT && <span className="brand-mark">{monogram(invite?.buyer.branding.productName)}</span>}
+            <ProductName name={invite?.buyer.branding.productName} light />
           </div>
           <h2>{invite ? `${invite.buyer.name} supplier registration` : 'Supplier registration'}</h2>
           <p>Register once, keep your details up to date, and track your approval in one place.</p>
+          <PoweredBy light />
         </div>
         <div className="login-main">
           {!invite && !error && <div className="spinner" />}

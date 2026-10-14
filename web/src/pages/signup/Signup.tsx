@@ -4,6 +4,7 @@ import { api, ApiError, lastWorkspace } from '../../lib/api';
 import { useSession } from '../../lib/session';
 import { Alert } from '../../components/ui';
 import { PasswordHint } from '../auth/AuthLayout';
+import { PoweredBy, Wordmark } from '../../components/Brand';
 
 interface Config { enabled: boolean; plan: string; trialDays: number | null; termsUrl: string | null; workEmailOnly: boolean; countries?: { code: string; name: string }[] }
 
@@ -12,7 +13,7 @@ function SignupLayout({ cfg, children }: { cfg?: Config; children: ReactNode }) 
     <div className="center-page login-bg">
       <div className="card login-card split signup-card">
         <div className="login-side">
-          <div className="brand brand-lg light"><span className="brand-mark">VG</span><span>VendorGate</span></div>
+          <div className="brand brand-lg light"><Wordmark light size={30} /></div>
           <h2>Vendor onboarding your finance team can trust</h2>
           <ul className="signup-points">
             <li>Suppliers register themselves through a secure link</li>
@@ -21,6 +22,7 @@ function SignupLayout({ cfg, children }: { cfg?: Config; children: ReactNode }) 
             <li>Approved vendors sent straight to your ERP</li>
           </ul>
           {cfg?.trialDays && <p className="signup-trial">Free for {cfg.trialDays} days. No card needed.</p>}
+          <PoweredBy light />
         </div>
         <div className="login-main">{children}</div>
       </div>
@@ -68,7 +70,7 @@ export function Signup() {
   if (!cfg) return <div className="center-page"><div className="spinner" /></div>;
   if (!cfg.enabled) return (
     <SignupLayout>
-      <h2 className="auth-title">Get started with VendorGate</h2>
+      <h2 className="auth-title">Get started with <Wordmark /></h2>
       <p>We set up new workspaces personally at the moment. Write to us and we’ll have yours ready within a day.</p>
       <p className="small muted">Already have a workspace? <Link to="/login">Sign in</Link></p>
     </SignupLayout>

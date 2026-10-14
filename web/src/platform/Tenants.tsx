@@ -122,7 +122,7 @@ function NewTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <select id="nt-plan" value={f.plan} onChange={set('plan')}>{Object.entries(PLAN_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         {f.plan === 'trial' && <div className="field"><label htmlFor="nt-td">Trial length (days)</label><input id="nt-td" type="number" min={1} max={365} value={f.trialDays} onChange={set('trialDays')} /></div>}
         <div className="field"><label htmlFor="nt-pn">Product name shown to them (optional)</label><input id="nt-pn" value={f.productName} onChange={set('productName')} placeholder="VendorGate" maxLength={40} /></div>
-        <div className="field"><label htmlFor="nt-col">Brand colour (optional)</label><input id="nt-col" value={f.primaryColor} onChange={set('primaryColor')} placeholder="#6d1a73" maxLength={7} /></div>
+        <div className="field"><label htmlFor="nt-col">Brand colour (optional)</label><input id="nt-col" value={f.primaryColor} onChange={set('primaryColor')} placeholder="#1f2758" maxLength={7} /></div>
         <div className="field field-wide"><label htmlFor="nt-notes">Internal notes (only visible here)</label><textarea id="nt-notes" rows={2} value={f.notes} onChange={set('notes')} placeholder="Deal, contact person, special terms…" /></div>
       </form>
     </Modal>

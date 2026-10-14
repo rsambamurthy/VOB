@@ -4,7 +4,7 @@ import type { TenantBranding } from '../../db/schema.js';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
 export function renderEmail(opts: { subject: string; body: string; link?: string | null; tenantName?: string; branding?: TenantBranding }) {
-  const color = /^#[0-9a-f]{6}$/i.test(opts.branding?.primaryColor ?? '') ? opts.branding!.primaryColor! : '#6d1a73';
+  const color = /^#[0-9a-f]{6}$/i.test(opts.branding?.primaryColor ?? '') ? opts.branding!.primaryColor! : '#1f2758';
   const product = opts.branding?.productName ?? 'VendorGate';
   const sender = opts.tenantName ? `${opts.tenantName} · ${product}` : product;
   const paragraphs = esc(opts.body).split(/\n{2,}/).map((p) => `<p style="margin:0 0 14px">${p.replace(/\n/g, '<br>')}</p>`).join('');
@@ -20,8 +20,8 @@ export function renderEmail(opts: { subject: string; body: string; link?: string
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e6e2ea">
 <tr><td style="background:${color};padding:14px 22px;color:#fff;font-weight:700;font-size:15px">${logo}${esc(sender)}</td></tr>
 <tr><td style="padding:22px;font-size:14px;line-height:1.55">${paragraphs}${button}</td></tr>
-<tr><td style="padding:12px 22px;background:#fcfbfd;border-top:1px solid #e6e2ea;font-size:11.5px;color:#6f6a78">This is an automated message from ${esc(sender)}. Please don't reply with passwords or codes.</td></tr>
+<tr><td style="padding:12px 22px;background:#fcfbfd;border-top:1px solid #e6e2ea;font-size:11.5px;color:#6f6a78">This is an automated message from ${esc(sender)}. Please don't reply with passwords or codes.<br><span style="color:#8a8595">Powered by <strong style="font-family:Georgia,serif;color:#1f2758">VendorGate</strong> · <a href="https://integratatech.ai" style="color:#8a8595">Integratatech.ai Pvt Ltd</a></span></td></tr>
 </table></td></tr></table></body></html>`;
-  const text = `${opts.body}${opts.link ? `\n\n${linkText}: ${opts.link}` : ''}\n\n— ${sender}`;
+  const text = `${opts.body}${opts.link ? `\n\n${linkText}: ${opts.link}` : ''}\n\n— ${sender}\nPowered by VendorGate · Integratatech.ai Pvt Ltd`;
   return { html, text };
 }

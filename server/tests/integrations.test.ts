@@ -49,7 +49,8 @@ describe('email', () => {
     expect(row).toMatchObject({ status: 'SENT', providerMessageId: 'msg-1', attempts: 1 });
     expect(sent[0].from).toContain('Acme Industries Ltd via');
     expect(sent[0].html).toContain('Open the supplier portal');
-    expect(sent[0].html).toContain('#6d1a73');
+    expect(sent[0].html).toContain('#1f2758');
+    expect(sent[0].html).toContain('Integratatech.ai Pvt Ltd');
     expect(sent[0].text).toContain('http://app.test/onboard/abc');
 
     setEmailDriver({ name: 'fake', live: true, async send() { throw new Error('SMTP 550 mailbox unavailable'); } });

@@ -10,7 +10,7 @@ export function Workspace() {
   const t = me!.tenant;
   const welcome = useSearchParams()[0].get('welcome') === '1';
   const [f, setF] = useState({
-    name: t.name, productName: t.branding.productName ?? '', primaryColor: t.branding.primaryColor ?? '#6d1a73', logoUrl: t.branding.logoUrl ?? '',
+    name: t.name, productName: t.branding.productName ?? '', primaryColor: t.branding.primaryColor ?? '#1f2758', logoUrl: t.branding.logoUrl ?? '',
     requireMfa: !!t.settings.requireMfa, sessionHours: t.settings.sessionHours ?? 12, reKycMonths: t.settings.reKycMonths ?? 12, skipWeekends: !!t.settings.skipWeekends,
   });
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();

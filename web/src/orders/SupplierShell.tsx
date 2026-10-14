@@ -7,6 +7,7 @@ import { monogram, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import type { Branding, VendorStatus } from '../lib/types';
 import { StatusBadge } from '../components/ui';
 import { useHelp } from '../help/HelpPanel';
+import { PoweredBy, PRODUCT } from '../components/Brand';
 
 export interface SupplierInfo {
   buyer: { name: string; branding: Branding; workspace?: string } & Partial<LocaleInfo>;
@@ -28,7 +29,7 @@ export function SupplierTopbar({ info }: { info: SupplierInfo }) {
   return (
     <header className="topbar">
       <div className="brand">
-        {info.buyer.branding.logoUrl ? <img src={info.buyer.branding.logoUrl} alt="" className="brand-logo" /> : <span className="brand-mark">{monogram(info.buyer.branding.productName)}</span>}
+        {info.buyer.branding.logoUrl ? <img src={info.buyer.branding.logoUrl} alt="" className="brand-logo" /> : (info.buyer.branding.productName ?? PRODUCT) !== PRODUCT && <span className="brand-mark">{monogram(info.buyer.branding.productName)}</span>}
         <span>{info.buyer.name}</span><span className="muted small hide-sm">· Supplier portal</span>
       </div>
       {info.orders.enabled && (
@@ -68,6 +69,7 @@ export function SupplierShell({ children }: { children: ReactNode }) {
       <div className="vendor-app">
         <SupplierTopbar info={info} />
         {children}
+        <footer className="page-foot"><PoweredBy /></footer>
       </div>
     </Ctx.Provider>
   );

@@ -1,5 +1,5 @@
 :root {
-  --brand: #6d1a73;
+  --brand: #1f2758;
   --brand-600: color-mix(in srgb, var(--brand) 82%, black);
   --brand-50: color-mix(in srgb, var(--brand) 6%, white);
   --brand-100: color-mix(in srgb, var(--brand) 16%, white);
@@ -583,3 +583,20 @@ fieldset.field .radio, .modal-body > .checkbox { display: flex; flex-wrap: wrap;
   .staff-sidebar .rail-btn { display: none; }
   .staff-sidebar .me { display: flex; }
 }
+
+/* ---- VendorGate wordmark and "Powered by" (Integrata identity) ---- */
+@font-face { font-family: 'Philosopher'; font-style: normal; font-weight: 700; font-display: swap; src: url('/brand/fonts/philosopher-latin-700-normal.woff2') format('woff2'); }
+.vg-wordmark { font-family: 'Philosopher', Georgia, serif; font-weight: 700; color: #1f2758; letter-spacing: 0; white-space: nowrap; }
+.vg-wordmark::after { content: ''; display: inline-block; width: .17em; height: .17em; border-radius: 50%; background: #ef2227; margin-left: .07em; vertical-align: .62em; }
+.vg-wordmark.light { color: #fff; }
+.brand .vg-wordmark { font-size: 1.3em; line-height: 1; }
+.powered-by { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); text-decoration: none; }
+.powered-by:hover { color: var(--ink); text-decoration: none; }
+.powered-by .vg-wordmark { font-size: 1.15em; }
+.powered-by .pb-mark { height: 22px; width: auto; flex: none; }
+.powered-by.light { color: rgba(255,255,255,.7); } .powered-by.light:hover { color: #fff; }
+.powered-by.compact { justify-content: center; }
+.page-foot { display: flex; justify-content: center; padding: 18px 16px 26px; }
+.auth-foot { display: flex; justify-content: center; margin-top: 16px; }
+.sidebar-foot .powered-by { padding: 4px 6px; font-size: 11px; line-height: 1.35; }
+.login-side .powered-by { margin-top: auto; padding-top: 18px; }

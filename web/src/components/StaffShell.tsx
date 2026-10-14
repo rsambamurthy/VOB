@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { NavIcon } from './NavIcon';
 import { useSession } from '../lib/session';
 import { monogram, loc } from '../lib/format';
+import { PoweredBy, PRODUCT, ProductName } from './Brand';
 
 interface Item { to: string; label: string; icon: string; end?: boolean; show: boolean; tag?: string }
 interface Group { key: string; label: string; items: Item[] }
@@ -67,8 +68,8 @@ export function StaffShell() {
     <div className={`shell ${rail ? 'shell-rail' : ''}`}>
       <aside className={`sidebar staff-sidebar ${menuOpen ? 'menu-open' : ''}`}>
         <div className="brand">
-          {me.tenant.branding.logoUrl ? <img src={me.tenant.branding.logoUrl} alt="" className="brand-logo" /> : <span className="brand-mark" aria-hidden>{monogram(product)}</span>}
-          <span className="brand-text"><span>{product}</span><span className="brand-tenant">{me.tenant.name}</span></span>
+          {me.tenant.branding.logoUrl ? <img src={me.tenant.branding.logoUrl} alt="" className="brand-logo" /> : (product !== PRODUCT || rail) && <span className="brand-mark" aria-hidden>{monogram(product)}</span>}
+          <span className="brand-text"><ProductName name={product} light /><span className="brand-tenant">{me.tenant.name}</span></span>
           <button className="icon-btn menu-btn" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><NavIcon name="menu" /></button>
         </div>
         <nav aria-label="Main" className="staff-nav">
@@ -98,6 +99,7 @@ export function StaffShell() {
           <button className="btn btn-ghost btn-sm rail-btn" onClick={() => update({ ...prefs, rail: !rail })} aria-label={rail ? 'Expand sidebar' : 'Collapse sidebar'} title={rail ? 'Expand sidebar' : 'Collapse sidebar'}>
             <NavIcon name={rail ? 'expand' : 'collapse'} size={16} />{!rail && <span>Collapse</span>}
           </button>
+          <PoweredBy light compact={rail} />
         </div>
       </aside>
       <main className="main" id="main">
