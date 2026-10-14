@@ -143,6 +143,7 @@ export const bahrainPack: CountryPack = {
   name: BAHRAIN,
   extends: 'GCC',
   homeCountry: true,
+  registerIds: [{ label: 'CR number', field: 'tax.crNumber' }, { label: 'VAT account', field: 'tax.vatNumber' }],
   currency: 'BHD',
   locale: 'en-GB',
   mobile: { dialCode: '973', nationalDigits: 8, pattern: /^[36]\d{7}$/, example: '3xxx xxxx' },

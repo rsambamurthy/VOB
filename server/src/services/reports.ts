@@ -9,6 +9,8 @@ import type { Profile } from '../lib/profileEngine.js';
 import { directApprovers } from './approvers.js';
 import { flagsForMany, daysUntil } from './lifecycle.js';
 import { getConfig } from './config.js';
+import { DEFAULT_HOME, packFor, vendorTypesFor } from '../countries/registry.js';
+import { maskField } from '../lib/fieldCrypto.js';
 
 const { vendors, approvalSteps, changeRequests, changeRequestSteps, documents, users, roles, erpSyncs } = schema;
 const DAY = 86_400_000, HOUR = 3_600_000;
@@ -162,9 +164,18 @@ export async function dashboard(tenantId: string, f: Filters) {
 
 type Cell = string | number | Date | null;
 interface Column { key: string; label: string; width?: number; type?: 'date' | 'datetime' | 'number' }
-interface ReportDef { title: string; description: string; usesRange: boolean; usesDays?: boolean; columns: Column[]; rows: (tenantId: string, f: Filters) => Promise<Record<string, Cell>[]> }
+interface ReportDef { title: string; description: string; usesRange: boolean; usesDays?: boolean; columns: Column[]; columnsFor?: (country: string) => Column[]; rows: (tenantId: string, f: Filters, country: string) => Promise<Record<string, Cell>[]> }
 
 const vendorCols: Column[] = [{ key: 'code', label: 'Vendor code', width: 12 }, { key: 'vendor', label: 'Vendor', width: 32 }];
+/** Vendor register columns: the id columns come from the workspace's country pack (GSTIN/PAN in India, CR/VAT in Saudi Arabia…). */
+function registerColumns(country: string): Column[] {
+  const ids = packFor(country).registerIds ?? [];
+  return [...vendorCols, { key: 'type', label: 'Type', width: 12 }, { key: 'status', label: 'Status', width: 10 }, { key: 'country', label: 'Country', width: 14 },
+    ...ids.map((d, n) => ({ key: `id${n}`, label: d.label, width: 18 })),
+    { key: 'bank', label: 'Bank', width: 20 }, { key: 'account', label: 'Account / IBAN (masked)', width: 18 }, { key: 'bankCode', label: 'IFSC / SWIFT', width: 14 }, { key: 'city', label: 'City', width: 14 }, { key: 'state', label: 'State / region', width: 16 },
+    { key: 'contact', label: 'Contact', width: 20 }, { key: 'email', label: 'Email', width: 26 }, { key: 'mobile', label: 'Mobile', width: 14 }, { key: 'approved', label: 'Approved on', type: 'date', width: 12 },
+    { key: 'erpId', label: 'ERP vendor id', width: 14 }, { key: 'erpStatus', label: 'ERP sync', width: 10 }, { key: 'nextReview', label: 'Next re-check', type: 'date', width: 13 }];
+}
 const hoursBetween = (a?: Date | null, b?: Date | null) => (a && b ? round1((b.getTime() - a.getTime()) / HOUR) : null);
 const daysBetween = (a?: Date | null, b?: Date | null) => (a && b ? round1((b.getTime() - a.getTime()) / DAY) : null);
 
@@ -177,17 +188,19 @@ async function userNames(tenantId: string) {
 
 export const REPORTS: Record<string, ReportDef> = {
   'vendor-register': {
-    title: 'Vendor register', description: 'All approved vendors with key details. PAN and bank account numbers are masked.', usesRange: false,
-    columns: [...vendorCols, { key: 'type', label: 'Type', width: 12 }, { key: 'status', label: 'Status', width: 10 }, { key: 'gstin', label: 'GSTIN', width: 18 }, { key: 'pan', label: 'PAN (masked)', width: 14 },
-      { key: 'bank', label: 'Bank', width: 20 }, { key: 'account', label: 'Account (masked)', width: 16 }, { key: 'ifsc', label: 'IFSC / routing', width: 14 }, { key: 'city', label: 'City', width: 14 }, { key: 'state', label: 'State', width: 16 },
-      { key: 'contact', label: 'Contact', width: 20 }, { key: 'email', label: 'Email', width: 26 }, { key: 'mobile', label: 'Mobile', width: 14 }, { key: 'approved', label: 'Approved on', type: 'date', width: 12 },
-      { key: 'erpId', label: 'ERP vendor id', width: 14 }, { key: 'erpStatus', label: 'ERP sync', width: 10 }, { key: 'nextReview', label: 'Next re-check', type: 'date', width: 13 }],
-    rows: async (tenantId, f) => {
+    title: 'Vendor register', description: 'All approved vendors with key details. Bank accounts and personal tax ids are masked.', usesRange: false,
+    columns: registerColumns(DEFAULT_HOME),
+    columnsFor: registerColumns,
+    rows: async (tenantId, f, country) => {
+      const ids = packFor(country).registerIds ?? [];
+      const typeLabel = new Map(vendorTypesFor(country).map((t) => [t.value, t.label]));
       const rows = await db.query.vendors.findMany({ where: and(eq(vendors.tenantId, tenantId), eq(vendors.status, 'APPROVED'), ...vt(f)), orderBy: asc(vendors.code) });
       return rows.map((v) => {
-        const p = v.profile as Profile; const b = p.basic ?? {}, bank = p.bank ?? {}, tax = p.tax ?? {};
-        return { code: v.code, vendor: v.name, type: v.vendorType, status: v.blockedAt ? 'Blocked' : 'Active', gstin: str(tax.gstin), pan: mask(tax.pan, 3, 1),
-          bank: str(bank.bankName), account: mask(bank.accountNumber, 0, 4), ifsc: str(bank.ifsc) || str(bank.routingNumber) || str(bank.swift), city: str(b.district), state: str(b.region),
+        const p = v.profile as Profile; const b = p.basic ?? {}, bank = p.bank ?? {};
+        const idCells = Object.fromEntries(ids.map((d, n) => { const [sec, k] = d.field.split('.'); const val = p[sec]?.[k]; return [`id${n}`, d.masked ? maskField(d.field, val) : str(val)]; }));
+        const account = bank.accountNumber ? maskField('bank.accountNumber', bank.accountNumber) : maskField('bank.iban', bank.iban);
+        return { code: v.code, vendor: v.name, type: typeLabel.get(v.vendorType) ?? v.vendorType, status: v.blockedAt ? (v.blockSource === 'EXPIRY' ? 'On hold' : 'Blocked') : 'Active', country: str(b.supplierCountry), ...idCells,
+          bank: str(bank.bankName), account, bankCode: str(bank.ifsc) || str(bank.routingNumber) || str(bank.swift), city: str(b.district), state: str(b.region),
           contact: `${v.contactFirstName} ${v.contactLastName}`, email: v.contactEmail, mobile: v.contactMobile, approved: v.decidedAt, erpId: v.erpVendorId ?? '', erpStatus: v.erpSyncStatus ?? '', nextReview: v.nextReviewAt };
       });
     },
@@ -293,12 +306,13 @@ export const REPORTS: Record<string, ReportDef> = {
   },
 };
 
-export const reportList = () => Object.entries(REPORTS).map(([key, r]) => ({ key, title: r.title, description: r.description, usesRange: r.usesRange, usesDays: !!r.usesDays, columns: r.columns }));
+export const reportList = (country = DEFAULT_HOME) => Object.entries(REPORTS).map(([key, r]) => ({ key, title: r.title, description: r.description, usesRange: r.usesRange, usesDays: !!r.usesDays, columns: r.columnsFor?.(country) ?? r.columns }));
 
-export async function runReport(tenantId: string, key: string, f: Filters) {
-  const def = REPORTS[key];
-  if (!def) return null;
-  const rows = (await def.rows(tenantId, f)).slice(0, 20000);
+export async function runReport(tenantId: string, key: string, f: Filters, country: string = DEFAULT_HOME) {
+  const base = REPORTS[key];
+  if (!base) return null;
+  const def = { ...base, columns: base.columnsFor?.(country) ?? base.columns };
+  const rows = (await base.rows(tenantId, f, country)).slice(0, 20000);
   return { def, rows };
 }
 

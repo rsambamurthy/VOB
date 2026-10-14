@@ -17,7 +17,7 @@ export const ErpBadge = ({ status }: { status: string | null }) => {
   const [label, cls] = LABEL[status] ?? [status, ''];
   return <span className={`badge ${cls}`}>{status === 'FAILED' ? '⚠ ' : ''}{label}</span>;
 };
-const CONNECTOR: Record<string, string> = { oracle: 'Oracle EBS', webhook: 'Webhook', csv: 'CSV file', none: 'Not connected' };
+const CONNECTOR: Record<string, string> = { oracle: 'Oracle EBS', sap: 'SAP S/4HANA', dynamics: 'Dynamics 365', webhook: 'Webhook', csv: 'CSV file', none: 'Not connected' };
 
 /** Sidebar card on an approved vendor: ERP sync state, push, retry. */
 export function ErpCard({ vendorId, onFlash, canConfigure }: { vendorId: string; onFlash: (f: { kind: 'success' | 'error'; text: string }) => void; canConfigure: boolean }) {

@@ -1,7 +1,7 @@
 /** Workspace administration: users, roles, workspace settings, audit log. */
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, asc, count, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, revokeUserSessions, staffCtx } from '../auth/session.js';
@@ -9,13 +9,16 @@ import { ALL_PERMISSIONS, PERMISSIONS } from '../lib/permissions.js';
 import { audit } from '../lib/audit.js';
 import { createStaffUser, sendStaffInvite } from '../services/users.js';
 import { rolesInUse } from '../services/config.js';
-import { emailStatus } from '../integrations/email/index.js';
+import { emailStatus, senderFor } from '../integrations/email/index.js';
+import { checkDomain, createDomain, deleteDomain, unsuppress } from '../integrations/email/resend.js';
 import { sendMail } from '../lib/mailer.js';
 import { sendSms, smsStatus } from '../integrations/sms/index.js';
 import { storageCheck, storageStatus } from '../integrations/storage/index.js';
 import { kycStatus } from '../integrations/kyc/index.js';
-import { packFor } from '../countries/registry.js';
+import { homeCountries, packFor } from '../countries/registry.js';
+import { countryChangeBlocker, setHomeCountry } from '../services/tenants.js';
 import { aiStatus } from '../integrations/ai/index.js';
+import { helpAnswerer } from '../integrations/ai/helpAnswer.js';
 import { queueRunning } from '../jobs/queue.js';
 import { env } from '../lib/env.js';
 import { assertCanAddUser, assertFeature } from '../services/limits.js';
@@ -177,12 +180,15 @@ adminRouter.patch('/tenant', requireStaff('tenant.settings'), ah(async (req, res
       primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value like #6d1a73').optional(),
       logoUrl: z.string().url().max(500).optional().or(z.literal('')),
     }).optional(),
-    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
+    email: z.object({ fromName: z.string().trim().max(80).optional(), replyTo: z.string().trim().email('Enter a valid reply-to address').max(200).optional().or(z.literal('')) }).optional(),
+    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), helpAi: z.boolean().optional(), priceTolerancePct: z.number().min(0).max(50).optional(), einvoiceRequired: z.boolean().optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
   }).parse(req.body);
+  if (input.settings?.requireMfa === false && s.tenant.settings.mfaEnforcedByPlatform) throw new HttpError(409, 'Two-factor authentication is required for this workspace by VendorGate and can’t be turned off here');
+  const email = input.email ? { ...(s.tenant.settings.email ?? {}), fromName: input.email.fromName || undefined, replyTo: input.email.replyTo || undefined } : undefined;
   await db.update(tenants).set({
     ...(input.name ? { name: input.name } : {}),
     ...(input.branding ? { branding: { ...s.tenant.branding, ...input.branding } } : {}),
-    ...(input.settings ? { settings: { ...s.tenant.settings, ...input.settings } } : {}),
+    ...(input.settings || email ? { settings: { ...s.tenant.settings, ...(input.settings ?? {}), ...(email ? { email } : {}) } } : {}),
   }).where(eq(tenants.id, s.tenant.id));
   await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'WORKSPACE_SETTINGS_UPDATED', detail: input, ip: req.ip });
   res.json({ ok: true });
@@ -198,6 +204,73 @@ adminRouter.get('/audit', requireStaff('audit.view'), ah(async (req, res) => {
   res.json({ rows: rows.slice(0, size), hasMore: rows.length > size, page });
 }));
 
+/* ---------- Home country (set once, before anything depends on it) ---------- */
+
+adminRouter.get('/tenant/country', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const { tenant } = staffCtx(req);
+  const blocker = await countryChangeBlocker(tenant);
+  res.json({ country: tenant.country, countryName: packFor(tenant.country).name, confirmed: !!tenant.settings.countryConfirmed, canChange: !blocker, reason: blocker, countries: homeCountries().map((c) => ({ code: c.code, name: c.name })) });
+}));
+adminRouter.post('/tenant/country', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { country } = z.object({ country: z.string().length(2) }).parse(req.body);
+  await setHomeCountry(s.tenant, country, s.user.name);
+  res.json({ ok: true });
+}));
+
+/* ---------- Email: sender, own domain, bounced addresses ---------- */
+
+adminRouter.get('/email', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const { tenant } = staffCtx(req);
+  const bounced = await db.select({ id: schema.vendors.id, code: schema.vendors.code, name: schema.vendors.name, email: schema.vendors.contactEmail, at: schema.vendors.emailBouncedAt, reason: schema.vendors.emailBounceReason })
+    .from(schema.vendors).where(and(eq(schema.vendors.tenantId, tenant.id), isNotNull(schema.vendors.emailBouncedAt))).orderBy(desc(schema.vendors.emailBouncedAt)).limit(100);
+  const e = tenant.settings.email ?? {};
+  res.json({ status: emailStatus(), sender: senderFor(tenant), fromName: e.fromName ?? '', replyTo: e.replyTo ?? '', domain: e.domain ?? null, bounced, canUseDomain: tenant.plan !== 'trial' });
+}));
+
+const saveDomain = async (tenantId: string, settings: Record<string, unknown>, domain: unknown) =>
+  db.update(tenants).set({ settings: { ...settings, email: { ...((settings.email as object) ?? {}), domain: domain ?? undefined } } as never }).where(eq(tenants.id, tenantId));
+
+adminRouter.post('/email/domain', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  if (s.tenant.plan === 'trial') throw new HttpError(403, 'An own sending domain is available on paid plans', undefined, 'PLAN_LIMIT');
+  const input = z.object({ name: z.string().trim().toLowerCase().regex(/^(?=.{4,200}$)([a-z0-9-]+\.)+[a-z]{2,}$/, 'Enter a domain like mail.yourcompany.com'), fromLocal: z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{1,40}$/, 'Use letters, digits, dots or dashes').default('no-reply') }).parse(req.body);
+  if (s.tenant.settings.email?.domain?.providerId) await deleteDomain(s.tenant.settings.email.domain.providerId).catch(() => {});
+  const d = await createDomain(input.name);
+  const domain = { name: d.name, providerId: d.providerId, status: d.status, records: d.records, fromLocal: input.fromLocal, checkedAt: new Date().toISOString() };
+  await saveDomain(s.tenant.id, s.tenant.settings as Record<string, unknown>, domain);
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'EMAIL_DOMAIN_ADDED', detail: { domain: d.name }, ip: req.ip });
+  res.json({ domain });
+}));
+
+adminRouter.post('/email/domain/check', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const cur = s.tenant.settings.email?.domain;
+  if (!cur?.providerId) throw new HttpError(404, 'No sending domain set up');
+  const d = await checkDomain(cur.providerId);
+  const domain = { ...cur, status: d.status, records: d.records, checkedAt: new Date().toISOString() };
+  await saveDomain(s.tenant.id, s.tenant.settings as Record<string, unknown>, domain);
+  if (d.status === 'verified' && cur.status !== 'verified') await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'EMAIL_DOMAIN_VERIFIED', detail: { domain: cur.name }, ip: req.ip });
+  res.json({ domain });
+}));
+
+adminRouter.delete('/email/domain', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const cur = s.tenant.settings.email?.domain;
+  if (cur?.providerId) await deleteDomain(cur.providerId).catch(() => {});
+  await saveDomain(s.tenant.id, s.tenant.settings as Record<string, unknown>, null);
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'EMAIL_DOMAIN_REMOVED', detail: { domain: cur?.name }, ip: req.ip });
+  res.json({ ok: true });
+}));
+
+adminRouter.post('/email/unsuppress', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { address } = z.object({ address: z.string().trim().email() }).parse(req.body);
+  await unsuppress(address, s.tenant.id);
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'EMAIL_UNSUPPRESSED', detail: { address: address.replace(/^(.).*(@.*)$/, '$1***$2') }, ip: req.ip });
+  res.json({ ok: true });
+}));
+
 /* ---------- Integrations (read-only status: providers are configured on the server) ---------- */
 
 adminRouter.get('/integrations', requireStaff('tenant.settings'), ah(async (req, res) => {
@@ -211,7 +284,7 @@ adminRouter.get('/integrations', requireStaff('tenant.settings'), ah(async (req,
     sms: { ...smsStatus(), counts: Object.fromEntries(recentSms.map((r) => [r.status, r.n])) },
     storage: storageStatus(),
     kyc: kycStatus(tenant.country),
-    ai: { ...aiStatus(), enabledForWorkspace: !!tenant.settings.aiExtraction },
+    ai: { ...aiStatus(), enabledForWorkspace: !!tenant.settings.aiExtraction, helpAnswers: tenant.settings.helpAi !== false, helpLive: helpAnswerer().live },
     jobs: { running: queueRunning() },
     devMode: env.devShowOtp,
   });

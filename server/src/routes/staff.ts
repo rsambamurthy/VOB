@@ -15,7 +15,7 @@ import { assignableUsers, decide, reassign } from '../services/workflowEngine.js
 import { canAct, coveringFor } from '../services/approvers.js';
 import { getConfig } from '../services/config.js';
 import { latestChecks, runKyc } from '../integrations/kyc/index.js';
-import { checkDef, checkInputs, checkOffered, packFor } from '../countries/registry.js';
+import { checkDef, checkInputs, checkOffered, packFor, inputsComplete } from '../countries/registry.js';
 import { extractionsFor } from '../integrations/ai/index.js';
 import { checkExpiry, publicCheck, upload } from './vendorPortal.js';
 import { getPublished } from '../services/config.js';
@@ -156,12 +156,29 @@ staffRouter.post('/vendors/:id/invite', requireStaff('vendors.create'), ah(async
   res.json({ ok: true });
 }));
 
+/** Change the supplier's contact email (e.g. after it bounced). The old address gets a security notice. */
+staffRouter.post('/vendors/:id/contact', requireStaff('vendors.edit'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v || v.erasedAt) throw new HttpError(404, 'Vendor not found');
+  const { email, reason } = z.object({ email: z.string().trim().toLowerCase().email('Enter a valid email'), reason: z.string().trim().min(3, 'Say why the contact is changing').max(300) }).parse(req.body);
+  const old = v.contactEmail;
+  if (email === old.toLowerCase()) throw new HttpError(400, 'That is already the contact email');
+  const profile = v.profile as Profile;
+  const basic = profile.basic && String(profile.basic.contactEmail ?? '').toLowerCase() === old.toLowerCase() ? { ...profile.basic, contactEmail: email } : profile.basic;
+  await db.update(vendors).set({ contactEmail: email, emailBouncedAt: null, emailBounceReason: null, profile: { ...profile, ...(basic ? { basic } : {}) }, updatedAt: new Date() }).where(eq(vendors.id, v.id));
+  await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'CONTACT_EMAIL_CHANGED', detail: { from: old.replace(/^(.).*(@.*)$/, '$1***$2'), to: email.replace(/^(.).*(@.*)$/, '$1***$2'), reason }, ip: req.ip });
+  await sendMail({ tenantId: s.tenant.id, to: old, subject: `${s.tenant.name}: your supplier contact email was changed`, body: `The contact email for ${v.name} on ${s.tenant.name}'s supplier portal was changed by ${s.user.name}. Sign-in codes will now go to the new address.\n\nIf you did not expect this, contact ${s.tenant.name} straight away.` });
+  if (['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status)) await sendInvite(s.tenant.name, { ...v, contactEmail: email });
+  res.json({ ok: true });
+}));
+
 staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res) => {
   const s = staffCtx(req);
   const v = await db.query.vendors.findFirst({
     where: and(eq(vendors.tenantId, s.tenant.id), eq(vendors.id, req.params.id)),
     with: {
-      documents: { orderBy: desc(documents.uploadedAt) },
+      documents: { where: ne(documents.status, 'ATTACHMENT'), orderBy: desc(documents.uploadedAt) },
       steps: { orderBy: [desc(approvalSteps.cycle), asc(approvalSteps.level)], with: { actedBy: { columns: { name: true } }, assignee: { columns: { name: true } }, role: { columns: { name: true } } } },
       audit: { orderBy: desc(auditLogs.createdAt), limit: 200 },
       createdBy: { columns: { name: true } },
@@ -185,6 +202,7 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
     canExport: s.permissions.has('vendors.export'),
     canBlock: s.permissions.has('vendors.block'),
     canPropose: s.permissions.has('vendors.edit') && v.status === 'APPROVED' && !v.erasedAt,
+    canEditContact: s.permissions.has('vendors.edit') && !v.erasedAt,
     privacy: { consentAt: v.consentAt, consentVersion: v.consentVersion, currentVersion: noticeFor(s.tenant).version, erasureRequestedAt: v.erasureRequestedAt, erasureReason: v.erasureReason, erasedAt: v.erasedAt,
       canErase: s.permissions.has('tenant.settings'), canExport: s.permissions.has('vendors.export') },
     me: s.user.id,
@@ -243,7 +261,7 @@ staffRouter.post('/vendors/:id/verify/:kind', requireStaff('vendors.view'), ah(a
   if (!found || !checkOffered(found.def, s.tenant.country)) throw new HttpError(404, 'Unknown check');
   const kind = found.def.kind;
   const input = checkInputs(found.def, v.profile as Profile);
-  if (Object.values(input).some((x) => !x)) throw new HttpError(400, `The vendor hasn't entered ${kind === 'bank' ? 'bank account details' : `a ${found.def.label}`} yet`);
+  if (!inputsComplete(found.def, input)) throw new HttpError(400, `The vendor hasn't entered ${kind === 'bank' ? 'bank account details' : `a ${found.def.label}`} yet`);
   const r = await runKyc(v, kind, input, s.user.name);
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'VERIFICATION_RUN', detail: { kind, status: r.status }, ip: req.ip });
   res.json(publicCheck(r));

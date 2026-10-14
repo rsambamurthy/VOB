@@ -7,19 +7,19 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { coreFieldsFor, CORE_SECTIONS, FIELD_TYPES, OPS, VENDOR_ATTRIBUTES, vendorTypes } from '../config/types.js';
-import { checkList, validatorList } from '../countries/registry.js';
+import { checkList, validatorList, keyChangeFields, SENSITIVE_FIELDS, vendorTypesFor } from '../countries/registry.js';
 import * as cfg from '../services/config.js';
 
 const { roles, users, delegations } = schema;
 export const configRouter = Router();
 
-const editorMeta = (country: string) => ({ fieldTypes: FIELD_TYPES, validators: validatorList(), ops: OPS, coreFields: coreFieldsFor(country), coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes });
+const editorMeta = (country: string) => ({ fieldTypes: FIELD_TYPES, validators: validatorList(), ops: OPS, coreFields: coreFieldsFor(country), coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes: vendorTypesFor(country) });
 
 /** Published config for rendering vendor profiles (any staff member). */
 configRouter.get('/config', requireStaff(), ah(async (req, res) => {
   const { tenant } = staffCtx(req);
   const { version, config } = await cfg.getPublished(tenant.id);
-  res.json({ version, config, vendorTypes, checks: checkList(tenant.country) });
+  res.json({ version, config, vendorTypes: vendorTypesFor(tenant.country), checks: checkList(tenant.country), fieldMeta: { masked: Object.keys(SENSITIVE_FIELDS), keyChange: keyChangeFields() } });
 }));
 
 /* ---------- Admin editor ---------- */

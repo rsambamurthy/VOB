@@ -11,12 +11,12 @@ reportsRouter.get('/dashboard', ah(async (req, res) => {
   res.json(await dashboard(staffCtx(req).tenant.id, parseFilters(req.query)));
 }));
 
-reportsRouter.get('/', ah(async (_req, res) => { res.json(reportList()); }));
+reportsRouter.get('/', ah(async (req, res) => { res.json(reportList(staffCtx(req).tenant.country)); }));
 
 reportsRouter.get('/:key', ah(async (req, res) => {
   const s = staffCtx(req);
   const f = parseFilters(req.query);
-  const out = await runReport(s.tenant.id, req.params.key, f);
+  const out = await runReport(s.tenant.id, req.params.key, f, s.tenant.country);
   if (!out) throw new HttpError(404, 'Unknown report');
   if (req.query.format === 'xlsx') {
     const buf = await toXlsx(out.def, out.rows, { tenant: s.tenant.name, by: s.user.name, filters: f });

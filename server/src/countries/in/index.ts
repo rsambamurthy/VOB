@@ -17,6 +17,7 @@ export const indiaPack: CountryPack = {
   code: 'IN',
   name: 'India',
   homeCountry: true,
+  registerIds: [{ label: 'GSTIN', field: 'tax.gstin' }, { label: 'PAN (masked)', field: 'tax.pan', masked: true }],
   currency: 'INR',
   locale: 'en-IN',
   weekend: [0],
@@ -38,6 +39,8 @@ export const indiaPack: CountryPack = {
 
   checks: indiaChecks,
   checkProvider: indiaCheckProvider,
+  sensitiveFields: { 'tax.pan': [3, 1], 'tax.tan': [3, 1] },
+  keyChangeFields: ['tax.gstin', 'tax.pan'],
   checksTitle: 'GSTIN / PAN / bank / MCA checks',
 
   documents: indiaDocuments,

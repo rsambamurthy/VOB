@@ -102,6 +102,7 @@ export const omanPack: CountryPack = {
   name: OMAN,
   extends: 'GCC',
   homeCountry: true,
+  registerIds: [{ label: 'CR number', field: 'tax.crNumber' }, { label: 'VAT number', field: 'tax.vatNumber' }],
   currency: 'OMR',
   locale: 'en-GB',
   mobile: { dialCode: '968', nationalDigits: 8, pattern: /^[79]\d{7}$/, example: '9xxx xxxx' },
@@ -109,6 +110,7 @@ export const omanPack: CountryPack = {
   timeZoneLabel: 'GST',
   coreFields: ['basic.nameArabic', 'tax.crNumber', 'tax.vatRegistered', 'tax.hasTrc'],
   validators: omValidators,
+  sensitiveFields: { 'tax.taxCardNumber': [2, 2] },
   formats: {
     postalCode: { pattern: /^\d{3}$/, message: 'Oman postal codes are 3 digits' },
     vatNumber: { pattern: OM_VAT, message: 'An Oman VAT number is OM followed by 10 characters, e.g. OM1100012379' },

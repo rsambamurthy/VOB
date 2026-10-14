@@ -2,7 +2,14 @@ import { useState } from 'react';
 import type { ChangeRequest, CrStatus, FieldChange, Flag, Profile, SectionDef } from '../lib/types';
 
 /** Fields the server masks for staff (PAN, bank account…); full values need a logged reveal. */
-export const MASKED_FIELDS = ['tax.pan', 'tax.tan', 'tax.foreignTin', 'bank.accountNumber', 'bank.iban'];
+/** Which fields are masked / flagged comes from the server (country packs); these defaults cover the time before it loads. */
+export const MASKED_FIELDS: string[] = ['tax.pan', 'tax.tan', 'tax.foreignTin', 'bank.accountNumber', 'bank.iban'];
+const KEY_CHANGE = new Set(['tax.gstin', 'tax.pan', 'basic.vendorName']);
+export function setFieldMeta(m?: { masked: string[]; keyChange: string[] }) {
+  if (!m) return;
+  MASKED_FIELDS.splice(0, MASKED_FIELDS.length, ...m.masked);
+  KEY_CHANGE.clear(); m.keyChange.forEach((f) => KEY_CHANGE.add(f));
+}
 export const isMasked = (v: unknown) => typeof v === 'string' && v.includes('•');
 import { fmtDate, fmtDateTime } from '../lib/format';
 import { StepBadge } from './ui';
@@ -48,7 +55,7 @@ const crLabel: Record<CrStatus, string> = { PENDING: 'Under review', APPROVED: '
 const crClass: Record<CrStatus, string> = { PENDING: 'step-pending', APPROVED: 'step-approved', REJECTED: 'step-rejected', CANCELLED: 'step-cancelled' };
 export const CrBadge = ({ status }: { status: CrStatus }) => <span className={`badge ${crClass[status]}`}>{crLabel[status]}</span>;
 
-const SENSITIVE = (id: string) => id.startsWith('bank.') || ['tax.gstin', 'tax.pan', 'basic.vendorName'].includes(id);
+const SENSITIVE = (id: string) => id.startsWith('bank.') || KEY_CHANGE.has(id) || MASKED_FIELDS.includes(id);
 
 export function ChangeDiff({ changes, docCount = 0, onReveal }: { changes: FieldChange[]; docCount?: number; onReveal?: (fieldId: string) => Promise<{ old?: string; new?: string }> }) {
   const [shown, setShown] = useState<Record<string, { old?: string; new?: string }>>({});

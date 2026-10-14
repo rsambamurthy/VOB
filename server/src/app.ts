@@ -19,6 +19,7 @@ import { platformRouter } from './platform/routes.js';
 import { signupRouter } from './platform/signup.js';
 import { ordersRouter } from './routes/orders.js';
 import { supplierOrdersRouter } from './routes/supplierOrders.js';
+import { staffCollabRouter, supplierCollabRouter } from './routes/collab.js';
 import { erpApiRouter } from './routes/erpApi.js';
 import { staffAuthRouter } from './routes/staffAuth.js';
 import { vendorAuthRouter } from './routes/vendorAuth.js';
@@ -29,6 +30,11 @@ import { adminRouter } from './routes/admin.js';
 import { vendorRouter } from './routes/vendorPortal.js';
 import { documentsRouter } from './routes/documents.js';
 import { configRouter } from './routes/config.js';
+
+import { handleResendEvent, verifySvix } from './integrations/email/resend.js';
+import { handleRazorpayEvent, verifyRazorpaySignature } from './services/billing.js';
+import { billingRouter } from './routes/billing.js';
+import { helpRouter } from './routes/help.js';
 
 export function createApp() {
   const app = express();
@@ -49,6 +55,23 @@ export function createApp() {
     },
   }));
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => !req.url?.startsWith('/api') || req.url === '/api/health' } }));
+  // Email provider webhooks (bounces, complaints, deliveries): raw body for the signature check, before JSON parsing and CSRF.
+  app.post('/api/webhooks/resend', express.raw({ type: '*/*', limit: '256kb' }), async (req, res) => {
+    const secret = env.int.RESEND_WEBHOOK_SECRET;
+    if (!secret) return res.status(404).json({ error: 'Not configured' });
+    const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+    if (!verifySvix(req.headers, body, secret)) return res.status(401).json({ error: 'Bad signature' });
+    try { res.json({ ok: true, result: await handleResendEvent(JSON.parse(body)) }); }
+    catch (e) { logger.warn({ err: String(e) }, 'resend webhook failed'); res.status(400).json({ error: 'Could not process event' }); }
+  });
+  app.post('/api/webhooks/razorpay', express.raw({ type: '*/*', limit: '256kb' }), async (req, res) => {
+    const secret = env.int.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) return res.status(404).json({ error: 'Not configured' });
+    const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+    if (!verifyRazorpaySignature(body, String(req.headers['x-razorpay-signature'] ?? ''), secret)) return res.status(401).json({ error: 'Bad signature' });
+    try { res.json({ ok: true, result: await handleRazorpayEvent(JSON.parse(body)) }); }
+    catch (e) { logger.warn({ err: String(e) }, 'razorpay webhook failed'); res.status(400).json({ error: 'Could not process event' }); }
+  });
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
@@ -65,11 +88,15 @@ export function createApp() {
   app.use('/api/meta', metaRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);
+  app.use('/api/help', helpRouter);
+  app.use('/api/admin/billing', billingRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/v1', erpApiRouter);
   app.use('/api/vendor/orders', supplierOrdersRouter);
+  app.use('/api/vendor/collab', supplierCollabRouter);
   app.use('/api/vendor', vendorRouter);
   app.use('/api', ordersRouter);
+  app.use('/api', staffCollabRouter);
   app.use('/api/documents', documentsRouter);
   app.use('/api', configRouter);
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found', undefined, 'NO_ROUTE')));

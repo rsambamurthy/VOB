@@ -6,6 +6,7 @@ import { fmtDate, fmtDateTime, humanize } from '../../lib/format';
 import { Alert, Modal } from '../../components/ui';
 import { useHelpContext } from '../../help/HelpPanel';
 import { AcceptanceBadge, DueText, Facts, LinesTable, money, qty, type OrderDetailData } from '../../orders/common';
+import { CancelShipmentModal, InvoicesTable, MESSAGE_KIND, ShipmentsCard, type InvoiceRow, type Shipment } from '../../orders/collab';
 
 interface Message { id: string; kind: string; connector: string; status: string; attempts: number; target: string | null; error: string | null; httpStatus: number | null; requestedBy: string | null; sentAt: string | null; createdAt: string; request: any }
 const MSG_STATUS: Record<string, [string, string]> = { SENT: ['Sent', 'badge-approved'], TEST: ['Test mode — not sent', 'badge-in_progress'], PENDING: ['Sending…', 'badge-under_review'], FAILED: ['Failed', 'badge-rejected'], NO_CONNECTOR: ['No ERP connection', 'badge-invited'] };
@@ -15,7 +16,8 @@ export function OrderDetail() {
   const { id = '' } = useParams();
   const { can } = useSession();
   useHelpContext('order');
-  const [d, setD] = useState<OrderDetailData & { messages: Message[] }>();
+  const [d, setD] = useState<OrderDetailData & { messages: Message[]; shipments: Shipment[]; invoices: InvoiceRow[]; asnRequired: boolean }>();
+  const [cancel, setCancel] = useState<Shipment>();
   const [error, setError] = useState<string>();
   const [accepting, setAccepting] = useState(false);
   const [payload, setPayload] = useState<Message>();
@@ -41,6 +43,9 @@ export function OrderDetail() {
         <div className="toolbar"><h3>Lines</h3><span className="muted small">{d.lines.length} line{d.lines.length === 1 ? '' : 's'}</span></div>
         <LinesTable lines={d.lines} currency={po.currency} />
       </section>
+      {d.asnRequired && po.status === 'OPEN' && !d.shipments.length && d.lines.some((l) => l.lineType === 'GOODS') && <Alert kind="info">This buying group needs a shipment notice from the supplier for every delivery — none has been sent yet.</Alert>}
+      <ShipmentsCard shipments={d.shipments} onCancel={can('orders.manage') ? setCancel : undefined} />
+      {d.invoices.length > 0 && <section className="card section-card"><div className="toolbar"><h3>Supplier invoices</h3></div><InvoicesTable rows={d.invoices} base="/staff/invoices" showPo={false} /></section>}
       <div className="detail-grid">
         <div>
           {d.receipts.length > 0 && (
@@ -55,13 +60,13 @@ export function OrderDetail() {
             {d.messages.length ? (
               <table className="table static compact"><thead><tr><th>When</th><th>What</th><th>Status</th><th>Target</th><th /></tr></thead>
                 <tbody>{d.messages.map((m) => (
-                  <tr key={m.id}><td className="small nowrap">{fmtDateTime(m.createdAt)}</td><td className="small">{m.kind === 'ACCEPTANCE' ? 'Acceptance' : humanize(m.kind)}<div className="muted">{m.requestedBy}</div></td>
+                  <tr key={m.id}><td className="small nowrap">{fmtDateTime(m.createdAt)}</td><td className="small">{MESSAGE_KIND[m.kind] ?? humanize(m.kind)}<div className="muted">{m.requestedBy}</div></td>
                     <td><span className={`badge ${MSG_STATUS[m.status]?.[1] ?? ''}`}>{MSG_STATUS[m.status]?.[0] ?? m.status}</span>{m.error && m.status === 'FAILED' && <div className="err-text small">{m.error}</div>}</td>
                     <td className="small muted break">{m.target ?? '—'}</td>
                     <td className="actions">{m.request && <button className="link-btn small" onClick={() => setPayload(m)}>Payload</button>}
                       {m.status === 'FAILED' && can('orders.manage') && <button className="link-btn small" onClick={async () => { try { await api(`/orders/messages/${m.id}/retry`, { method: 'POST' }); load(); } catch (e: any) { setError(e.message); } }}>Retry</button>}</td></tr>
                 ))}</tbody></table>
-            ) : <p className="pad muted small">Nothing sent yet. Each acceptance is sent back to the ERP through the connector under ERP integration.</p>}
+            ) : <p className="pad muted small">Nothing sent yet. Acceptances, shipment notices and approved invoices are sent to the ERP through the connector under ERP integration.</p>}
           </section>
         </div>
         <aside className="side-col">
@@ -82,12 +87,13 @@ export function OrderDetail() {
           </section>
         </aside>
       </div>
+      {cancel && <CancelShipmentModal s={cancel} onClose={() => setCancel(undefined)} onConfirm={async (reason) => { try { await api(`/shipments/${cancel.id}/cancel`, { body: { reason } }); setCancel(undefined); load(); } catch (e: any) { setCancel(undefined); setError(e.message); } }} />}
       {accepting && <BuyerAcceptModal d={d} onClose={() => setAccepting(false)} onDone={() => { setAccepting(false); load(); }} />}
       {payload && <Modal title="What was sent to the ERP" wide onClose={() => setPayload(undefined)}><pre className="code">{payload.request.csv ?? JSON.stringify(payload.request.body ?? payload.request, null, 2)}</pre></Modal>}
     </div>
   );
 }
-const HIST: Record<string, string> = { PO_RECEIVED: 'Received from the ERP', PO_UPDATED: 'Updated from the ERP', PO_REVISED: 'Revised — changed lines need acceptance again', PO_ACCEPTED: 'Accepted', PO_AUTO_ACCEPTED: 'Auto-accepted', PO_ACK_FAILED: 'Sending the acceptance to the ERP failed' };
+const HIST: Record<string, string> = { PO_RECEIVED: 'Received from the ERP', PO_UPDATED: 'Updated from the ERP', PO_REVISED: 'Revised — changed lines need acceptance again', PO_ACCEPTED: 'Accepted', PO_AUTO_ACCEPTED: 'Auto-accepted', PO_ACK_FAILED: 'Sending the acceptance to the ERP failed', PO_SHIPPED: 'Shipment notice', PO_SHIPMENT_CANCELLED: 'Shipment notice cancelled', PO_MESSAGE_FAILED: 'Sending a message to the ERP failed' };
 
 function BuyerAcceptModal({ d, onClose, onDone }: { d: OrderDetailData; onClose: () => void; onDone: () => void }) {
   const pending = d.lines.filter((l) => l.acceptance === 'PENDING' && l.status === 'OPEN');

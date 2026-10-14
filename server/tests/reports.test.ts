@@ -35,11 +35,24 @@ describe('reports', () => {
     for (const r of list) expect((await admin.get(`/api/reports/${r.key}?from=2020-01-01`)).status).toBe(200);
     const reg = (await admin.get('/api/reports/vendor-register')).body;
     const precision = reg.rows.find((x: any) => x.vendor === 'Precision Valves Pvt Ltd');
-    expect(precision.pan).toMatch(/•/);
+    expect(reg.columns.map((c: any) => c.label)).toEqual(expect.arrayContaining(['GSTIN', 'PAN (masked)', 'Account / IBAN (masked)']));
+    expect(precision.id1).toMatch(/•/);
     expect(precision.account).toMatch(/^•+\d{4}$/);
     const exp = (await admin.get('/api/reports/expiring-documents?days=30')).body;
     expect(exp.rows.some((x: any) => x.vendor === 'Precision Valves Pvt Ltd' && x.state === 'Expiring')).toBe(true);
     expect((await admin.get('/api/reports/nope')).status).toBe(404);
+  });
+
+  test('register columns follow the workspace country: CR and VAT for Bahrain, IBAN masked', async () => {
+    const admin = await login('admin@pearl.test', 'pearl', 'Demo@12345');
+    const reg = (await admin.get('/api/reports/vendor-register')).body;
+    const labels = reg.columns.map((c: any) => c.label);
+    expect(labels).toEqual(expect.arrayContaining(['CR number', 'VAT account']));
+    expect(labels).not.toContain('GSTIN');
+    const seef = reg.rows.find((x: any) => x.vendor === 'Seef Engineering W.L.L.');
+    expect(seef).toMatchObject({ id0: '12345-1', id1: '200000445300002', country: 'Bahrain', bankCode: 'NBOBBHBM' });
+    expect(seef.account).toBe('BH67••••••3456');
+    expect((await admin.get('/api/reports')).body[0].columns.map((c: any) => c.label)).toContain('CR number');
   });
 
   test('Excel download is a real workbook with an About sheet', async () => {

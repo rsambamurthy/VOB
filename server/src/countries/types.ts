@@ -50,6 +50,8 @@ export interface CheckDef {
   normalise(raw: Record<string, string>): { input: Record<string, string>; masked: string; error?: string };
   /** Re-run when the vendor changes their bank details (fraud control). */
   onBankChange?: boolean;
+  /** Inputs that may be blank (e.g. owners for sanctions screening, the holder name for an IBAN check). */
+  optionalInputs?: string[];
   /**
    * 'supplier' (default): offered wherever the field it reads is on the form (e.g. GSTIN for Indian suppliers).
    * 'home': offered for every supplier, but only in workspaces whose home pack includes it (e.g. sanctions screening in the Gulf).
@@ -110,11 +112,20 @@ export interface CountryPack {
   /** One line for the Integrations page, e.g. "GSTIN / PAN / bank / MCA checks". */
   checksTitle?: string;
 
+  /** Fields stored encrypted and shown masked to staff: field id → [characters kept at start, at end]. Global across packs. */
+  sensitiveFields?: Record<string, [number, number]>;
+  /** Fields whose change is flagged as sensitive for reviewers (besides bank details and the legal name). Global across packs. */
+  keyChangeFields?: string[];
+
   /** Documents the AI can read for suppliers from this country (global by document code). */
   documents?: Record<string, ReadableDocument>;
   /** Values implied by other extracted values (e.g. the PAN inside a GSTIN). */
   deriveExtracted?: (fields: ExtractedField[]) => ExtractedField[];
 
+  /** Names for the three vendor types in this market (e.g. Local / Foreign in the Gulf). */
+  vendorTypeLabels?: Partial<Record<'DOMESTIC' | 'IMPORT' | 'GOVERNMENT', string>>;
+  /** HOME pack: registration / tax id columns in the vendor register report (masked = shown masked). */
+  registerIds?: { label: string; field: string; masked?: boolean }[];
   /** HOME pack: starting onboarding template for new workspaces. */
   template?: () => OnboardingConfig;
   /** HOME pack: privacy law the notice is written for, and its default text. */

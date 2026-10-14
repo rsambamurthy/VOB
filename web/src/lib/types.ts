@@ -20,11 +20,11 @@ export interface OnboardingConfig { sections: SectionDef[]; documents: DocRequir
 export interface ConfigIssue { path: string; message: string }
 
 
-export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 'vendors.block' | 'vendors.edit' | 'users.manage' | 'tenant.settings' | 'config.manage' | 'approvals.manage' | 'reports.view' | 'audit.view' | 'orders.view' | 'orders.manage';
+export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 'vendors.block' | 'vendors.edit' | 'users.manage' | 'tenant.settings' | 'config.manage' | 'approvals.manage' | 'reports.view' | 'audit.view' | 'orders.view' | 'orders.manage' | 'invoices.manage';
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
-  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; mobileExample?: string; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number; skipWeekends?: boolean } };
+  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; mobileExample?: string; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number; skipWeekends?: boolean; mfaEnforcedByPlatform?: boolean } };
   roles: { id: string; key: string; name: string }[];
   permissions: Permission[];
   mfaSetupRequired: boolean;
@@ -68,7 +68,7 @@ export interface Extraction {
   summary: string | null; error: string | null; appliedAt: string | null; docTypeDetected: string | null; suggestions: Suggestion[];
 }
 
-export interface Flag { code: 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
+export interface Flag { code: 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
 export type CrStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export interface FieldChange { fieldId: string; label: string; old: string; new: string }
 export interface ChangeRequest {

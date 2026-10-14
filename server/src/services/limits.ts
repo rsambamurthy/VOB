@@ -9,7 +9,7 @@ const limitError = (msg: string) => new HttpError(403, msg, undefined, 'PLAN_LIM
 const fmt = (d: Date) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 function assertTrialActive(t: Tenant) {
-  if (trialExpired(t)) throw limitError(`Your free trial ended on ${fmt(t.trialEndsAt!)}. Contact us to choose a plan — your data is kept.`);
+  if (trialExpired(t)) throw limitError(`Your free trial ended on ${fmt(t.trialEndsAt!)}. Choose a plan under Administration → Billing — your data is kept.`);
 }
 
 export async function usage(tenantId: string) {

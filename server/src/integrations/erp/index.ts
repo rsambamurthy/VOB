@@ -32,11 +32,14 @@ export function publicConnection(c: Connection) {
 }
 
 const CONFIG_FIELDS: Record<ErpKind, string[]> = {
-  none: [], oracle: ['url', 'username', 'orgId', 'poPullUrl', 'ackUrl'], webhook: ['url'], csv: ['delivery', 'host', 'port', 'username', 'remoteDir'],
+  none: [], oracle: ['url', 'username', 'orgId', 'poPullUrl', 'ackUrl', 'asnUrl', 'invoiceUrl'], webhook: ['url'], csv: ['delivery', 'host', 'port', 'username', 'remoteDir'],
+  sap: ['url', 'username', 'grouping', 'companyCode', 'purchasingOrg', 'taxType', 'messageUrl'],
+  dynamics: ['url', 'tenantId', 'clientId', 'dataAreaId', 'vendorGroup', 'messageUrl'],
 };
+const URL_FIELDS = ['url', 'poPullUrl', 'ackUrl', 'asnUrl', 'invoiceUrl', 'messageUrl'];
 
 export const connectionInput = z.object({
-  kind: z.enum(['none', 'oracle', 'webhook', 'csv']),
+  kind: z.enum(['none', 'oracle', 'webhook', 'csv', 'sap', 'dynamics']),
   testMode: z.boolean(),
   autoPush: z.boolean(),
   config: z.record(z.string().max(500)).default({}),
@@ -48,7 +51,7 @@ export async function saveConnection(tenantId: string, input: z.infer<typeof con
   const current = await getConnection(tenantId);
   const config = Object.fromEntries(CONFIG_FIELDS[input.kind].map((k) => [k, (input.config[k] ?? '').trim()]).filter(([, v]) => v !== ''));
   if (input.kind === 'csv' && !config.delivery) config.delivery = 'download';
-  for (const k of ['url', 'poPullUrl', 'ackUrl']) {
+  for (const k of URL_FIELDS) {
     if (!config[k]) continue;
     try { const u = new URL(config[k]); if (!['http:', 'https:'].includes(u.protocol)) throw new Error(); } catch { throw new HttpError(400, 'Enter a full URL starting with https://'); }
     if (env.isProd && !config[k].startsWith('https://')) throw new HttpError(400, 'Use an https:// URL');
@@ -61,7 +64,9 @@ export async function saveConnection(tenantId: string, input: z.infer<typeof con
     if (v) secrets[k] = v; else if (current.secrets[k] && current.kind === input.kind) secrets[k] = current.secrets[k];
   }
   if (!input.testMode) {
-    if ((input.kind === 'oracle' || input.kind === 'webhook') && !config.url) throw new HttpError(400, 'Enter the URL before turning test mode off');
+    if (input.kind !== 'csv' && !config.url) throw new HttpError(400, 'Enter the URL before turning test mode off');
+    if (input.kind === 'sap' && (!config.username || !secrets.password)) throw new HttpError(400, 'Enter the SAP communication user and password before turning test mode off');
+    if (input.kind === 'dynamics' && (!config.tenantId || !config.clientId || !secrets.clientSecret || !config.dataAreaId)) throw new HttpError(400, 'Enter the Azure tenant, app (client) id, client secret and legal entity before turning test mode off');
     if (input.kind === 'webhook' && !secrets.signingSecret) throw new HttpError(400, 'Set a signing secret before turning test mode off');
     if (input.kind === 'csv' && config.delivery === 'sftp' && (!config.host || !config.username)) throw new HttpError(400, 'Enter the SFTP host and user name before turning test mode off');
   }

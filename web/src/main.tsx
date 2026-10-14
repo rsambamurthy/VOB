@@ -30,7 +30,7 @@ import { PlatformShell } from './platform/Shell';
 import { PlatformOverview } from './platform/Overview';
 import { PlatformTenants } from './platform/Tenants';
 import { PlatformTenantDetail } from './platform/TenantDetail';
-import { PlatformAdmins, PlatformAudit, PlatformSettings, PlatformSignups } from './platform/Pages';
+import { PlatformAdmins, PlatformAudit, PlatformSettings, PlatformBilling, PlatformSignups } from './platform/Pages';
 import { Signup, SignupVerify } from './pages/signup/Signup';
 import { HelpProvider } from './help/HelpPanel';
 import { OrderList } from './pages/orders/OrderList';
@@ -39,7 +39,10 @@ import { PurchasingSetup } from './pages/orders/PurchasingSetup';
 import { SupplierLogin } from './pages/orders/SupplierLogin';
 import { SupplierOrderDetail, SupplierOrderList } from './pages/orders/SupplierOrders';
 import { SupplierShell } from './orders/SupplierShell';
+import { StaffInvoiceDetail, StaffInvoices, StaffPayments, SupplierInvoiceDetail, SupplierInvoices, SupplierPayments } from './pages/orders/Invoices';
 import './styles.css';
+import { Billing } from './pages/admin/Billing';
+import { HelpTopics } from './pages/admin/HelpTopics';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -61,6 +64,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="reports" element={<Reports />} />
               <Route path="admin/erp" element={<ErpSettings />} />
+              <Route path="admin/billing" element={<Billing />} />
+              <Route path="admin/help-topics" element={<HelpTopics />} />
               <Route path="account" element={<Account />} />
               <Route path="admin/users" element={<Users />} />
               <Route path="admin/roles" element={<Roles />} />
@@ -71,6 +76,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="mailbox" element={<Mailbox />} />
               <Route path="orders" element={<OrderList />} />
               <Route path="orders/:id" element={<OrderDetail />} />
+              <Route path="invoices" element={<StaffInvoices />} />
+              <Route path="invoices/:id" element={<StaffInvoiceDetail />} />
+              <Route path="payments" element={<StaffPayments />} />
               <Route path="admin/purchasing" element={<PurchasingSetup />} />
             </Route>
             <Route path="/signup" element={<Signup />} />
@@ -87,6 +95,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 <Route path="tenants/:id" element={<PlatformTenantDetail />} />
                 <Route path="signups" element={<PlatformSignups />} />
                 <Route path="settings" element={<PlatformSettings />} />
+                <Route path="billing" element={<PlatformBilling />} />
                 <Route path="admins" element={<PlatformAdmins />} />
                 <Route path="audit" element={<PlatformAudit />} />
                 <Route path="*" element={<Navigate to="/platform" replace />} />
@@ -97,6 +106,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/vendor/expired" element={<VendorSignedOut />} />
             <Route path="/vendor/orders" element={<SupplierShell><SupplierOrderList /></SupplierShell>} />
             <Route path="/vendor/orders/:id" element={<SupplierShell><SupplierOrderDetail /></SupplierShell>} />
+            <Route path="/vendor/invoices" element={<SupplierShell><SupplierInvoices /></SupplierShell>} />
+            <Route path="/vendor/invoices/:id" element={<SupplierShell><SupplierInvoiceDetail /></SupplierShell>} />
+            <Route path="/vendor/payments" element={<SupplierShell><SupplierPayments /></SupplierShell>} />
             <Route path="/s/:workspace" element={<SupplierLogin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

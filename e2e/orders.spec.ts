@@ -62,6 +62,37 @@ test('purchase orders: buyer loads orders, supplier signs in by email and accept
   await expect(admin.locator('.card', { hasText: 'History' })).toContainText('Dispatch next week');
   await expect(admin.locator('.card', { hasText: 'Messages to the ERP' })).toContainText('Acceptance');
 
+  // Supplier: a shipment notice, then an invoice for that shipment
+  await sup.getByRole('button', { name: 'Create shipment notice' }).click();
+  const shipDlg = sup.getByRole('dialog', { name: 'Shipment notice' });
+  await shipDlg.getByLabel('Carrier').fill('Blue Dart');
+  await shipDlg.getByRole('button', { name: 'Send shipment notice' }).click();
+  await expect(sup.locator('.alert-success')).toContainText('Shipment notice ASN-');
+  await expect(sup.locator('.card', { hasText: 'Shipment notices' })).toContainText('In transit');
+  await sup.getByRole('button', { name: 'Raise invoice' }).click();
+  const inv = sup.getByRole('dialog', { name: 'Raise an invoice' });
+  const invNo = `E2E-${Date.now() % 1_000_000}`;
+  await inv.getByLabel('Invoice number').fill(invNo);
+  await inv.getByLabel('For shipment').selectOption({ index: 1 });
+  await inv.getByRole('button', { name: 'Check' }).click();
+  await expect(inv.locator('.checks-list')).toContainText('received');
+  await inv.getByRole('button', { name: 'Submit invoice' }).click();
+  await expect(sup.locator('.alert-success')).toContainText('Invoice submitted');
+  await sup.locator('.topnav').getByRole('link', { name: 'Invoices' }).click();
+  await expect(sup.locator('tbody tr', { hasText: invNo })).toContainText('Exception');
+
+  // Buyer: the invoice is in the review queue; approving an exception needs a note
+  await admin.goto('/staff/invoices');
+  await admin.locator('tbody tr', { hasText: invNo }).click();
+  await expect(admin.locator('.card', { hasText: 'Matching' })).toContainText('received');
+  await admin.getByRole('button', { name: /^Approve/ }).click();
+  const dec = admin.getByRole('dialog', { name: 'Approve invoice' });
+  await expect(dec.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  await dec.locator('textarea').fill('Goods arrive this week');
+  await dec.getByRole('button', { name: 'Approve' }).click();
+  await expect(admin.locator('h1 .badge')).toHaveText('Approved');
+  await sup.goBack();
+
   // Help knows the screen
   await sup.keyboard.press('F1');
   await expect(sup.getByRole('dialog', { name: 'Help' })).toContainText('Accepting purchase orders');

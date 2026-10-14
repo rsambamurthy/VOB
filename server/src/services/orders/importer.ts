@@ -19,6 +19,7 @@ import { sendMail } from '../../lib/mailer.js';
 import type { PoLine, PurchaseOrder, Tenant } from '../../db/schema.js';
 import { canonicalPo, type CanonicalLine, type CanonicalPo } from './model.js';
 
+import { matchReceipts } from '../collab/shipments.js';
 const { purchaseOrders, poLines, poReceipts, legalEntities, sites, buyingGroups, supplierCodes, supplierContacts, vendors, poImports, tenants } = schema;
 const DAY = 86_400_000;
 const n4 = (v: number | undefined | null) => (v === undefined || v === null ? null : String(Math.round(v * 10000) / 10000));
@@ -156,7 +157,8 @@ export async function importPurchaseOrders(tenant: Tenant, inputs: unknown[], so
           } else {
             const changed = o.acceptance !== 'PENDING' && v.status === 'OPEN' && lineChanged(o, l);
             if (changed) reset = true;
-            await tx.update(poLines).set({ ...v, ...(changed ? { acceptance: 'PENDING', acceptedAt: null, acceptedBy: null, acceptNote: null } : {}) }).where(eq(poLines.id, o.id));
+            // Quantities the ERP didn't send keep what VendorGate tracked (receipts, approved invoices).
+            await tx.update(poLines).set({ ...v, receivedQty: l.receivedQty === undefined ? o.receivedQty : v.receivedQty, billedQty: l.billedQty === undefined ? o.billedQty : v.billedQty, ...(changed ? { acceptance: 'PENDING', acceptedAt: null, acceptedBy: null, acceptNote: null } : {}) }).where(eq(poLines.id, o.id));
           }
         }
         const lines = await tx.select().from(poLines).where(eq(poLines.poId, existing.id));
@@ -171,6 +173,7 @@ export async function importPurchaseOrders(tenant: Tenant, inputs: unknown[], so
       });
       res[outcome.kind]++;
       res.poIds.push(outcome.row.id);
+      if (outcome.kind !== 'unchanged' && po.receipts?.length) await matchReceipts(outcome.row.id).catch((err) => logger.warn({ err }, 'receipt matching failed'));
       const becameMapped = existing && !existing.vendorId && outcome.row.vendorId;
       if (outcome.row.status === 'OPEN' && outcome.row.vendorId && (outcome.kind === 'created' || becameMapped) && outcome.row.acceptance === 'PENDING') toNotify.push({ po: outcome.row, kind: 'NEW' });
       else if (outcome.reset && outcome.row.vendorId) toNotify.push({ po: outcome.row, kind: 'REVISED' });
@@ -192,7 +195,8 @@ export async function importPurchaseOrders(tenant: Tenant, inputs: unknown[], so
 async function upsertReceipts(tx: any, tenantId: string, poId: string, lines: PoLine[], po: CanonicalPo) {
   for (const r of po.receipts ?? []) {
     const line = r.lineErpId ? lines.find((l) => l.erpId === r.lineErpId) : undefined;
-    const v = { tenantId, poId, lineId: line?.id ?? null, erpId: r.erpId, receiptNumber: r.receiptNumber, receiptDate: r.receiptDate ?? null, quantity: n4(r.quantity)! };
+    const ship = r.shipmentNumber ? (await tx.select({ id: schema.shipments.id }).from(schema.shipments).where(and(eq(schema.shipments.poId, poId), eq(schema.shipments.number, r.shipmentNumber))))[0] : undefined;
+    const v = { tenantId, poId, lineId: line?.id ?? null, erpId: r.erpId, receiptNumber: r.receiptNumber, receiptDate: r.receiptDate ?? null, quantity: n4(r.quantity)!, shipmentId: ship?.id ?? null };
     await tx.insert(poReceipts).values(v).onConflictDoUpdate({ target: [poReceipts.tenantId, poReceipts.erpId], set: v });
   }
 }

@@ -13,7 +13,7 @@ import { buildChecklist, isSubmittable, sanitizeSection, visibleDocRequirements,
 import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks } from '../integrations/kyc/index.js';
-import { checkDef, checkInputs, checkList, checkOffered, checksForVendor, localeFor } from '../countries/registry.js';
+import { checkDef, checkInputs, checkList, checkOffered, checksForVendor, localeFor, inputsComplete } from '../countries/registry.js';
 import { hasFeature } from '../services/limits.js';
 import { pendingOrderCount } from '../services/orders/queries.js';
 import { queueExtraction, extractionsFor, getExtraction } from '../integrations/ai/index.js';
@@ -94,7 +94,7 @@ vendorRouter.get('/', ah(async (req, res) => {
       // Held because a required document lapsed: the supplier can upload the renewal; the reason is shown.
       hold: v.blockedAt && v.blockSource === 'EXPIRY' ? { reason: v.blockedReason } : null,
       // Internal review outcomes stay internal; the vendor sees hold, expiry and pending-change flags.
-      flags: flagsFor(v, v.documents, !!(await openChangeRequest(v.id))).filter((f) => !f.code.startsWith('REVIEW_')),
+      flags: flagsFor(v, v.documents, !!(await openChangeRequest(v.id))).filter((f) => !f.code.startsWith('REVIEW_') && f.code !== 'EMAIL_BOUNCING'),
       lastConfirmedAt: v.lastConfirmedAt, nextReviewAt: v.nextReviewAt,
       changeRequests: (await changeRequestsForVendor(v.id)).slice(0, 5).map((cr) => ({ id: cr.id, status: cr.status, byBuyer: !!cr.raisedById, changes: cr.changes, documentIds: cr.documentIds, note: cr.note, remarks: cr.status === 'REJECTED' && !cr.raisedById ? cr.remarks : null, createdAt: cr.createdAt, decidedAt: cr.decidedAt, steps: cr.steps.map((s) => ({ id: s.id, level: s.level, label: s.label, status: s.status })) })),
     } : null,
@@ -200,7 +200,7 @@ vendorRouter.post('/submit', ah(async (req, res) => {
   // Automatic checks on submission (e.g. sanctions screening in Gulf workspaces), so reviewers see the result.
   for (const { def } of checksForVendor(vendorCtx(req).tenant.country, v.profile as Profile).filter((c) => c.def.runOnSubmit)) {
     const input = checkInputs(def, v.profile as Profile);
-    if (Object.values(input).every(Boolean)) await runKyc(v, def.kind, input, 'system (on submit)').catch(() => {});
+    if (inputsComplete(def, input)) await runKyc(v, def.kind, input, 'system (on submit)').catch(() => {});
   }
   await startReview(v);
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: resubmission ? 'RESUBMITTED' : 'SUBMITTED', ip: req.ip });

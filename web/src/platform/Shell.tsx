@@ -19,6 +19,7 @@ export function PlatformShell() {
           <NavLink to="/platform/signups">Sign-ups</NavLink>
           <div className="nav-section">Platform</div>
           <NavLink to="/platform/settings">Sign-up settings</NavLink>
+          <NavLink to="/platform/billing">Billing</NavLink>
           <NavLink to="/platform/admins">Platform admins</NavLink>
           <NavLink to="/platform/audit">Audit log</NavLink>
         </nav>

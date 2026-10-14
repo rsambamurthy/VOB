@@ -75,7 +75,11 @@ home pack's weekend, judged in the pack's time zone. Deadline emails show the wo
 Nothing else in the app needs to change: the configuration editor, Verify buttons, reviewer checks panel, periodic
 re-checks, AI document reading, ERP export and formatting all read from the registry.
 
+## Sensitive fields and reports
+- `sensitiveFields` (any pack): encrypted at rest and masked for staff, with a logged Reveal. The list is global — the union of all packs — because encryption can't depend on the workspace (base: bank account, IBAN, foreign TIN; India: PAN, TAN; Qatar: TIN; Oman: tax card).
+- `keyChangeFields` (any pack): changes flagged "sensitive" for reviewers (India: GSTIN, PAN; Gulf: CR, VAT/TRN, licence, Arabic name).
+- `registerIds` (home pack): the id columns of the vendor register report (India: GSTIN, PAN; Saudi Arabia: CR, VAT; …).
+
 ## Not yet pack-driven (next phases)
-- Field masking/encryption list (`lib/fieldCrypto.ts`) and the vendor register report's GSTIN/PAN/IFSC columns.
-- Live providers (Wathq, ZATCA, FTA TRN, Sijilat, NBR, MOCI Qatar/Kuwait, Dhareeba, Invest Easy, Oman Tax Authority) and a live sanctions-screening provider — test mode until Phase 3.
+- Live providers: OpenSanctions (sanctions), Wathq (Saudi CR), generic registry connectors and a KYC aggregator are built (docs/VERIFICATION.md); each check stays in test mode until its credentials are set.
 - Arabic UI, Hijri dates (Phase 2).

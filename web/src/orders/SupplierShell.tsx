@@ -36,6 +36,8 @@ export function SupplierTopbar({ info }: { info: SupplierInfo }) {
         <nav className="topnav" aria-label="Supplier portal">
           <NavLink to="/vendor" end>{info.vendor.status === 'APPROVED' ? 'Company details' : 'Business profile'}</NavLink>
           <NavLink to="/vendor/orders">Purchase orders{info.orders.pending > 0 && <span className="count-pill" aria-label={`${info.orders.pending} waiting`}>{info.orders.pending}</span>}</NavLink>
+          <NavLink to="/vendor/invoices">Invoices</NavLink>
+          <NavLink to="/vendor/payments">Payments</NavLink>
         </nav>
       )}
       <div className="topbar-right">

@@ -600,3 +600,26 @@ fieldset.field .radio, .modal-body > .checkbox { display: flex; flex-wrap: wrap;
 .auth-foot { display: flex; justify-content: center; margin-top: 16px; }
 .sidebar-foot .powered-by { padding: 4px 6px; font-size: 11px; line-height: 1.35; }
 .login-side .powered-by { margin-top: auto; padding-top: 18px; }
+.check-modes { margin: 6px 0 4px 18px; padding: 0; } .check-modes li { margin: 2px 0; }
+.trial-bar a { color: inherit; font-weight: 600; }
+.subcard { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 10px 0 14px; background: var(--line-2); }
+.help-ask { margin: 10px 0 4px; }
+.help-answer { border: 1px solid var(--brand-100); background: var(--brand-50); border-radius: 10px; padding: 10px 12px; }
+.help-answer.unsure { background: #fff8e8; border-color: #f0dca8; }
+.help-answer-h { font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--brand); font-weight: 700; margin-bottom: 4px; }
+.help-answer p { margin: 4px 0; }
+.help-ask-err { color: var(--err); }
+
+/* Shipment notices and supplier invoices */
+.checks-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.checks-list li { display: flex; gap: 8px; align-items: flex-start; }
+.check-icon { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-top: 1px; }
+.check-ok .check-icon { background: var(--ok-bg); color: var(--ok); }
+.check-warning .check-icon { background: var(--warn-bg); color: var(--warn); }
+.check-error .check-icon { background: var(--err-bg); color: var(--err); }
+.check-error { color: var(--err); }
+.qty-input { width: 110px; text-align: right; }
+.qty-input.sm { width: 70px; }
+.inline-fields { display: flex; gap: 8px; }
+.inline-fields > * { min-width: 0; flex: 1; }
+@media (max-width: 640px) { .qty-input { width: 80px; } }

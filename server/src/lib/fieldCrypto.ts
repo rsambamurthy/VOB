@@ -5,9 +5,11 @@
  * in the column types (db/schema.ts), so the rest of the code always sees plain values.
  */
 import { decrypt, encrypt } from './crypto.js';
+import { SENSITIVE_FIELDS } from '../countries/registry.js';
 
-export const SENSITIVE_PATHS = ['tax.pan', 'tax.tan', 'tax.foreignTin', 'bank.accountNumber', 'bank.iban'] as const;
-export const isSensitive = (fieldId: string) => (SENSITIVE_PATHS as readonly string[]).includes(fieldId);
+/** Which fields are sensitive comes from the country packs (PAN and TAN in India, Qatar TIN, Oman tax card, bank account, IBAN…). */
+export const SENSITIVE_PATHS: readonly string[] = Object.keys(SENSITIVE_FIELDS);
+export const isSensitive = (fieldId: string) => SENSITIVE_PATHS.includes(fieldId);
 
 const PREFIX = 'enc:v1:';
 export const isSealed = (v: unknown): v is string => typeof v === 'string' && v.startsWith(PREFIX);
@@ -44,7 +46,7 @@ export function mask(v: unknown, start = 2, end = 2) {
   return s.length <= start + end ? '•'.repeat(s.length) : `${s.slice(0, start)}${'•'.repeat(Math.min(6, s.length - start - end))}${s.slice(-end)}`;
 }
 /** How each sensitive field is masked for display. */
-export const MASKS: Record<string, [number, number]> = { 'tax.pan': [3, 1], 'tax.tan': [3, 1], 'tax.foreignTin': [2, 2], 'bank.accountNumber': [0, 4], 'bank.iban': [4, 4] };
+export const MASKS: Readonly<Record<string, [number, number]>> = SENSITIVE_FIELDS;
 export const maskField = (fieldId: string, v: unknown) => mask(v, ...(MASKS[fieldId] ?? [0, 4]));
 /** Copy of a profile with every sensitive value masked (for staff views). */
 export function maskProfile(p: Profile): Profile {

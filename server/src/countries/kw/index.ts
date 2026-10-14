@@ -94,6 +94,7 @@ export const kuwaitPack: CountryPack = {
   name: KUWAIT,
   extends: 'GCC',
   homeCountry: true,
+  registerIds: [{ label: 'CR number', field: 'tax.crNumber' }, { label: 'Commercial licence', field: 'tax.licenceNumber' }],
   currency: 'KWD',
   locale: 'en-GB',
   mobile: { dialCode: '965', nationalDigits: 8, pattern: /^[569]\d{7}$/, example: '5xxx xxxx' },

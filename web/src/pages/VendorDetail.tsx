@@ -16,7 +16,7 @@ import { useSession } from '../lib/session';
 import { ChecksPanel } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 
-type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; me: string;
+type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
   privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[] };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
@@ -31,6 +31,7 @@ export function VendorDetail() {
   const [reassigning, setReassigning] = useState(false);
   const [checking, setChecking] = useState<string>();
   const [blockMode, setBlockMode] = useState<'block' | 'unblock'>();
+  const [contactOpen, setContactOpen] = useState(false);
   const [crAction, setCrAction] = useState<{ cr: ChangeRequest; action: 'APPROVE' | 'REJECT' }>();
   const [crReassign, setCrReassign] = useState<ChangeRequest>();
   const [reviewing, setReviewing] = useState(false);
@@ -117,7 +118,7 @@ export function VendorDetail() {
       <header className="page-head">
         <div>
           <h1>{v.name} <StatusBadge status={v.status} /> <FlagBadges flags={d.flags} /></h1>
-          <p className="muted"><span className="mono">{v.code}</span> · {VENDOR_TYPES.find((t) => t.value === v.vendorType)?.label} · {v.contactFirstName} {v.contactLastName} ({v.contactEmail}, {v.contactMobile}) · created {fmtDate(v.createdAt)} by {v.createdBy?.name}</p>
+          <p className="muted"><span className="mono">{v.code}</span> · {VENDOR_TYPES.find((t) => t.value === v.vendorType)?.label} · {v.contactFirstName} {v.contactLastName} ({v.contactEmail}{d.canEditContact && <> <button className="link-btn small" onClick={() => setContactOpen(true)}>change</button></>}, {v.contactMobile}) · created {fmtDate(v.createdAt)} by {v.createdBy?.name}</p>
         </div>
         <div className="head-actions">
           {d.canInvite && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && <button className="btn btn-secondary" onClick={resend}>Resend invite</button>}
@@ -255,6 +256,7 @@ export function VendorDetail() {
         </aside>
       </div>
 
+      {contactOpen && <ContactModal vendorId={v.id} current={v.contactEmail} onClose={() => setContactOpen(false)} onDone={(m) => { setContactOpen(false); setFlash({ kind: 'success', text: m }); load(); }} />}
       {privacyAction && <PrivacyModal mode={privacyAction} vendor={v} onClose={() => setPrivacyAction(undefined)} onDone={(m) => { setPrivacyAction(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {blockMode && <BlockModal mode={blockMode} vendorId={v.id} onClose={() => setBlockMode(undefined)} onDone={(m) => { setBlockMode(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {proposeOpen && <ProposeModal changes={proposedChanges} docCount={myStaged.length} onClose={() => setProposeOpen(false)} onSubmit={submitProposal} />}
@@ -324,6 +326,27 @@ function ReassignModal({ listUrl, assignUrl, step, onClose, onDone }: { listUrl:
           ))}
         </div>
       )}
+    </Modal>
+  );
+}
+
+function ContactModal({ vendorId, current, onClose, onDone }: { vendorId: string; current: string; onClose: () => void; onDone: (msg: string) => void }) {
+  const [email, setEmail] = useState('');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    setBusy(true); setError(undefined);
+    try { await api(`/staff/vendors/${vendorId}/contact`, { body: { email, reason } }); onDone(`Contact email changed to ${email}. ${current} was told about the change.`); }
+    catch (e: any) { setError(e.message); setBusy(false); }
+  }
+  return (
+    <Modal title="Change contact email" onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || !email || reason.trim().length < 3} onClick={submit}>{busy ? 'Saving…' : 'Change'}</button></>}>
+      {error && <Alert kind="error">{error}</Alert>}
+      <p className="small muted">Sign-in codes and all emails go to this address. The current address (<strong>{current}</strong>) gets a security notice. Only change it on the supplier’s confirmed instructions.</p>
+      <div className="field"><label htmlFor="ct-email">New contact email</label><input id="ct-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus /></div>
+      <div className="field"><label htmlFor="ct-reason">Reason and source<span className="req"> *</span></label><input id="ct-reason" value={reason} maxLength={300} placeholder="e.g. old address bounced; new one confirmed by phone on 14 Oct" onChange={(e) => setReason(e.target.value)} /></div>
     </Modal>
   );
 }

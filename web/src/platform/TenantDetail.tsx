@@ -4,11 +4,13 @@ import { Alert, Modal } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize, loc } from '../lib/format';
 import { PLAN_LABEL, SOURCE_LABEL, papi, relDays } from './session';
 import { TenantStatus } from './Tenants';
+import { BillingForm, InvoiceStatus, money, type BillingDetails, type InvoiceRow } from '../pages/admin/Billing';
 
 type Features = { erp: boolean; ai: boolean; kyc: boolean };
 interface Limits { maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Features }
 interface Detail {
-  tenant: { id: string; slug: string; name: string; status: 'ACTIVE' | 'SUSPENDED'; statusReason: string | null; plan: string; limits: Partial<Limits>; trialEndsAt: string | null; source: string; notes: string | null; createdAt: string; country?: string; countryName?: string };
+  tenant: { id: string; slug: string; name: string; status: 'ACTIVE' | 'SUSPENDED'; statusReason: string | null; plan: string; limits: Partial<Limits>; trialEndsAt: string | null; source: string; notes: string | null; createdAt: string; country?: string; countryName?: string;
+    security?: { requireMfa: boolean; enforced: boolean }; email?: { sender: string; replyTo: string | null; domain: { name: string; status: string } | null } };
   effective: Limits & { label: string };
   usage: { users: number; vendors: number; emailsToday: number; emailsLast30: number; emailsFailedLast30: number; vendorsByStatus: Record<string, number>; lastActiveAt: string | null };
   admins: { id: string; name: string; email: string; status: string; mfaEnabled: boolean; lastLoginAt: string | null }[];
@@ -51,6 +53,7 @@ export function PlatformTenantDetail() {
         <div>
           <UsageCard d={d} />
           <PlanCard d={d} onSaved={load} />
+          <BillingCard tenantId={t.id} plan={t.plan} onChanged={load} />
           <section className="card pad section-card">
             <div className="row-between"><h3>Administrators</h3><button className="btn btn-secondary btn-sm" onClick={() => setModal('admin')}>Add administrator</button></div>
             <table className="table static compact">
@@ -84,6 +87,7 @@ export function PlatformTenantDetail() {
               <dt>Internal ID</dt><dd className="mono break">{t.id}</dd>
             </dl>
           </section>
+          <SecurityEmailCard t={t} onSaved={load} onError={setError} />
           <NotesCard id={t.id} notes={t.notes} />
           <section className="card pad section-card">
             <h3>Console history</h3>
@@ -97,6 +101,98 @@ export function PlatformTenantDetail() {
       {modal === 'support' && <SupportModal tenant={t} onClose={() => setModal(undefined)} />}
       {modal === 'admin' && <AddAdminModal tenantId={t.id} onClose={() => setModal(undefined)} onDone={() => { setModal(undefined); load(); }} />}
     </div>
+  );
+}
+
+function SecurityEmailCard({ t, onSaved, onError }: { t: Detail['tenant']; onSaved: () => void; onError: (m: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const enforced = !!t.security?.enforced;
+  async function toggle(on: boolean) {
+    setBusy(true);
+    try { await papi(`/tenants/${t.id}`, { method: 'PATCH', body: { requireMfa: on } }); alertOk(on ? 'Two-factor sign-in is now required in this workspace.' : 'The workspace admin can now turn two-factor sign-in off.'); onSaved(); }
+    catch (e: any) { onError(e.message); } finally { setBusy(false); }
+  }
+  return (
+    <section className="card pad section-card">
+      <h3>Security & email</h3>
+      <label className="check-item"><input type="checkbox" checked={enforced} disabled={busy} onChange={(e) => toggle(e.target.checked)} />
+        <span><strong>Require two-factor sign-in</strong><span className="muted small block">{enforced ? 'Enforced from the console — the workspace admin can’t switch it off.' : t.security?.requireMfa ? 'Turned on by the workspace admin.' : 'Off. Tick to require it for every user in this workspace.'}</span></span></label>
+      <dl className="kv small" style={{ marginTop: 12 }}>
+        <dt>Sends as</dt><dd className="break">{t.email?.sender ?? '—'}</dd>
+        <dt>Replies to</dt><dd className="break">{t.email?.replyTo ?? 'not set'}</dd>
+        <dt>Own domain</dt><dd>{t.email?.domain ? <>{t.email.domain.name} · {t.email.domain.status}</> : 'none'}</dd>
+      </dl>
+    </section>
+  );
+}
+
+interface TenantBillingData { billing: BillingDetails; invoices: InvoiceRow[]; currency: string; online: boolean; states: { code: string; name: string }[]; countries: { code: string; name: string }[] }
+
+function BillingCard({ tenantId, plan, onChanged }: { tenantId: string; plan: string; onChanged: () => void }) {
+  const [d, setD] = useState<TenantBillingData>();
+  const [mode, setMode] = useState<'issue' | 'details' | { pay: InvoiceRow } | { void: InvoiceRow }>();
+  const [err, setErr] = useState<string>();
+  const [f, setF] = useState({ plan: plan === 'enterprise' ? 'enterprise' : 'standard', cycle: 'yearly', periodStart: '', amount: '', note: '', activatesPlan: plan === 'trial', ref: '', method: 'bank transfer', paidOn: '', reason: '' });
+  const load = useCallback(() => papi(`/tenants/${tenantId}/billing`).then(setD).catch((e) => setErr(e.message)), [tenantId]);
+  useEffect(() => { load(); }, [load]);
+  if (!d) return null;
+  const run = async (fn: () => Promise<unknown>, ok: string) => { setErr(undefined); try { await fn(); setMode(undefined); await load(); onChanged(); alertOk(ok); } catch (e: any) { setErr(e.message); } };
+  return (
+    <section className="card pad section-card">
+      <div className="row-between"><h3>Billing & invoices</h3>
+        <div className="btn-row"><button className="btn btn-ghost btn-sm" onClick={() => setMode(mode === 'details' ? undefined : 'details')}>Billing details</button><button className="btn btn-secondary btn-sm" onClick={() => setMode('issue')}>Issue invoice</button></div></div>
+      {err && <Alert kind="error">{err}</Alert>}
+      <p className="small muted">{d.billing.legalName ? <>{d.billing.legalName}{d.billing.gstin && <> · GSTIN {d.billing.gstin}</>} · {d.currency}</> : 'No billing details yet.'}
+        {d.billing.cycle && <> · billed {d.billing.cycle}</>}{d.billing.autoInvoice && d.billing.nextInvoiceOn && <> · next invoice {fmtDate(d.billing.nextInvoiceOn)}</>}</p>
+      {mode === 'details' && (
+        <div className="subcard">
+          <BillingForm value={d.billing} states={d.states} countries={d.countries} saveLabel="Save" onSave={(v) => run(() => papi(`/tenants/${tenantId}/billing`, { method: 'PUT', body: v }), 'Billing details saved.')} />
+          <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={!!d.billing.autoInvoice} onChange={(e) => run(() => papi(`/tenants/${tenantId}/billing`, { method: 'PUT', body: { ...d.billing, autoInvoice: e.target.checked } }), e.target.checked ? 'Renewal invoices will be issued automatically.' : 'Automatic renewal invoices turned off.')} />
+            <span>Issue renewal invoices automatically{d.billing.nextInvoiceOn ? ` (next on ${d.billing.nextInvoiceOn})` : ''}</span></label>
+        </div>
+      )}
+      {d.invoices.length ? (
+        <table className="table static compact">
+          <thead><tr><th>Invoice</th><th className="num">Total</th><th>Status</th><th /></tr></thead>
+          <tbody>{d.invoices.map((i) => (
+            <tr key={i.id}><td><span className="mono small">{i.number}</span><div className="muted small">{i.planLabel} · {i.cycle} · {fmtDate(i.periodStart)}</div></td>
+              <td className="num small">{money(i.total, i.currency)}</td><td><InvoiceStatus i={i} /></td>
+              <td className="actions small"><a href={`/api/platform/tenants/${tenantId}/invoices/${i.id}/pdf`} className="link-btn small">PDF</a>
+                {i.status === 'DUE' && <> · <button className="link-btn small" onClick={() => setMode({ pay: i })}>Record payment</button> · <button className="link-btn small" onClick={() => setMode({ void: i })}>Cancel</button></>}</td></tr>))}</tbody>
+        </table>
+      ) : <p className="muted small">No invoices yet.</p>}
+
+      {mode === 'issue' && (
+        <Modal title="Issue invoice" onClose={() => setMode(undefined)} footer={<><button className="btn btn-ghost" onClick={() => setMode(undefined)}>Cancel</button><button className="btn btn-primary" onClick={() => run(() => papi(`/tenants/${tenantId}/invoices`, { method: 'POST', body: { plan: f.plan, cycle: f.cycle, ...(f.periodStart ? { periodStart: f.periodStart } : {}), ...(f.amount ? { amount: Number(f.amount) } : {}), ...(f.note ? { note: f.note } : {}), activatesPlan: f.activatesPlan } }), 'Invoice issued and emailed.')}>Issue</button></>}>
+          {err && <Alert kind="error">{err}</Alert>}
+          <div className="field-grid">
+            <div className="field"><label htmlFor="i-plan">Plan</label><select id="i-plan" value={f.plan} onChange={(e) => setF({ ...f, plan: e.target.value })}><option value="standard">Standard</option><option value="enterprise">Enterprise</option></select></div>
+            <div className="field"><label htmlFor="i-cycle">Billing period</label><select id="i-cycle" value={f.cycle} onChange={(e) => setF({ ...f, cycle: e.target.value })}><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></div>
+            <div className="field"><label htmlFor="i-start">Period starts</label><input id="i-start" type="date" value={f.periodStart} onChange={(e) => setF({ ...f, periodStart: e.target.value })} /><div className="field-help">Empty = today.</div></div>
+            <div className="field"><label htmlFor="i-amount">Price before tax ({d.currency})</label><input id="i-amount" type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="Price list" /></div>
+          </div>
+          <div className="field"><label htmlFor="i-note">Note on the invoice</label><input id="i-note" value={f.note} maxLength={500} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="e.g. PO 4500012345" /></div>
+          <label className="check-item"><input type="checkbox" checked={f.activatesPlan} onChange={(e) => setF({ ...f, activatesPlan: e.target.checked })} /><span>Switch the workspace to this plan when the invoice is paid</span></label>
+        </Modal>
+      )}
+      {mode && typeof mode === 'object' && 'pay' in mode && (
+        <Modal title={`Record payment — ${mode.pay.number}`} onClose={() => setMode(undefined)} footer={<><button className="btn btn-ghost" onClick={() => setMode(undefined)}>Cancel</button><button className="btn btn-primary" onClick={() => run(() => papi(`/tenants/${tenantId}/invoices/${mode.pay.id}/payment`, { method: 'POST', body: { ref: f.ref, method: f.method, ...(f.paidOn ? { paidOn: f.paidOn } : {}) } }), 'Payment recorded.')}>Mark paid</button></>}>
+          {err && <Alert kind="error">{err}</Alert>}
+          <p className="small">{money(mode.pay.total, mode.pay.currency)}</p>
+          <div className="field-grid">
+            <div className="field"><label htmlFor="p-ref">Reference (UTR / cheque no.)</label><input id="p-ref" value={f.ref} onChange={(e) => setF({ ...f, ref: e.target.value })} /></div>
+            <div className="field"><label htmlFor="p-method">Method</label><input id="p-method" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })} /></div>
+            <div className="field"><label htmlFor="p-on">Paid on</label><input id="p-on" type="date" value={f.paidOn} onChange={(e) => setF({ ...f, paidOn: e.target.value })} /></div>
+          </div>
+        </Modal>
+      )}
+      {mode && typeof mode === 'object' && 'void' in mode && (
+        <Modal title={`Cancel invoice ${mode.void.number}`} onClose={() => setMode(undefined)} footer={<><button className="btn btn-ghost" onClick={() => setMode(undefined)}>Keep it</button><button className="btn btn-danger" onClick={() => run(() => papi(`/tenants/${tenantId}/invoices/${mode.void.id}/void`, { method: 'POST', body: { reason: f.reason } }), 'Invoice cancelled.')}>Cancel invoice</button></>}>
+          {err && <Alert kind="error">{err}</Alert>}
+          <div className="field"><label htmlFor="v-reason">Reason</label><input id="v-reason" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} /></div>
+        </Modal>
+      )}
+    </section>
   );
 }
 

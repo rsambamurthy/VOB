@@ -143,6 +143,7 @@ export const uaePack: CountryPack = {
   name: UAE,
   extends: 'GCC',
   homeCountry: true,
+  registerIds: [{ label: 'Trade licence', field: 'tax.licenceNumber' }, { label: 'TRN', field: 'tax.vatNumber' }],
   currency: 'AED',
   locale: 'en-GB',
   weekend: [6, 0],

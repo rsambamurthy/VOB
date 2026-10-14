@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db, schema } from '../src/lib/db.js';
 import { client, login } from './helpers.js';
 import { createTenant } from '../src/services/tenants.js';
-import { checksForVendor, packFor, toInternational, checkProvider } from '../src/countries/registry.js';
+import { checksForVendor, packFor, toInternational, checkProvider, vendorTypesFor } from '../src/countries/registry.js';
 import { validators, crossFieldChecks } from '../src/lib/validators.js';
 import { toOracleSupplier } from '../src/lib/erpMapper.js';
 import { addWorkingDays, calendarFor } from '../src/lib/calendar.js';
@@ -16,14 +16,16 @@ const ids = (t: ReturnType<typeof templateFor>) => t.sections.flatMap((s) => s.g
 
 describe('Qatar, Kuwait and Oman packs', () => {
   test('each can host a Gulf workspace with its own currency, time zone and checks', () => {
+    expect(vendorTypesFor('QA').map((t) => t.label)).toEqual(['Local', 'Foreign', 'Government entity']);
+    expect(vendorTypesFor('IN').map((t) => t.label)).toEqual(['Domestic', 'Import (foreign)', 'Government']);
     expect(packFor('QA')).toMatchObject({ currency: 'QAR', timeZone: 'Asia/Qatar', weekend: [5, 6], skipWeekendsByDefault: true });
     expect(packFor('KW')).toMatchObject({ currency: 'KWD', timeZone: 'Asia/Kuwait', weekend: [5, 6] });
     expect(packFor('OM')).toMatchObject({ currency: 'OMR', timeZone: 'Asia/Muscat', timeZoneLabel: 'GST', weekend: [5, 6] });
     const kinds = (home: string, country: string) => checksForVendor(home, { basic: { supplierCountry: country } }).map((c) => c.def.kind);
-    expect(kinds('QA', 'Qatar')).toEqual(['sanctions', 'qa_cr', 'qa_tin']);
-    expect(kinds('KW', 'Kuwait')).toEqual(['sanctions', 'kw_cr']);
-    expect(kinds('OM', 'Oman')).toEqual(['sanctions', 'om_cr', 'om_vat']);
-    expect(kinds('SA', 'Oman')).toEqual(['sanctions', 'sa_cr', 'sa_vat', 'om_cr', 'om_vat']); // an Omani supplier of a Saudi buyer
+    expect(kinds('QA', 'Qatar')).toEqual(['sanctions', 'gcc_iban', 'qa_cr', 'qa_tin']);
+    expect(kinds('KW', 'Kuwait')).toEqual(['sanctions', 'gcc_iban', 'kw_cr']);
+    expect(kinds('OM', 'Oman')).toEqual(['sanctions', 'gcc_iban', 'om_cr', 'om_vat']);
+    expect(kinds('SA', 'Oman')).toEqual(['sanctions', 'gcc_iban', 'sa_cr', 'sa_vat', 'om_cr', 'om_vat']); // an Omani supplier of a Saudi buyer
   });
 
   test('formats: Qatar TIN/CR/zone, Kuwait CR/postal, Oman CR/VAT/postal, IBANs by country', () => {
@@ -103,9 +105,9 @@ describe('Qatar, Kuwait and Oman packs', () => {
 
   test('Qatar, Kuwait and Oman workspaces end to end: locale, mobile format, checks, screening', async () => {
     const cases = [
-      { slug: 'qa-co', country: 'QA', mobile: '55123456', bad: '0501234567', law: 'PDPPL', checks: ['sanctions', 'qa_cr', 'qa_tin'] },
-      { slug: 'kw-co', country: 'KW', mobile: '55123456', bad: '0501234567', law: null, checks: ['sanctions', 'kw_cr'] },
-      { slug: 'om-co', country: 'OM', mobile: '91234567', bad: '55123456', law: 'PDPL', checks: ['sanctions', 'om_cr', 'om_vat'] },
+      { slug: 'qa-co', country: 'QA', mobile: '55123456', bad: '0501234567', law: 'PDPPL', checks: ['sanctions', 'gcc_iban', 'qa_cr', 'qa_tin'] },
+      { slug: 'kw-co', country: 'KW', mobile: '55123456', bad: '0501234567', law: null, checks: ['sanctions', 'gcc_iban', 'kw_cr'] },
+      { slug: 'om-co', country: 'OM', mobile: '91234567', bad: '55123456', law: 'PDPL', checks: ['sanctions', 'gcc_iban', 'om_cr', 'om_vat'] },
     ];
     for (const c of cases) {
       const email = `admin@${c.slug}.test`;
@@ -125,5 +127,24 @@ describe('Qatar, Kuwait and Oman packs', () => {
     }
     const signup = (await client().get('/api/signup/config')).body;
     expect(signup.countries.map((x: any) => x.name)).toEqual(expect.arrayContaining(['Qatar', 'Kuwait', 'Oman']));
+  });
+
+  test('the workspace admin can set the home country once, before suppliers are invited', async () => {
+    await createTenant({ slug: 'switch-co', name: 'Switch Co', adminName: 'A B', adminEmail: 'admin@switch-co.test', adminPassword: 'Demo@12345' });
+    const admin = await login('admin@switch-co.test', 'switch-co', 'Demo@12345');
+    expect((await admin.get('/api/admin/tenant/country')).body).toMatchObject({ country: 'IN', canChange: true, confirmed: false });
+    expect((await admin.post('/api/admin/tenant/country', { country: 'OM' })).status).toBe(200);
+    const t = await db.query.tenants.findFirst({ where: eq(schema.tenants.slug, 'switch-co') });
+    expect(t).toMatchObject({ country: 'OM' });
+    expect(t!.settings).toMatchObject({ countryConfirmed: true, skipWeekends: true });
+    const cfg = (await admin.get('/api/config')).body;
+    expect(ids(cfg.config)).toEqual(expect.arrayContaining(['tax.crNumber', 'localContent.omanisationPct']));
+    expect(cfg.vendorTypes.map((v: any) => v.label)).toEqual(['Local', 'Foreign', 'Government entity']);
+    expect((await admin.get('/api/auth/me')).body.tenant).toMatchObject({ country: 'OM', currency: 'OMR' });
+    expect((await admin.post('/api/admin/tenant/country', { country: 'QA' })).status).toBe(409);
+    expect((await admin.get('/api/admin/tenant/country')).body).toMatchObject({ canChange: false, confirmed: true });
+
+    const acme = await login('admin@acme.test');
+    expect((await acme.get('/api/admin/tenant/country')).body).toMatchObject({ canChange: false, reason: 'Suppliers have already been invited' });
   });
 });

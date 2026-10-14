@@ -45,6 +45,9 @@ export const basePack: CountryPack = {
   timeZone: 'UTC',
   timeZoneLabel: 'UTC',
   validators: baseValidators,
+  sensitiveFields: { 'tax.foreignTin': [2, 2], 'bank.accountNumber': [0, 4], 'bank.iban': [4, 4] },
+  keyChangeFields: ['basic.vendorName'],
+  vendorTypeLabels: { DOMESTIC: 'Domestic', IMPORT: 'Import (foreign)', GOVERNMENT: 'Government' },
   formats: {
     postalCode: { pattern: /^[A-Za-z0-9 -]{3,10}$/, message: 'Enter a valid postal code' },
     bankAccount: { pattern: /^[A-Za-z0-9]{4,34}$/, message: 'Enter a valid account number' },

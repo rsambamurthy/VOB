@@ -6,12 +6,14 @@ import { fmtDateTime } from '../../lib/format';
 import { Alert, Empty, Modal } from '../../components/ui';
 import { ErpBadge, type Delivery } from '../../components/Erp';
 
-type Kind = 'none' | 'oracle' | 'webhook' | 'csv';
+type Kind = 'none' | 'oracle' | 'sap' | 'dynamics' | 'webhook' | 'csv';
 interface Conn { kind: Kind; testMode: boolean; autoPush: boolean; config: Record<string, string>; secretsSet: Record<string, boolean> }
 
 const KINDS: { key: Kind; title: string; text: string }[] = [
   { key: 'none', title: 'Not connected', text: 'Use the manual “ERP export” button on each vendor.' },
   { key: 'oracle', title: 'Oracle E-Business Suite', text: 'POST the supplier payload (ERPVendorsData: vendor → sites → banks) to a REST service.' },
+  { key: 'sap', title: 'SAP S/4HANA', text: 'Create the business partner (supplier roles, address, tax, bank, company code) through API_BUSINESS_PARTNER.' },
+  { key: 'dynamics', title: 'Dynamics 365 Finance', text: 'Create the vendor (VendorsV2) and its bank account through the OData data entities.' },
   { key: 'webhook', title: 'Webhook', text: 'POST a signed JSON event to your middleware, iPaaS or another ERP.' },
   { key: 'csv', title: 'CSV file', text: 'One CSV file per change, kept here for download or uploaded to an SFTP folder.' },
 ];
@@ -96,6 +98,39 @@ export function ErpSettings() {
                   <div className="field-help">Called nightly and from <strong>Get from ERP</strong> as <span className="mono">GET …?changedSince=&lt;time&gt;[&amp;poNumber=][&amp;supplierNumber=]</span>. It should return approved POs with PO_HEADERS_ALL columns, nested LINES → SHIPMENTS (PO_LINE_LOCATIONS_ALL) and optional RECEIPTS.</div></div>
                 <div className="field field-wide"><label htmlFor="erp-ackUrl">Acknowledgement URL</label><input id="erp-ackUrl" value={cfg('ackUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_po/acknowledge/" onChange={(e) => setCfg('ackUrl', e.target.value)} />
                   <div className="field-help">Receives a POST each time a supplier accepts (or a PO is auto-accepted): PO_HEADER_ID, SEGMENT1, REVISION_NUM, ACCEPTED_FLAG, ACCEPTANCE_TYPE and the accepted LINES — for your service to record in PO_ACCEPTANCES.</div></div>
+                <div className="field field-wide"><label htmlFor="erp-asnUrl">Shipment notice URL</label><input id="erp-asnUrl" value={cfg('asnUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_po/asn/" onChange={(e) => setCfg('asnUrl', e.target.value)} />
+                  <div className="field-help">Receives each shipment notice (and cancellation) as a HEADER with SHIPMENT_NUM, SHIPPED_DATE, EXPECTED_RECEIPT_DATE, carrier and waybill, and LINES with PO_HEADER_ID, PO_LINE_ID and QUANTITY — shaped for the receiving open interface (RCV_HEADERS_INTERFACE / RCV_TRANSACTIONS_INTERFACE).</div></div>
+                <div className="field field-wide"><label htmlFor="erp-invoiceUrl">Invoice URL</label><input id="erp-invoiceUrl" value={cfg('invoiceUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_ap/invoice/" onChange={(e) => setCfg('invoiceUrl', e.target.value)} />
+                  <div className="field-help">Receives each supplier invoice once approved: INVOICE_NUM, INVOICE_DATE, VENDOR_NUM, INVOICE_AMOUNT and ITEM / TAX LINES matched to PO_LINE_ID — shaped for the payables open interface (AP_INVOICES_INTERFACE).</div></div>
+              </div>
+            )}
+            {f.kind === 'sap' && (
+              <div className="field-grid">
+                <div className="field field-wide"><label htmlFor="erp-url">SAP system URL</label><input id="erp-url" value={cfg('url')} placeholder="https://my123456-api.s4hana.cloud.sap" onChange={(e) => setCfg('url', e.target.value)} />
+                  <div className="field-help">The API host. VendorGate calls <span className="mono">/sap/opu/odata/sap/API_BUSINESS_PARTNER</span>, fetching a CSRF token before each write. In S/4HANA Cloud, set up communication scenario SAP_COM_0008 (Business Partner, Customer and Supplier Integration).</div></div>
+                <div className="field"><label htmlFor="erp-user">Communication user</label><input id="erp-user" value={cfg('username')} autoComplete="off" onChange={(e) => setCfg('username', e.target.value)} /></div>
+                {secretField('password', 'Password')}
+                <div className="field"><label htmlFor="erp-grouping">BP grouping</label><input id="erp-grouping" value={cfg('grouping')} placeholder="e.g. BP02 (blank = system default)" onChange={(e) => setCfg('grouping', e.target.value)} /></div>
+                <div className="field"><label htmlFor="erp-cc">Company code</label><input id="erp-cc" value={cfg('companyCode')} placeholder="e.g. 1010" onChange={(e) => setCfg('companyCode', e.target.value)} /></div>
+                <div className="field"><label htmlFor="erp-porg">Purchasing organisation</label><input id="erp-porg" value={cfg('purchasingOrg')} placeholder="e.g. 1010" onChange={(e) => setCfg('purchasingOrg', e.target.value)} /></div>
+                <div className="field"><label htmlFor="erp-tax">Tax number category</label><input id="erp-tax" value={cfg('taxType')} placeholder="IN3 for GSTIN; blank = default" onChange={(e) => setCfg('taxType', e.target.value)} /></div>
+                <div className="field field-wide"><h4 className="sub-head">Purchase orders (supplier collaboration)</h4></div>
+                <div className="field field-wide"><label htmlFor="erp-messageUrl">Order message URL</label><input id="erp-messageUrl" value={cfg('messageUrl')} placeholder="https://your-tenant.it-cpi.cfapps.eu10.hana.ondemand.com/http/vendorgate" onChange={(e) => setCfg('messageUrl', e.target.value)} />
+                  <div className="field-help">Your Integration Suite (CPI) flow. Receives acceptances, shipment notices and approved invoices as JSON events (purchase_order.accepted, shipment.created, shipment.cancelled, invoice.approved) with the same communication user — map them to purchase order confirmations, inbound deliveries and supplier invoices.</div></div>
+              </div>
+            )}
+            {f.kind === 'dynamics' && (
+              <div className="field-grid">
+                <div className="field field-wide"><label htmlFor="erp-url">Environment URL</label><input id="erp-url" value={cfg('url')} placeholder="https://contoso.operations.dynamics.com" onChange={(e) => setCfg('url', e.target.value)} />
+                  <div className="field-help">Vendors are created through <span className="mono">data/VendorsV2</span> with your VendorGate vendor code as the account number (set the vendor number sequence to allow manual numbers), then the bank account through <span className="mono">data/VendorBankAccounts</span>.</div></div>
+                <div className="field"><label htmlFor="erp-tenant">Microsoft Entra tenant id</label><input id="erp-tenant" value={cfg('tenantId')} placeholder="contoso.onmicrosoft.com or GUID" onChange={(e) => setCfg('tenantId', e.target.value)} /></div>
+                <div className="field"><label htmlFor="erp-client">App (client) id</label><input id="erp-client" value={cfg('clientId')} autoComplete="off" onChange={(e) => setCfg('clientId', e.target.value)} /></div>
+                {secretField('clientSecret', 'Client secret', 'From the app registration. Register the same app under System administration → Microsoft Entra ID applications in Dynamics. Stored encrypted.')}
+                <div className="field"><label htmlFor="erp-area">Legal entity (dataAreaId)</label><input id="erp-area" value={cfg('dataAreaId')} placeholder="e.g. inmf" onChange={(e) => setCfg('dataAreaId', e.target.value)} /></div>
+                <div className="field"><label htmlFor="erp-vgroup">Vendor group</label><input id="erp-vgroup" value={cfg('vendorGroup')} placeholder="e.g. DOM" onChange={(e) => setCfg('vendorGroup', e.target.value)} /></div>
+                <div className="field field-wide"><h4 className="sub-head">Purchase orders (supplier collaboration)</h4></div>
+                <div className="field field-wide"><label htmlFor="erp-messageUrl">Order message URL</label><input id="erp-messageUrl" value={cfg('messageUrl')} placeholder="https://prod-00.westeurope.logic.azure.com/workflows/…" onChange={(e) => setCfg('messageUrl', e.target.value)} />
+                  <div className="field-help">Your Logic App or Power Automate flow. Receives acceptances, shipment notices and approved invoices as JSON events with a bearer token from the same app registration — map them to purchase order confirmations, shipment notices and pending vendor invoices.</div></div>
               </div>
             )}
             {f.kind === 'webhook' && (
@@ -107,7 +142,7 @@ export function ErpSettings() {
                     <input id="erp-signingSecret" type={newSecret ? 'text' : 'password'} autoComplete="new-password" value={secrets.signingSecret ?? ''} placeholder={saved.kind === 'webhook' && saved.secretsSet.signingSecret ? '•••••••• saved — type or generate to replace' : ''} onChange={(e) => { setNewSecret(undefined); setSecrets({ ...secrets, signingSecret: e.target.value }); }} />
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => { const s = randomSecret(); setNewSecret(s); setSecrets({ ...secrets, signingSecret: s }); }}>Generate</button>
                   </div>
-                  <div className="field-help">Each request carries <span className="mono">X-VendorGate-Signature: sha256=HMAC(secret, timestamp + "." + body)</span> and <span className="mono">X-VendorGate-Timestamp</span>. Verify both on your side and reject requests older than 5 minutes. Events: vendor.approved, vendor.updated, vendor.blocked, vendor.unblocked, vendor.synced. Return <span className="mono">{'{"vendorId": "…"}'}</span> to store your ERP’s id.</div>
+                  <div className="field-help">Each request carries <span className="mono">X-VendorGate-Signature: sha256=HMAC(secret, timestamp + "." + body)</span> and <span className="mono">X-VendorGate-Timestamp</span>. Verify both on your side and reject requests older than 5 minutes. Events: vendor.approved, vendor.updated, vendor.blocked, vendor.unblocked, vendor.synced — and for purchase orders purchase_order.accepted, shipment.created, shipment.cancelled, invoice.approved. Return <span className="mono">{'{"vendorId": "…"}'}</span> to store your ERP’s id.</div>
                 </div>
               </div>
             )}

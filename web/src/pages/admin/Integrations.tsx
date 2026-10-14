@@ -8,8 +8,8 @@ interface Status {
   email: { provider: string; live: boolean; from: string; counts: Record<string, number>; lastFailures: { to: string; subject: string; error: string; createdAt: string }[] };
   sms: { provider: string; live: boolean; counts: Record<string, number> };
   storage: { driver: string; scan: string; bucket?: string };
-  kyc: { provider: string; live: boolean; packs: { code: string; country: string; title: string; provider: string; live: boolean; home: boolean }[] };
-  ai: { provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean };
+  kyc: { provider: string; live: boolean; packs: { code: string; country: string; title: string; provider: string; live: boolean; partlyLive?: boolean; home: boolean; checks?: { kind: string; label: string; provider: string; live: boolean }[] }[] };
+  ai: { helpAnswers?: boolean; helpLive?: boolean; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean };
   jobs: { running: boolean };
   devMode: boolean;
 }
@@ -77,16 +77,21 @@ export function Integrations() {
         </Card>
 
         {s.kyc.packs.map((p) => (
-          <Card key={p.code} title={`${p.title} (${p.country})`} live={p.live} provider={p.provider} env={CHECK_ENV[p.code] ?? '# Live provider is connected by VendorGate — ask us when you are ready to go live.'}>
+          <Card key={p.code} title={`${p.title} (${p.country})`} live={p.live} provider={p.provider} env={CHECK_ENV[p.code] ?? AGGREGATOR_ENV}>
             <p className="small muted">{p.home ? 'Used for your suppliers.' : `Used for suppliers from ${p.country}.`} Vendors run checks from the form; reviewers can re-run them from the vendor page. Identical checks are reused for 24 hours and limited per vendor per day to control provider fees. Only masked identifiers are stored.</p>
+            {p.checks && p.checks.length > 1 && (
+              <ul className="small check-modes">{p.checks.map((c) => <li key={c.kind}>{c.label}: {c.live ? <strong>live ({c.provider})</strong> : <span className="muted">test mode</span>}</li>)}</ul>
+            )}
             {!p.live && CHECK_TEST[p.code] && <p className="small">Test mode answers instantly. {CHECK_TEST[p.code]}</p>}
           </Card>
         ))}
 
-        <Card title="AI document reading" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-4-5-20251001 for lower cost'}>
+        <Card title="AI: document reading and help answers" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-4-5-20251001 for lower cost'}>
           <p className="small muted">Reads registration, tax and bank documents (India: GST, PAN, cheque, incorporation, Udyam; Saudi Arabia: CR, VAT certificate; UAE: trade licence, TRN certificate; Bahrain: CR, VAT certificate; Qatar: CR, tax card; Kuwait: commercial licence; Oman: CR, VAT certificate; Gulf bank letters), suggests values for the form, and shows reviewers where documents and form answers differ.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>
           <label className="check-item"><input type="checkbox" checked={s.ai.enabledForWorkspace} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, enabledForWorkspace: on } }); setting({ aiExtraction: on }, on ? 'AI document reading turned on.' : 'AI document reading turned off.'); }} />
             <span><strong>Use AI to read uploaded documents in this workspace</strong><span className="muted small block">Documents are sent to the AI provider for reading and are not used to train models. Check this fits your data-protection obligations before turning it on.{!s.ai.live && ' (In test mode no document leaves the server.)'}</span></span></label>
+          <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.helpAnswers !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, helpAnswers: on } }); setting({ helpAi: on }, on ? 'AI help answers turned on.' : 'AI help answers turned off.'); }} />
+            <span><strong>Answer F1 help questions with AI</strong><span className="muted small block">Staff and suppliers can ask a question in their own words; the answer comes only from the help topics they can see. Only the question and those topics are sent to the AI provider.{!s.ai.helpLive && ' (In test mode the closest topic is shown instead.)'}</span></span></label>
         </Card>
       </div>
     </div>
@@ -94,11 +99,14 @@ export function Integrations() {
 }
 
 const CHECK_ENV: Record<string, string> = {
+  GCC: 'SANCTIONS_PROVIDER=opensanctions\nOPENSANCTIONS_API_KEY=...\nOPENSANCTIONS_DATASET=sanctions     # or default (adds PEPs, debarment)\nOPENSANCTIONS_THRESHOLD=0.8\n\n# IBAN / account-holder checks through an aggregator:\nKYC_AGGREGATOR_URL=https://kyc.example.com\nKYC_AGGREGATOR_KEY=...\nKYC_AGGREGATOR_KINDS=gcc_iban',
+  SA: 'WATHQ_API_KEY=...                  # Saudi CR (Wathq)\nWATHQ_CR_BASE_URL=https://api.wathq.sa/v5/commercialregistration\n\n# VAT (ZATCA) through an aggregator:\nKYC_AGGREGATOR_URL=https://kyc.example.com\nKYC_AGGREGATOR_KEY=...\nKYC_AGGREGATOR_KINDS=sa_vat',
   IN: 'KYC_PROVIDER=surepass\nSUREPASS_TOKEN=...\nSUREPASS_BASE_URL=https://kyc-api.surepass.io/api/v1   # sandbox: https://sandbox.surepass.io/api/v1\n# endpoint paths can be overridden: SUREPASS_PATH_GSTIN, _PAN, _BANK, _CIN',
 };
+const AGGREGATOR_ENV = '# Through a KYC aggregator or your own middleware (any check):\nKYC_AGGREGATOR_URL=https://kyc.example.com\nKYC_AGGREGATOR_KEY=...\nKYC_AGGREGATOR_KINDS=*            # or e.g. qa_cr,qa_tin\n# or a registry connector per check: REGISTRY_CONNECTORS=[{...}]  (see docs/VERIFICATION.md)';
 const CHECK_TEST: Record<string, string> = {
   IN: 'Numbers whose 9th (PAN) or 13th (GSTIN) character is 0, or bank accounts ending in 0, come back “not found”.',
-  GCC: 'Names containing “sanctioned”, “embargo test” or “blocked trading” come back as a possible match.',
+  GCC: 'Supplier or owner names containing “sanctioned”, “embargo test” or “blocked trading” come back as a possible match; IBANs ending in 0 come back “not confirmed”.',
   SA: 'CR numbers ending in 0, and VAT numbers whose 13th digit is 9, come back “not found”.',
   AE: 'TRNs whose 11th digit is 9 come back “not found”.',
   BH: 'CR numbers ending in 0 (before the branch), and VAT numbers whose 10th digit is 9, come back “not found”.',

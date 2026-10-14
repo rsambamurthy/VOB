@@ -30,6 +30,7 @@ export const saudiPack: CountryPack = {
   name: 'Saudi Arabia',
   extends: 'GCC',
   homeCountry: true,
+  registerIds: [{ label: 'CR number', field: 'tax.crNumber' }, { label: 'VAT number', field: 'tax.vatNumber' }],
   currency: 'SAR',
   locale: 'en-GB',
   mobile: { dialCode: '966', nationalDigits: 9, pattern: /^5\d{8}$/, example: '05x xxx xxxx' },

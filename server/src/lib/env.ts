@@ -33,6 +33,8 @@ const schema = z.object({
   SMTP_SECURE: z.enum(['true', 'false']).default('false'),
   SENDGRID_API_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
+  /** Resend webhook signing secret (whsec_…) for bounce / complaint / delivery events at /api/webhooks/resend */
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
 
   SMS_PROVIDER: z.enum(['test', 'msg91', 'twilio']).default('test'),
   MSG91_AUTH_KEY: z.string().optional(),
@@ -67,10 +69,33 @@ const schema = z.object({
   SUREPASS_PATH_PAN: z.string().default('/pan/pan-comprehensive'),
   SUREPASS_PATH_BANK: z.string().default('/bank-verification/'),
   SUREPASS_PATH_CIN: z.string().default('/corporate/company-details'),
+  /** Sanctions screening: 'mock' (test) or 'opensanctions' (https://www.opensanctions.org/api/) */
+  SANCTIONS_PROVIDER: z.enum(['mock', 'opensanctions']).default('mock'),
+  OPENSANCTIONS_API_KEY: z.string().optional(),
+  OPENSANCTIONS_URL: z.string().default('https://api.opensanctions.org'),
+  /** Dataset scope: 'sanctions' (sanctions lists only) or 'default' (also PEPs, debarment, crime) */
+  OPENSANCTIONS_DATASET: z.string().default('sanctions'),
+  /** Score at or above which a candidate counts as a possible match (0–1) */
+  OPENSANCTIONS_THRESHOLD: z.coerce.number().default(0.8),
+  /** Saudi CR lookups through Wathq (https://developer.wathq.sa) */
+  WATHQ_API_KEY: z.string().optional(),
+  WATHQ_CR_BASE_URL: z.string().default('https://api.wathq.sa/v5/commercialregistration'),
+  /** Generic KYC aggregator / middleware that answers any check (see docs/VERIFICATION.md) */
+  KYC_AGGREGATOR_URL: z.string().optional(),
+  KYC_AGGREGATOR_KEY: z.string().optional(),
+  /** Which checks the aggregator answers: comma-separated kinds (e.g. "sa_vat,ae_trn,gcc_iban") or "*" for every check without its own provider */
+  KYC_AGGREGATOR_KINDS: z.string().default('*'),
+  /** Registry connectors as JSON (an array of HTTP lookup definitions, see docs/VERIFICATION.md) */
+  REGISTRY_CONNECTORS: z.string().optional(),
   /** Re-use an identical successful check for this many hours (saves provider fees) */
   KYC_CACHE_HOURS: z.coerce.number().default(24),
   /** Max provider calls per vendor per check type per day */
   KYC_DAILY_LIMIT: z.coerce.number().default(10),
+
+  /** Subscription billing: Razorpay payment links (test mode without keys: invoices can be marked paid by hand) */
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
   AI_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -130,6 +155,8 @@ need(i.SMS_PROVIDER === 'twilio' && (!i.TWILIO_ACCOUNT_SID || !i.TWILIO_AUTH_TOK
 need(i.STORAGE_DRIVER === 's3' && (!i.S3_BUCKET || !i.S3_ACCESS_KEY_ID || !i.S3_SECRET_ACCESS_KEY), 'STORAGE_DRIVER=s3 needs S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY');
 need(i.STORAGE_DRIVER === 'azure' && !i.AZURE_STORAGE_CONNECTION_STRING, 'STORAGE_DRIVER=azure needs AZURE_STORAGE_CONNECTION_STRING');
 need(i.KYC_PROVIDER === 'surepass' && !i.SUREPASS_TOKEN, 'KYC_PROVIDER=surepass needs SUREPASS_TOKEN');
+need(i.SANCTIONS_PROVIDER === 'opensanctions' && !i.OPENSANCTIONS_API_KEY, 'SANCTIONS_PROVIDER=opensanctions needs OPENSANCTIONS_API_KEY');
+need(!!i.KYC_AGGREGATOR_URL && !/^https?:\/\//.test(i.KYC_AGGREGATOR_URL), 'KYC_AGGREGATOR_URL must start with https://');
 need(i.AI_PROVIDER === 'anthropic' && !i.ANTHROPIC_API_KEY, 'AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY');
 
 if (env.encryptionKey.length !== 32) throw new Error('ENCRYPTION_KEY must decode to 32 bytes');

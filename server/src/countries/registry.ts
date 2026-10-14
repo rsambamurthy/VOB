@@ -35,6 +35,7 @@ export function packFor(code?: string | null): CountryPack {
     documents: { ...parent.documents, ...own.documents },
     checks: [...(parent.checks ?? []), ...(own.checks ?? [])],
     erp: { ...parent.erp, ...own.erp },
+    vendorTypeLabels: { ...parent.vendorTypeLabels, ...own.vendorTypeLabels },
   };
   resolved.set(key, merged);
   return merged;
@@ -50,7 +51,13 @@ export const isHomeCountry = (code: string) => homeCountries().some((c) => c.cod
 /** What the web app needs to format numbers and dates for a workspace. */
 export function localeFor(code?: string | null) {
   const p = packFor(code ?? DEFAULT_HOME);
-  return { country: p.code, countryName: p.name, currency: p.currency ?? 'USD', locale: p.locale ?? 'en-GB', weekend: p.weekend ?? [0, 6], privacyLaw: p.privacy?.lawShort || null, mobileExample: p.mobile?.example ?? '+44 7700 900123' };
+  return { country: p.code, countryName: p.name, currency: p.currency ?? 'USD', locale: p.locale ?? 'en-GB', weekend: p.weekend ?? [0, 6], privacyLaw: p.privacy?.lawShort || null, mobileExample: p.mobile?.example ?? '+44 7700 900123', vendorTypes: vendorTypesFor(code) };
+}
+
+/** The three vendor types, named for the workspace's market. */
+export function vendorTypesFor(code?: string | null) {
+  const l = packFor(code ?? DEFAULT_HOME).vendorTypeLabels ?? {};
+  return (['DOMESTIC', 'IMPORT', 'GOVERNMENT'] as const).map((value) => ({ value, label: l[value] ?? value }));
 }
 
 /* ---------- Field formats (global by name) ---------- */
@@ -151,14 +158,26 @@ export function checkProvider(packCode: string): CheckProvider | undefined {
 }
 /** Tests and admin tooling: swap the provider for one pack. */
 export function setCheckProvider(packCode: string, p: CheckProvider) { providers.set(packCode, p); }
-/** Provider status per pack, for the Integrations page. */
+/** Live providers registered for single checks (a registry connector, OpenSanctions, an aggregator); they win over the pack's. */
+const kindProviders = new Map<string, CheckProvider>();
+export function setKindProvider(kind: string, p: CheckProvider | null) { if (p) kindProviders.set(kind, p); else kindProviders.delete(kind); }
+/** The provider that answers one check: its own live provider if one is set up, else its pack's. */
+export function providerForKind(kind: string): CheckProvider | undefined {
+  const found = checkDef(kind);
+  return kindProviders.get(kind) ?? (found ? checkProvider(found.pack) : undefined);
+}
+/** Provider status per pack, for the Integrations page; each check says who answers it and whether that is live. */
 export const checkProviders = (homeCountry?: string | null) => {
   const homeKinds = new Set((packFor(homeCountry ?? DEFAULT_HOME).checks ?? []).map((c) => c.kind));
   return PACKS.filter((p) => p.checks?.length).map((p) => {
-    const pr = checkProvider(p.code)!;
-    return { code: p.code, country: p.name, title: p.checksTitle ?? `${p.name} checks`, provider: pr.name, live: pr.live, home: (p.checks ?? []).some((c) => homeKinds.has(c.kind)) };
+    const kinds = (p.checks ?? []).map((c) => { const pr = providerForKind(c.kind)!; return { kind: c.kind, label: c.label, provider: pr.name, live: pr.live }; });
+    const names = [...new Set(kinds.map((k) => k.provider))];
+    return { code: p.code, country: p.name, title: p.checksTitle ?? `${p.name} checks`, provider: names.join(' + '), live: kinds.every((k) => k.live), partlyLive: kinds.some((k) => k.live) && !kinds.every((k) => k.live), checks: kinds, home: (p.checks ?? []).some((c) => homeKinds.has(c.kind)) };
   }).filter((p) => p.home || !(packFor(p.code).checks ?? []).every((c) => c.scope === 'home')).sort((a, b) => Number(b.home) - Number(a.home));
 };
+
+/** True when every required input of a check has a value. */
+export const inputsComplete = (def: CheckDef, input: Record<string, string>) => Object.entries(input).every(([k, v]) => !!v || (def.optionalInputs ?? []).includes(k));
 
 /** Read a check's inputs out of a vendor profile. */
 export function checkInputs(def: CheckDef, profile: Profile) {
@@ -176,3 +195,12 @@ for (const p of PACKS) for (const [code, d] of Object.entries(p.documents ?? {})
 }
 export const readableDocuments = () => DOCUMENTS;
 export const deriveExtracted = (fields: ExtractedField[]) => PACKS.flatMap((p) => p.deriveExtracted?.(fields) ?? []);
+
+/* ---------- Sensitive fields (global: encryption at rest can't depend on the workspace) ---------- */
+
+/** Field id → mask [kept at start, kept at end], from every pack. */
+export const SENSITIVE_FIELDS: Readonly<Record<string, [number, number]>> = Object.freeze(Object.assign({}, ...[basePack, ...PACKS].map((p) => p.sensitiveFields ?? {})));
+const KEY_CHANGE = new Set([basePack, ...PACKS].flatMap((p) => p.keyChangeFields ?? []));
+/** A change reviewers should look at twice: bank details, tax and registration ids, legal names. */
+export const isKeyChange = (fieldId: string) => fieldId.startsWith('bank.') || KEY_CHANGE.has(fieldId) || fieldId in SENSITIVE_FIELDS;
+export const keyChangeFields = () => [...KEY_CHANGE];

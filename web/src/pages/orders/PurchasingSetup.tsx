@@ -8,10 +8,10 @@ import { useHelpContext } from '../../help/HelpPanel';
 interface Entity { id: string; code: string; name: string; active: boolean }
 interface Site { id: string; code: string; name: string; entityId: string | null; active: boolean }
 interface Group { id: string; code: string; name: string; autoAcceptDays: number | null; asnRequired: boolean; active: boolean; orders: number }
-interface Setup { entities: Entity[]; sites: Site[]; groups: Group[] }
+interface Setup { entities: Entity[]; sites: Site[]; groups: Group[]; invoicing: { priceTolerancePct: number; einvoiceRequired: boolean; india: boolean } }
 interface ApiKey { id: string; name: string; prefix: string; lastUsedAt: string | null; revokedAt: string | null; createdAt: string }
 
-type Tab = 'groups' | 'entities' | 'keys';
+type Tab = 'groups' | 'entities' | 'invoicing' | 'keys';
 
 export function PurchasingSetup() {
   const { can } = useSession();
@@ -35,11 +35,13 @@ export function PurchasingSetup() {
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'groups'} className={tab === 'groups' ? 'active' : ''} onClick={() => setTab('groups')}>Buying groups</button>
         <button role="tab" aria-selected={tab === 'entities'} className={tab === 'entities' ? 'active' : ''} onClick={() => setTab('entities')}>Companies &amp; sites</button>
+        {can('tenant.settings') && <button role="tab" aria-selected={tab === 'invoicing'} className={tab === 'invoicing' ? 'active' : ''} onClick={() => setTab('invoicing')}>Invoice matching</button>}
         {can('tenant.settings') && <button role="tab" aria-selected={tab === 'keys'} className={tab === 'keys' ? 'active' : ''} onClick={() => setTab('keys')}>API keys</button>}
       </div>
       {!d && !error && <div className="spinner" />}
       {d && tab === 'groups' && <Groups groups={d.groups} manage={manage} onDone={done} onError={setError} />}
       {d && tab === 'entities' && <Entities d={d} manage={manage} onDone={done} onError={setError} />}
+      {d && tab === 'invoicing' && can('tenant.settings') && <Invoicing v={d.invoicing} onDone={done} onError={setError} />}
       {tab === 'keys' && can('tenant.settings') && <Keys onError={setError} />}
     </div>
   );
@@ -199,5 +201,29 @@ function Keys({ onError }: { onError: (m: string) => void }) {
         <button className="btn btn-danger" onClick={async () => { try { await api(`/purchasing/api-keys/${revoke.id}`, { method: 'DELETE' }); setRevoke(undefined); load(); } catch (e: any) { onError(e.message); } }}>Revoke key</button></>}>
         <p>Anything using this key will stop working straight away. This can’t be undone.</p></Modal>}
     </>
+  );
+}
+
+function Invoicing({ v, onDone, onError }: { v: Setup['invoicing']; onDone: (m: string) => void; onError: (m: string) => void }) {
+  const [tol, setTol] = useState(String(v.priceTolerancePct));
+  const [einv, setEinv] = useState(v.einvoiceRequired);
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    setBusy(true);
+    try { await api('/admin/tenant', { method: 'PATCH', body: { settings: { priceTolerancePct: Number(tol), ...(v.india ? { einvoiceRequired: einv } : {}) } } }); onDone('Invoice matching saved.'); }
+    catch (e: any) { onError(e.message); } finally { setBusy(false); }
+  }
+  return (
+    <section className="card pad section-card">
+      <h3>Invoice matching</h3>
+      <p className="muted small">Supplier invoices are matched with the order, what has been received, and earlier invoices. Quantities over the order (plus the line’s tolerance) are refused; anything below is flagged for review.</p>
+      <div className="field-grid">
+        <div className="field"><label htmlFor="inv-tol">Price tolerance (%)</label><input id="inv-tol" type="number" min={0} max={50} step="0.5" value={tol} onChange={(e) => setTol(e.target.value)} />
+          <div className="field-help">A unit price more than this above the order price is flagged as an exception.</div></div>
+      </div>
+      {v.india && <label className="check-item"><input type="checkbox" checked={einv} onChange={(e) => setEinv(e.target.checked)} />
+        <span><strong>Expect an e-invoice IRN from GST-registered suppliers</strong><span className="muted small block">Invoices without an IRN are flagged. When the supplier pastes the signed QR text, its GSTIN, invoice number, IRN and value are checked.</span></span></label>}
+      <div className="btn-row"><button className="btn btn-secondary" disabled={busy || tol === '' || Number(tol) < 0 || Number(tol) > 50} onClick={save}>Save</button></div>
+    </section>
   );
 }

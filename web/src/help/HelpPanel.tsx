@@ -7,6 +7,7 @@ import { useLocation } from 'react-router-dom';
 import { useSession } from '../lib/session';
 import { ARTICLES, type Audience, type HelpArticle } from './articles';
 import { searchHelp } from './search';
+import { api as apiCall } from '../lib/api';
 
 interface HelpApi { openHelp: (id?: string) => void; setContext: (ctx: string | null) => void; setExtra: (a: HelpArticle[]) => void }
 const Ctx = createContext<HelpApi>({ openHelp: () => {}, setContext: () => {}, setExtra: () => {} });
@@ -39,17 +40,26 @@ export function HelpProvider({ children }: { children: ReactNode }) {
   const [query, setQuery] = useState('');
   const [context, setContext] = useState<string | null>(null);
   const [extra, setExtra] = useState<HelpArticle[]>([]);
+  const [own, setOwn] = useState<HelpArticle[]>([]);
   const audience = audienceFor(loc.pathname);
+  // The workspace's own help topics (its approval policy, contacts…), for staff or for this buyer's suppliers.
+  const ownKey = audience === 'staff' ? (me ? `staff:${me.tenant.id}` : '') : audience === 'supplier' ? 'supplier' : '';
+  useEffect(() => {
+    if (!ownKey) { setOwn([]); return; }
+    apiCall<{ id: string; title: string; summary: string; body: string; keywords: string }[]>(`/help/topics${audience === 'supplier' ? '?supplier=1' : ''}`)
+      .then((rows) => setOwn(rows.map((r) => ({ id: r.id, title: r.title, summary: r.summary || 'From your organisation', body: r.body, keywords: r.keywords, audience: [audience] }))))
+      .catch(() => setOwn([]));
+  }, [ownKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What this person may see: their audience, their permissions, their plan's features.
-  const visible = useMemo(() => [...extra, ...ARTICLES].filter((a) => {
+  const visible = useMemo(() => [...extra, ...own, ...ARTICLES].filter((a) => {
     if (!a.audience.includes(audience)) return false;
     if (audience === 'staff' && me) {
       if (a.perms && !a.perms.some((p) => me.permissions.includes(p))) return false;
       if (a.feature && me.plan && me.plan.features[a.feature] === false) return false;
     }
     return true;
-  }), [audience, me, extra]);
+  }), [audience, me, extra, own]);
 
   const forScreen = useMemo(() => {
     const byCtx = context ? visible.filter((a) => a.contexts?.includes(context)) : [];
@@ -89,7 +99,7 @@ export function HelpProvider({ children }: { children: ReactNode }) {
             <SearchBox value={query} onChange={(v) => { setQuery(v); setStack([]); }} />
             <div className="help-body">
               {current ? <ArticleView a={current} visible={visible} go={(id) => setStack((s) => [...s, id])} />
-                : query.trim() ? <Results query={query} visible={visible} go={(id) => setStack([id])} />
+                : query.trim() ? <><Ask key={query} query={query} visible={visible} forScreen={forScreen} audience={audience} go={(id) => setStack([id])} /><Results query={query} visible={visible} go={(id) => setStack([id])} /></>
                 : <Home forScreen={forScreen} visible={visible} audience={audience} go={(id) => setStack([id])} />}
             </div>
             <footer className="help-foot">Press <kbd>F1</kbd> on any screen for help with it · <kbd>Esc</kbd> to close</footer>
@@ -122,6 +132,37 @@ function Home({ forScreen, visible, audience, go }: { forScreen: HelpArticle[]; 
       <h4 className="help-sec">{forScreen.length ? 'All topics' : audience === 'supplier' ? 'Help for suppliers' : 'Help topics'}</h4>
       <ul className="help-list compact">{rest.map((a) => <Item key={a.id} a={a} go={go} />)}</ul>
     </>
+  );
+}
+
+/** "Ask": an answer in plain words drawn only from the help topics this person can see. */
+function Ask({ query, visible, forScreen, audience, go }: { query: string; visible: HelpArticle[]; forScreen: HelpArticle[]; audience: Audience; go: (id: string) => void }) {
+  const [state, setState] = useState<{ busy?: boolean; answer?: string; answered?: boolean; sources?: string[]; test?: boolean; error?: string }>({});
+  if (audience !== 'staff' && audience !== 'supplier') return null;
+  const q = query.trim();
+  const looksLikeQuestion = q.endsWith('?') || q.split(/\s+/).length >= 4;
+  if (!looksLikeQuestion && !state.answer) return null;
+  async function ask() {
+    setState({ busy: true });
+    const picked = [...searchHelp(q, visible).map((r) => r.a), ...forScreen].filter((a, i, all) => all.indexOf(a) === i).slice(0, 8);
+    const articles = (picked.length ? picked : visible.slice(0, 8)).map((a) => ({ id: a.id, title: a.title, summary: a.summary, body: a.body.replace(/!\[[^\]]*\]\([^)]+\)/g, '').slice(0, 6000) }));
+    try { setState(await apiCall<{ answer: string; answered: boolean; sources: string[]; test: boolean }>('/help/ask', { body: { question: q, audience, articles } })); }
+    catch (e: any) { setState({ error: e.message }); }
+  }
+  const byId = new Map(visible.map((a) => [a.id, a]));
+  return (
+    <div className="help-ask">
+      {!state.answer && !state.error && <button className="btn btn-secondary btn-sm" disabled={state.busy} onClick={ask}>{state.busy ? 'Thinking…' : 'Ask: get a short answer'}</button>}
+      {state.error && <p className="small help-ask-err">{state.error}</p>}
+      {state.answer && (
+        <div className={`help-answer ${state.answered ? '' : 'unsure'}`}>
+          <div className="help-answer-h">Answer{state.test ? ' (test mode)' : ''}</div>
+          <p>{state.answer}</p>
+          {state.sources && state.sources.length > 0 && <p className="small">From: {state.sources.map((id, i) => byId.get(id) && <span key={id}>{i > 0 && ', '}<button className="help-link" onClick={() => go(id)}>{byId.get(id)!.title}</button></span>)}</p>}
+          <p className="small muted">Answers come only from these help topics and can be wrong — check the topic before acting.</p>
+        </div>
+      )}
+    </div>
   );
 }
 

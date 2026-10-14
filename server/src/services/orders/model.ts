@@ -38,6 +38,8 @@ export const canonicalReceipt = z.object({
   receiptNumber: code,
   receiptDate: date.optional().nullable(),
   quantity: num,
+  /** The shipment notice (ASN number) the goods came on, when the ERP records it. */
+  shipmentNumber: code.optional().nullable(),
 });
 
 export const canonicalPo = z.object({

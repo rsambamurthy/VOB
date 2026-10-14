@@ -197,3 +197,77 @@ export function PlatformAudit() {
     </div>
   );
 }
+
+/* ---------- Billing settings ---------- */
+
+interface BillingCfg {
+  seller?: { name: string; gstin?: string; pan?: string; address: string; stateCode: string; email?: string; bank?: string };
+  prices?: Record<string, Record<string, { monthly?: number; yearly?: number }>>;
+  gstRate?: number; sac?: string; dueDays?: number; prefix?: string; exportNote?: string;
+}
+
+export function PlatformBilling() {
+  const [d, setD] = useState<{ billing: BillingCfg; states: { code: string; name: string }[]; online: boolean }>();
+  const [b, setB] = useState<Required<Pick<BillingCfg, 'gstRate' | 'sac' | 'dueDays' | 'prefix'>> & BillingCfg>();
+  const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
+  useEffect(() => { papi('/billing').then((r) => { setD(r); setB({ gstRate: 18, sac: '997331', dueDays: 15, prefix: 'VG', ...r.billing, seller: r.billing.seller ?? { name: 'Integratatech.ai Pvt Ltd', address: '', stateCode: '' }, prices: r.billing.prices ?? {} }); }); }, []);
+  if (!d || !b) return <div className="page"><div className="spinner" /></div>;
+  const seller = b.seller!;
+  const setSeller = (k: keyof NonNullable<BillingCfg['seller']>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setB({ ...b, seller: { ...seller, [k]: e.target.value } });
+  const price = (cur: string, plan: string, cycle: 'monthly' | 'yearly') => b.prices?.[cur]?.[plan]?.[cycle] ?? '';
+  const setPrice = (cur: string, plan: string, cycle: 'monthly' | 'yearly', v: string) => {
+    const prices = structuredClone(b.prices ?? {});
+    prices[cur] = prices[cur] ?? {}; prices[cur][plan] = prices[cur][plan] ?? {};
+    if (v === '') delete prices[cur][plan][cycle]; else prices[cur][plan][cycle] = Number(v);
+    setB({ ...b, prices });
+  };
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setMsg(undefined);
+    const prices: Record<string, Record<string, { monthly?: number; yearly?: number }>> = {};
+    for (const cur of ['INR', 'USD']) { prices[cur] = {}; for (const plan of ['standard', 'enterprise']) prices[cur][plan] = { ...(b!.prices?.[cur]?.[plan] ?? {}) }; }
+    try { await papi('/billing', { method: 'PUT', body: { ...b, prices, gstRate: Number(b!.gstRate), dueDays: Number(b!.dueDays) } }); setMsg({ kind: 'success', text: 'Billing settings saved.' }); }
+    catch (err: any) { setMsg({ kind: 'error', text: err.message }); }
+  }
+  return (
+    <div className="page narrow-page">
+      <header className="page-head"><div><h1>Billing</h1><p className="muted">Your company details for tax invoices, plan prices and invoice numbering. Payments: {d.online ? 'Razorpay payment links are live.' : 'Razorpay is not connected — record payments by hand (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET to go live).'}</p></div></header>
+      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      <form onSubmit={save}>
+        <section className="card pad section-card">
+          <h3>Your company (seller)</h3>
+          <div className="field-grid">
+            <div className="field"><label htmlFor="s-name">Legal name</label><input id="s-name" required value={seller.name} onChange={setSeller('name')} /></div>
+            <div className="field"><label htmlFor="s-email">Accounts email</label><input id="s-email" type="email" value={seller.email ?? ''} onChange={setSeller('email')} /></div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}><label htmlFor="s-addr">Registered address</label><textarea id="s-addr" rows={2} required value={seller.address} onChange={setSeller('address')} /></div>
+            <div className="field"><label htmlFor="s-state">State</label><select id="s-state" required value={seller.stateCode} onChange={setSeller('stateCode')}><option value="">Choose…</option>{d.states.map((s) => <option key={s.code} value={s.code}>{s.name} ({s.code})</option>)}</select></div>
+            <div className="field"><label htmlFor="s-gstin">GSTIN</label><input id="s-gstin" maxLength={15} value={seller.gstin ?? ''} onChange={setSeller('gstin')} /></div>
+            <div className="field"><label htmlFor="s-pan">PAN</label><input id="s-pan" maxLength={10} value={seller.pan ?? ''} onChange={setSeller('pan')} /></div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}><label htmlFor="s-bank">Bank details for transfers (printed on invoices)</label><textarea id="s-bank" rows={2} value={seller.bank ?? ''} onChange={setSeller('bank')} placeholder="Account name, number, IFSC, bank and branch" /></div>
+          </div>
+        </section>
+        <section className="card pad section-card">
+          <h3>Prices (before tax)</h3>
+          <p className="muted small">Indian customers are invoiced in INR with GST; customers outside India in USD as an export of services. Leave a price empty to sell that plan only by quote.</p>
+          <table className="table static compact">
+            <thead><tr><th>Plan</th><th>INR / month</th><th>INR / year</th><th>USD / month</th><th>USD / year</th></tr></thead>
+            <tbody>{['standard', 'enterprise'].map((plan) => (
+              <tr key={plan}><td className="strong">{PLAN_LABEL[plan]}</td>
+                {(['INR', 'USD'] as const).flatMap((cur) => (['monthly', 'yearly'] as const).map((cy) => <td key={cur + cy}><input type="number" min={0} aria-label={`${plan} ${cur} ${cy}`} value={price(cur, plan, cy)} onChange={(e) => setPrice(cur, plan, cy, e.target.value)} /></td>))}
+              </tr>))}</tbody>
+          </table>
+        </section>
+        <section className="card pad section-card">
+          <h3>Tax and numbering</h3>
+          <div className="field-grid">
+            <div className="field"><label htmlFor="g-rate">GST rate (%)</label><input id="g-rate" type="number" min={0} max={28} value={b.gstRate} onChange={(e) => setB({ ...b, gstRate: Number(e.target.value) })} /></div>
+            <div className="field"><label htmlFor="g-sac">SAC code</label><input id="g-sac" value={b.sac} onChange={(e) => setB({ ...b, sac: e.target.value })} /><div className="field-help">997331 = licensing of software (SaaS). Confirm with your CA.</div></div>
+            <div className="field"><label htmlFor="g-due">Payment due after (days)</label><input id="g-due" type="number" min={0} max={90} value={b.dueDays} onChange={(e) => setB({ ...b, dueDays: Number(e.target.value) })} /></div>
+            <div className="field"><label htmlFor="g-prefix">Invoice number prefix</label><input id="g-prefix" value={b.prefix} onChange={(e) => setB({ ...b, prefix: e.target.value.toUpperCase() })} /><div className="field-help">Numbers look like {b.prefix}/2026-27/0001 and restart each financial year.</div></div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}><label htmlFor="g-exp">Note on export invoices</label><input id="g-exp" value={b.exportNote ?? ''} onChange={(e) => setB({ ...b, exportNote: e.target.value })} placeholder="Supply meant for export under LUT ARN … without payment of IGST" /></div>
+          </div>
+        </section>
+        <button className="btn btn-primary">Save billing settings</button>
+      </form>
+    </div>
+  );
+}

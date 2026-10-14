@@ -18,6 +18,8 @@ import { CSV_TEMPLATE_COLUMNS, CSV_TEMPLATE_SAMPLE, csvToPurchaseOrders } from '
 import { listOrders, orderCounts, orderDetail } from '../services/orders/queries.js';
 import { messagesFor, messageView, retryMessage } from '../services/orders/outbound.js';
 import { toCsv } from '../lib/erpMapper.js';
+import { asnRequiredFor, shipmentsFor } from '../services/collab/shipments.js';
+import { listInvoices } from '../services/collab/invoices.js';
 
 const { purchaseOrders, legalEntities, sites, buyingGroups, supplierCodes, supplierContacts, vendors, poImports, apiKeys } = schema;
 export const ordersRouter = Router();
@@ -83,7 +85,8 @@ ordersRouter.post('/orders/map-supplier', requireStaff('orders.manage'), ah(asyn
 ordersRouter.get('/orders/:id', requireStaff('orders.view'), ah(async (req, res) => {
   const s = staffCtx(req);
   const d = await orderDetail(s.tenant.id, req.params.id);
-  res.json({ ...d, messages: (await messagesFor(d.po.id)).map(messageView) });
+  const [ships, invoices, asnRequired] = await Promise.all([shipmentsFor(d.po.id), listInvoices({ tenantId: s.tenant.id, poId: d.po.id }), asnRequiredFor(d.po)]);
+  res.json({ ...d, messages: (await messagesFor(d.po.id)).map(messageView), shipments: ships, invoices: invoices.rows, asnRequired });
 }));
 
 /** A buyer records the supplier's acceptance (e.g. confirmed by phone or email). */
@@ -104,13 +107,14 @@ ordersRouter.post('/orders/messages/:id/retry', requireStaff('orders.manage'), a
 /* ---------- Purchasing setup ---------- */
 
 ordersRouter.get('/purchasing/setup', requireStaff('orders.view'), ah(async (req, res) => {
-  const t = staffCtx(req).tenant.id;
+  const tenant = staffCtx(req).tenant, t = tenant.id;
   const [entities, siteRows, groups] = await Promise.all([
     db.select().from(legalEntities).where(eq(legalEntities.tenantId, t)).orderBy(asc(legalEntities.code)),
     db.select().from(sites).where(eq(sites.tenantId, t)).orderBy(asc(sites.code)),
     db.select({ g: buyingGroups, orders: sql<number>`(select count(*) from purchase_orders p where p.buying_group_id = "buying_groups"."id")` }).from(buyingGroups).where(eq(buyingGroups.tenantId, t)).orderBy(asc(buyingGroups.code)),
   ]);
-  res.json({ entities, sites: siteRows, groups: groups.map(({ g, orders }) => ({ ...g, orders: Number(orders) })) });
+  res.json({ entities, sites: siteRows, groups: groups.map(({ g, orders }) => ({ ...g, orders: Number(orders) })),
+    invoicing: { priceTolerancePct: tenant.settings.priceTolerancePct ?? 2, einvoiceRequired: !!tenant.settings.einvoiceRequired, india: tenant.country === 'IN' } });
 }));
 
 const codeName = z.object({ code: z.string().trim().min(1).max(40), name: z.string().trim().min(1).max(200) });

@@ -27,6 +27,9 @@ One Railway **service** runs the whole app (API + web, from the `Dockerfile`), n
 | `ENCRYPTION_KEY` | the key from step 0 |
 | `APP_BASE_URL` | `https://<your domain>` — exactly as people will open it |
 | `EMAIL_PROVIDER` | `resend` (recommended on Railway) with `RESEND_API_KEY`, or `sendgrid` with `SENDGRID_API_KEY`, or `smtp` with `SMTP_*` (Railway Pro only); plus `EMAIL_FROM`, e.g. `VendorGate <no-reply@yourdomain.com>` |
+| `RESEND_WEBHOOK_SECRET` | Optional. In Resend → Webhooks add `https://<your-host>/api/webhooks/resend` (events: email.delivered, email.bounced, email.complained) and paste its signing secret. Bounced and spam-reported addresses are then suppressed and flagged on the supplier. |
+| `SANCTIONS_PROVIDER`, `OPENSANCTIONS_API_KEY`, `WATHQ_API_KEY`, `KYC_AGGREGATOR_URL` … | Optional live verification — see docs/VERIFICATION.md. |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Optional. Subscription invoices get a Razorpay payment link. In Razorpay → Webhooks add `https://<your-host>/api/webhooks/razorpay` with the event `payment_link.paid`. Without keys, record payments in the console (Workspaces → workspace → Billing & invoices). Set your company details and prices in the console under **Billing** first. |
 | `BACKUP_SCHEDULE` | `30 2 * * *` (encrypted database backup every night at 02:30 IST, kept 14 days in `/data/uploads/_backups`) |
 | `PLATFORM_ADMIN_EMAIL` | your email: invited as the first platform admin (see 3a) |
 | `BOOTSTRAP_ADMIN_EMAIL` | **first deploy only**: your email |
@@ -96,7 +99,8 @@ Included in every plan. After this release deploys, admins see **Purchase orders
    - Keep **test mode** on until you're ready; in test mode nothing is sent and **Load sample orders** works.
 2. **Or push from middleware:** Purchasing setup → API keys → create a key, then `POST /api/v1/purchase-orders` with `Authorization: Bearer <key>` (`?format=oracle` for raw Oracle rows). Acceptances can be read from `GET /api/v1/acknowledgements?since=`.
 3. **Buying groups:** set which groups auto-accept and after how many days. Unknown group codes from the ERP are added with manual acceptance.
-4. **Suppliers sign in** at `https://<your domain>/s/<workspace>` with their email and a one-time code. Add extra people or ERP supplier codes from the vendor's **Supplier portal** card.
+4. **Shipments, invoices and payments:** suppliers send shipment notices and raise invoices from each order. Your ERP posts goods receipts to `POST /api/v1/receipts` (or includes them with the order) and payments to `POST /api/v1/payments`; it can read approved invoices from `GET /api/v1/invoices?since=` and shipment notices from `GET /api/v1/shipments?since=`, or receive them through the connector. Set the price tolerance (and, in India, whether an e-invoice IRN is expected) under Purchasing setup → Invoice matching. Give the people who approve invoices the *Approve supplier invoices* permission (the Finance Manager role has it by default).
+5. **Suppliers sign in** at `https://<your domain>/s/<workspace>` with their email and a one-time code. Add extra people or ERP supplier codes from the vendor's **Supplier portal** card.
 
 Hourly jobs send acceptance reminders and run auto-accept; the nightly job pulls from Oracle.
 

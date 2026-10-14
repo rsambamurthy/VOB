@@ -12,7 +12,15 @@ export const stepLabel: Record<StepStatus, string> = {
  */
 export interface LocaleInfo { country: string; countryName?: string; currency: string; locale: string; privacyLaw?: string | null }
 let current: LocaleInfo = { country: 'IN', currency: 'INR', locale: 'en-IN', privacyLaw: 'DPDP' };
-export function setLocaleInfo(l?: Partial<LocaleInfo> | null) { if (l?.locale) current = { ...current, ...l } as LocaleInfo; }
+export const VENDOR_TYPES: { value: string; label: string }[] = [
+  { value: 'DOMESTIC', label: 'Domestic' },
+  { value: 'IMPORT', label: 'Import (foreign)' },
+  { value: 'GOVERNMENT', label: 'Government' },
+];
+export function setLocaleInfo(l?: Partial<LocaleInfo> & { vendorTypes?: { value: string; label: string }[] } | null) {
+  if (l?.locale) current = { ...current, ...l } as LocaleInfo;
+  if (l?.vendorTypes?.length) VENDOR_TYPES.splice(0, VENDOR_TYPES.length, ...l.vendorTypes);
+}
 export const localeInfo = () => current;
 export const loc = () => current.locale;
 /** Whole numbers and counts in the workspace's format (India: 1,00,000). */

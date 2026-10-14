@@ -5,10 +5,15 @@
  *   POST /api/v1/purchase-orders           create or update POs — canonical JSON, or Oracle EBS shape with ?format=oracle
  *   GET  /api/v1/purchase-orders/:poNumber acceptance status of a PO and its lines
  *   GET  /api/v1/acknowledgements?since=   lines accepted since a time (for ERPs that poll instead of receiving webhooks)
+ *   POST /api/v1/receipts                  goods receipts (matched to the supplier's shipment notices)
+ *   GET  /api/v1/shipments?since=          shipment notices created or cancelled since a time
+ *   GET  /api/v1/invoices?since=&status=   supplier invoices (default: approved) decided since a time
+ *   PUT  /api/v1/invoices/:id              record the ERP's invoice id / due date
+ *   POST /api/v1/payments                  payments (remittances) with the invoices they settle
  */
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { and, asc, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { sha256 } from '../lib/crypto.js';
@@ -16,8 +21,10 @@ import { hasFeature } from '../services/limits.js';
 import { importPurchaseOrders } from '../services/orders/importer.js';
 import { oracleList, oracleToCanonical } from '../services/orders/oracle.js';
 import type { Tenant } from '../db/schema.js';
+import { recordReceipts } from '../services/collab/shipments.js';
+import { recordPayments } from '../services/collab/invoices.js';
 
-const { apiKeys, tenants, purchaseOrders, poLines } = schema;
+const { apiKeys, tenants, purchaseOrders, poLines, shipments, shipmentLines, supplierInvoices, supplierInvoiceLines, vendors } = schema;
 export const erpApiRouter = Router();
 
 declare global { namespace Express { interface Request { apiTenant?: Tenant; apiKeyName?: string } } }
@@ -63,4 +70,59 @@ erpApiRouter.get('/acknowledgements', ah(async (req, res) => {
   const lines = await db.select({ l: poLines, po: purchaseOrders }).from(poLines).innerJoin(purchaseOrders, eq(purchaseOrders.id, poLines.poId))
     .where(and(eq(poLines.tenantId, t.id), inArray(poLines.acceptance, ['ACCEPTED', 'AUTO_ACCEPTED']), gt(poLines.acceptedAt, new Date(since)))).orderBy(asc(poLines.acceptedAt)).limit(2000);
   res.json(lines.map(({ l, po }) => ({ poErpId: po.erpId, poNumber: po.poNumber, revision: po.revision, lineErpId: l.erpId, lineNo: l.lineNo, acceptance: l.acceptance, acceptedAt: l.acceptedAt, acceptedBy: l.acceptedBy, note: l.acceptNote })));
+}));
+
+const listOf = (body: unknown, key: string) => (Array.isArray(body) ? body : Array.isArray((body as any)?.[key]) ? (body as any)[key] : body && typeof body === 'object' ? [body] : []);
+const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const amount = z.coerce.number().min(0).max(1e13);
+
+erpApiRouter.post('/receipts', ah(async (req, res) => {
+  const items = z.array(z.object({
+    erpId: z.string().trim().min(1).max(100), poNumber: z.string().trim().max(100).optional(), poErpId: z.string().trim().max(100).optional(),
+    lineErpId: z.string().trim().max(100).optional().nullable(), lineNo: z.coerce.number().int().optional().nullable(),
+    receiptNumber: z.string().trim().min(1).max(100), receiptDate: dateStr.optional().nullable(), quantity: amount, shipmentNumber: z.string().trim().max(40).optional().nullable(),
+  })).min(1, 'Send one receipt, an array, or { "receipts": [ … ] }').max(2000).parse(listOf(req.body, 'receipts'));
+  const r = await recordReceipts(req.apiTenant!, items);
+  res.status(r.errors.length && !r.recorded ? 422 : 200).json(r);
+}));
+
+erpApiRouter.get('/shipments', ah(async (req, res) => {
+  const t = req.apiTenant!;
+  const { since } = z.object({ since: z.string().datetime({ offset: true }) }).parse(req.query);
+  const rows = await db.select({ s: shipments, po: purchaseOrders }).from(shipments).innerJoin(purchaseOrders, eq(purchaseOrders.id, shipments.poId))
+    .where(and(eq(shipments.tenantId, t.id), or(gt(shipments.createdAt, new Date(since)), gt(shipments.cancelledAt, new Date(since))))).orderBy(asc(shipments.createdAt)).limit(1000);
+  const lines = rows.length ? await db.select({ sl: shipmentLines, l: poLines }).from(shipmentLines).innerJoin(poLines, eq(poLines.id, shipmentLines.lineId)).where(inArray(shipmentLines.shipmentId, rows.map((r) => r.s.id))) : [];
+  res.json(rows.map(({ s, po }) => ({ number: s.number, supplierRef: s.supplierRef, status: s.status, shipDate: s.shipDate, expectedDate: s.expectedDate, carrier: s.carrier, trackingNo: s.trackingNo, vehicleNo: s.vehicleNo, ewayBill: s.ewayBill, packages: s.packages,
+    createdAt: s.createdAt, cancelledAt: s.cancelledAt, cancelReason: s.cancelReason, poErpId: po.erpId, poNumber: po.poNumber, supplierCode: po.supplierCode,
+    lines: lines.filter((x) => x.sl.shipmentId === s.id).map(({ sl, l }) => ({ poLineErpId: l.erpId, lineNo: l.lineNo, itemCode: l.itemCode, quantity: Number(sl.quantity), receivedQty: Number(sl.receivedQty), batchNo: sl.batchNo })) })));
+}));
+
+erpApiRouter.get('/invoices', ah(async (req, res) => {
+  const t = req.apiTenant!;
+  const q = z.object({ since: z.string().datetime({ offset: true }), status: z.enum(['SUBMITTED', 'EXCEPTION', 'APPROVED', 'REJECTED', 'PARTLY_PAID', 'PAID']).default('APPROVED') }).parse(req.query);
+  const since = new Date(q.since);
+  const rows = await db.select({ i: supplierInvoices, po: purchaseOrders, vendorCode: vendors.code }).from(supplierInvoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, supplierInvoices.poId)).innerJoin(vendors, eq(vendors.id, supplierInvoices.vendorId))
+    .where(and(eq(supplierInvoices.tenantId, t.id), eq(supplierInvoices.status, q.status), ['SUBMITTED', 'EXCEPTION'].includes(q.status) ? gt(supplierInvoices.createdAt, since) : gt(supplierInvoices.decidedAt, since))).orderBy(asc(supplierInvoices.createdAt)).limit(1000);
+  const lines = rows.length ? await db.select({ il: supplierInvoiceLines, l: poLines }).from(supplierInvoiceLines).innerJoin(poLines, eq(poLines.id, supplierInvoiceLines.lineId)).where(inArray(supplierInvoiceLines.invoiceId, rows.map((r) => r.i.id))) : [];
+  res.json(rows.map(({ i, po, vendorCode }) => ({ id: i.id, invoiceNumber: i.invoiceNumber, invoiceDate: i.invoiceDate, dueDate: i.dueDate, status: i.status, currency: i.currency, subtotal: Number(i.subtotal), taxAmount: Number(i.taxAmount), total: Number(i.total), paidAmount: Number(i.paidAmount),
+    irn: i.einvoice?.irn ?? null, erpInvoiceId: i.erpInvoiceId, decidedAt: i.decidedAt, poErpId: po.erpId, poNumber: po.poNumber, supplierCode: po.supplierCode, vendorCode,
+    lines: lines.filter((x) => x.il.invoiceId === i.id).map(({ il, l }) => ({ poLineErpId: l.erpId, lineNo: l.lineNo, quantity: Number(il.quantity), unitPrice: Number(il.unitPrice), amount: Number(il.amount), taxRate: il.taxRate === null ? null : Number(il.taxRate), taxAmount: Number(il.taxAmount) })) })));
+}));
+
+erpApiRouter.put('/invoices/:id', ah(async (req, res) => {
+  const t = req.apiTenant!;
+  const b = z.object({ erpInvoiceId: z.string().trim().min(1).max(100).optional(), dueDate: dateStr.optional() }).refine((x) => x.erpInvoiceId || x.dueDate, 'Send erpInvoiceId and/or dueDate').parse(req.body);
+  const [row] = await db.update(supplierInvoices).set(b).where(and(eq(supplierInvoices.tenantId, t.id), eq(supplierInvoices.id, req.params.id))).returning();
+  if (!row) throw new HttpError(404, 'No invoice with that id');
+  res.json({ id: row.id, erpInvoiceId: row.erpInvoiceId, dueDate: row.dueDate });
+}));
+
+erpApiRouter.post('/payments', ah(async (req, res) => {
+  const items = z.array(z.object({
+    erpId: z.string().trim().min(1).max(100), supplierCode: z.string().trim().min(1).max(100), reference: z.string().trim().min(1).max(100), paymentDate: dateStr,
+    method: z.string().trim().max(40).optional().nullable(), currency: z.string().trim().length(3), amount, withheld: amount.optional().nullable(), notes: z.string().max(500).optional().nullable(),
+    invoices: z.array(z.object({ invoiceNumber: z.string().trim().min(1).max(40), amount, withheld: amount.optional().nullable() })).min(1).max(500),
+  })).min(1, 'Send one payment, an array, or { "payments": [ … ] }').max(500).parse(listOf(req.body, 'payments'));
+  const r = await recordPayments(req.apiTenant!, items);
+  res.status(r.failed && !(r.created + r.unchanged) ? 422 : 200).json(r);
 }));

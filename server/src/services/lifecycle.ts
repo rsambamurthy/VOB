@@ -16,7 +16,7 @@ import { approverIds, directApprovers, emailsFor, usersWithPermission } from './
 export { usersWithPermission } from './approvers.js';
 import { buildChecklist, isSubmittable, sanitizeSection, type Profile } from '../lib/profileEngine.js';
 import { runKyc } from '../integrations/kyc/index.js';
-import { checkInputs, checksForVendor } from '../countries/registry.js';
+import { checkInputs, checksForVendor, inputsComplete, isKeyChange } from '../countries/registry.js';
 import { pushLater } from '../integrations/erp/index.js';
 import { addWorkingHours, calendarFor } from '../lib/calendar.js';
 import type { OnboardingConfig } from '../config/types.js';
@@ -43,7 +43,7 @@ export function levelsForChange(cfg: OnboardingConfig, touched: string[]) {
   return picked;
 }
 
-const SENSITIVE = (id: string) => id.startsWith('bank.') || ['tax.gstin', 'tax.pan', 'basic.vendorName'].includes(id);
+const SENSITIVE = isKeyChange;
 
 async function notifyStep(step: Pick<ChangeRequestStep, 'tenantId' | 'roleId' | 'assigneeUserId' | 'label' | 'dueAt'>, vendor: Vendor, prefix = 'Action needed') {
   for (const u of await emailsFor(await approverIds(step))) {
@@ -122,7 +122,7 @@ export async function submitChangeRequest(vendor: Vendor, input: { changes: Reco
     const tenantRow = await db.query.tenants.findFirst({ where: eq(tenants.id, vendor.tenantId) });
     for (const { def } of checksForVendor(tenantRow?.country, proposed as Profile).filter((c) => c.def.onBankChange)) {
       const input = checkInputs(def, proposed as Profile);
-      if (!Object.values(input).every(Boolean)) continue;
+      if (!inputsComplete(def, input)) continue;
       await runKyc({ ...vendor, profile: proposed }, def.kind, input, 'system (bank change)').catch((e) => logger.warn({ err: e }, 'bank check on change failed'));
     }
     await sendMail({ tenantId: vendor.tenantId, to: vendor.contactEmail, subject: 'Security notice: bank details change requested',
@@ -359,7 +359,7 @@ export async function reviewVendor(v: Vendor, requestedBy = 'system (periodic re
   const plan: [string, Record<string, string>, string][] = [];
   for (const { def } of checksForVendor(tenant?.country, p)) {
     const input = checkInputs(def, p);
-    if (Object.values(input).every(Boolean)) plan.push([def.kind, input, def.label]);
+    if (inputsComplete(def, input)) plan.push([def.kind, input, def.label]);
   }
   const problems: string[] = [];
   for (const [kind, input, label] of plan) {
@@ -399,11 +399,12 @@ export async function runPeriodicReviews(now = new Date(), limit = 200) {
 
 /* ======================= "Needs attention" flags ======================= */
 
-export interface Flag { code: 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
+export interface Flag { code: 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
 
-export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null }, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
+export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null; emailBouncedAt?: Date | null; emailBounceReason?: string | null }, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
   const flags: Flag[] = [];
   if (v.erasureRequestedAt) flags.push({ code: 'ERASURE_REQUESTED', label: 'Deletion requested', severity: 'high' });
+  if (v.emailBouncedAt) flags.push({ code: 'EMAIL_BOUNCING', label: v.emailBounceReason === 'Marked our email as spam' ? 'Contact marked our email as spam' : 'Contact email bouncing', severity: 'medium' });
   if (v.status !== 'APPROVED') return flags;
   if (v.blockedAt) flags.push({ code: 'BLOCKED', label: v.blockSource === 'EXPIRY' ? 'On hold — document expired' : 'Blocked', severity: 'high' });
   const active = docs.filter((d) => d.status === 'ACTIVE' && d.expiresOn);
@@ -417,7 +418,7 @@ export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus'
   return flags;
 }
 
-export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, 'id' | 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null })[]) {
+export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, 'id' | 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null; emailBouncedAt?: Date | null; emailBounceReason?: string | null })[]) {
   const ids = vendorRows.filter((v) => v.status === 'APPROVED').map((v) => v.id);
   if (!ids.length) return new Map(vendorRows.map((v) => [v.id, flagsFor(v, [], false)]));
   const docs = await db.select({ vendorId: documents.vendorId, status: documents.status, expiresOn: documents.expiresOn, docType: documents.docType }).from(documents)

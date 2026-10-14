@@ -78,6 +78,34 @@
       "when": 1791827796929,
       "tag": "0010_gulf_phase1",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791953644646,
+      "tag": "0011_email_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791954230242,
+      "tag": "0012_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791955547092,
+      "tag": "0013_help",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791956461645,
+      "tag": "0014_collab_phase2",
+      "breakpoints": true
     }
   ]
 }

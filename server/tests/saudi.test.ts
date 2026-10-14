@@ -67,7 +67,7 @@ describe('Saudi Arabia pack', () => {
     expect(fields).toEqual(expect.arrayContaining(['basic.nameArabic', 'tax.crNumber', 'tax.vatNumber', 'ownership.owner1Name', 'localContent.nitaqatBand']));
     expect(fields).not.toContain('tax.gstin');
     expect(cfg.config.documents.filter((d: any) => d.holdOnExpiry).map((d: any) => d.type)).toEqual(['CR_CERT', 'ZAKAT_CERT', 'GOSI_CERT', 'NITAQAT_CERT']);
-    expect(cfg.checks.filter((c: any) => c.home).map((c: any) => c.kind)).toEqual(['sanctions', 'sa_cr', 'sa_vat']);
+    expect(cfg.checks.filter((c: any) => c.home).map((c: any) => c.kind)).toEqual(['sanctions', 'gcc_iban', 'sa_cr', 'sa_vat']);
     // The configuration editor accepts the template as is.
     expect((await admin.get('/api/admin/config')).body.meta.coreFields).toContain('tax.crNumber');
     const privacy = (await admin.get('/api/admin/privacy')).body;
@@ -86,8 +86,8 @@ describe('Saudi Arabia pack', () => {
 
   test('checks follow the workspace and the supplier: Gulf screening for all, GSTIN only for Indian suppliers', () => {
     const kinds = (home: string, country: string) => checksForVendor(home, { basic: { supplierCountry: country } }).map((c) => c.def.kind);
-    expect(kinds('SA', 'Saudi Arabia')).toEqual(['sanctions', 'sa_cr', 'sa_vat']);
-    expect(kinds('SA', 'India')).toEqual(['gstin', 'pan', 'bank', 'cin', 'sanctions', 'sa_cr', 'sa_vat']);
+    expect(kinds('SA', 'Saudi Arabia')).toEqual(['sanctions', 'gcc_iban', 'sa_cr', 'sa_vat']);
+    expect(kinds('SA', 'India')).toEqual(['gstin', 'pan', 'bank', 'cin', 'sanctions', 'gcc_iban', 'sa_cr', 'sa_vat']);
     expect(kinds('IN', 'India')).toEqual(['gstin', 'pan', 'bank', 'cin']);
     expect(kinds('IN', 'Saudi Arabia')).toEqual(['gstin', 'pan', 'bank', 'cin', 'sa_cr', 'sa_vat']);
     expect(kinds('IN', 'Germany')).toEqual(['gstin', 'pan', 'bank', 'cin']);

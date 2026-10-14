@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { NavIcon } from './NavIcon';
 import { useSession } from '../lib/session';
 import { monogram, loc } from '../lib/format';
@@ -41,6 +41,8 @@ export function StaffShell() {
     ] },
     { key: 'purchasing', label: 'Purchasing', items: [
       { to: '/staff/orders', label: 'Purchase orders', icon: 'orders', show: collab && can('orders.view') },
+      { to: '/staff/invoices', label: 'Supplier invoices', icon: 'invoices', show: collab && can('orders.view') },
+      { to: '/staff/payments', label: 'Payments', icon: 'payments', show: collab && can('invoices.manage') },
       { to: '/staff/admin/purchasing', label: 'Purchasing setup', icon: 'setup', show: collab && (can('orders.manage') || can('tenant.settings')) },
     ] },
     { key: 'admin', label: 'Administration', items: [
@@ -50,6 +52,8 @@ export function StaffShell() {
       { to: '/staff/admin/workspace', label: 'Workspace', icon: 'workspace', show: can('tenant.settings') },
       { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },
       { to: '/staff/admin/erp', label: 'ERP integration', icon: 'erp', show: can('tenant.settings') },
+      { to: '/staff/admin/help-topics', label: 'Help topics', icon: 'help', show: can('tenant.settings') },
+      { to: '/staff/admin/billing', label: 'Billing', icon: 'billing', show: can('tenant.settings') && !me.support },
       { to: '/staff/admin/audit', label: 'Audit log', icon: 'audit', show: can('audit.view') },
       { to: '/staff/mailbox', label: 'Mailbox', icon: 'mail', show: me.devMailbox, tag: 'dev' },
     ] },
@@ -118,11 +122,11 @@ export function StaffShell() {
 
 function TrialBar({ endsAt, expired }: { endsAt: string; expired: boolean }) {
   const days = Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000);
-  if (!expired && days > 7) return <div className="trial-bar quiet">Free trial · {days} days left</div>;
+  if (!expired && days > 7) return <div className="trial-bar quiet">Free trial · {days} days left · <Link to="/staff/admin/billing">Choose a plan</Link></div>;
   return (
     <div className={`trial-bar ${expired ? 'ended' : ''}`} role="status">
-      {expired ? <>Your free trial has ended. You can still see everything, but adding vendors and users is paused. Contact us to choose a plan.</>
-        : <>Your free trial ends {days <= 1 ? 'tomorrow' : `in ${days} days`}. Contact us to choose a plan and keep everything as it is.</>}
+      {expired ? <>Your free trial has ended. You can still see everything, but adding vendors and users is paused. <Link to="/staff/admin/billing">Choose a plan</Link>.</>
+        : <>Your free trial ends {days <= 1 ? 'tomorrow' : `in ${days} days`}. <Link to="/staff/admin/billing">Choose a plan</Link> to keep everything as it is.</>}
     </div>
   );
 }

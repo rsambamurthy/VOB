@@ -1,12 +1,13 @@
-import { eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
+import { audit } from '../lib/audit.js';
 import { db, schema } from '../lib/db.js';
 import { DEFAULT_ROLES } from '../lib/permissions.js';
 import { HttpError } from '../lib/http.js';
 import { hashPassword } from '../lib/password.js';
 import { createStaffUser } from './users.js';
 import { DEFAULT_HOME, isHomeCountry, packFor } from '../countries/registry.js';
-import { seedInitialConfig, templateFor } from './config.js';
-import type { TenantBranding, TenantLimits } from '../db/schema.js';
+import { invalidate, seedInitialConfig, templateFor } from './config.js';
+import type { Tenant, TenantBranding, TenantLimits } from '../db/schema.js';
 
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
 /** Workspace IDs nobody can take (they look official or clash with app paths). */
@@ -67,4 +68,31 @@ export async function createTenant(input: CreateTenantInput) {
   }
   const { user, inviteLink } = await createStaffUser(tenant, { name: input.adminName, email: input.adminEmail, roleIds: [admin.id] }, input.invitedBy ?? 'The VendorGate team');
   return { tenant, admin: user, inviteLink: inviteLink as string | null, roles: createdRoles };
+}
+
+/**
+ * The workspace admin may set the home country once, before anything depends on it: no suppliers yet and the
+ * starting form unchanged. Changing it swaps in that country's starting form and working week.
+ */
+export async function countryChangeBlocker(t: Tenant) {
+  if (t.settings.countryConfirmed) return 'The country has already been confirmed';
+  const [{ n }] = await db.select({ n: count() }).from(schema.vendors).where(eq(schema.vendors.tenantId, t.id));
+  if (Number(n) > 0) return 'Suppliers have already been invited';
+  const [{ c }] = await db.select({ c: count() }).from(schema.tenantConfigs).where(eq(schema.tenantConfigs.tenantId, t.id));
+  if (Number(c) > 1) return 'The onboarding form has already been changed';
+  return null;
+}
+
+export async function setHomeCountry(t: Tenant, country: string, actor: string) {
+  const code = country.toUpperCase();
+  if (!isHomeCountry(code)) throw new HttpError(400, `Workspaces can’t be set up in ${code} yet`);
+  const blocker = await countryChangeBlocker(t);
+  if (blocker) throw new HttpError(409, `${blocker} — ask VendorGate support to change the country`);
+  const pack = packFor(code);
+  await db.transaction(async (tx) => {
+    await tx.update(schema.tenants).set({ country: code, settings: { ...t.settings, countryConfirmed: true, skipWeekends: pack.skipWeekendsByDefault ?? false } }).where(eq(schema.tenants.id, t.id));
+    if (code !== t.country) await tx.update(schema.tenantConfigs).set({ config: templateFor(code), note: `Starting template for ${pack.name}` }).where(and(eq(schema.tenantConfigs.tenantId, t.id), eq(schema.tenantConfigs.version, 1)));
+  });
+  invalidate(t.id);
+  await audit({ tenantId: t.id, actor, action: code === t.country ? 'COUNTRY_CONFIRMED' : 'COUNTRY_CHANGED', detail: { from: t.country, to: code } });
 }

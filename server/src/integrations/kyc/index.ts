@@ -7,7 +7,10 @@ import { HttpError } from '../../lib/http.js';
 import { hasFeature } from '../../services/limits.js';
 import type { Vendor } from '../../db/schema.js';
 import { nameMatch } from './nameMatch.js';
-import { checkDef, checkProvider, checkProviders, setCheckProvider } from '../../countries/registry.js';
+import { checkDef, checkProviders, providerForKind, setCheckProvider } from '../../countries/registry.js';
+import { registerLiveCheckProviders } from '../checks/index.js';
+
+registerLiveCheckProviders();
 import type { CheckProvider } from '../../countries/types.js';
 
 const i = env.int;
@@ -25,8 +28,8 @@ export async function runKyc(vendor: Vendor, kind: KycKind, raw: Record<string, 
   if (tenant && !hasFeature(tenant, 'kyc')) throw new HttpError(403, 'Online verification isn’t available for this workspace', undefined, 'PLAN_LIMIT');
   const found = checkDef(kind);
   if (!found) throw new HttpError(400, `Unknown check “${kind}”`);
-  const { def, pack } = found;
-  const provider = checkProvider(pack)!;
+  const { def } = found;
+  const provider = providerForKind(kind)!;
   const { input, masked, error } = def.normalise(raw);
   const inputHash = crypto.createHash('sha256').update(`${kind}:${JSON.stringify(input)}`).digest('hex');
   const profile = vendor.profile as Record<string, Record<string, unknown>>;

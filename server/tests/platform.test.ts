@@ -3,6 +3,7 @@ import { generateSync } from 'otplib';
 import { eq } from 'drizzle-orm';
 import { client, login, lastLinkTo, tokenOf, DEMO_PASSWORD } from './helpers.js';
 import { db, schema } from '../src/lib/db.js';
+import { gstinCheckChar } from '../src/lib/validators.js';
 
 const OWNER = 'owner@vendorgate.test';
 let secret = '';
@@ -206,5 +207,35 @@ describe('self-service sign-up', () => {
     expect((await client().post('/api/auth/login', { workspace: 'pied-piper', email: form.email, password: 'Pied-Piper-2026!' })).status).toBe(200);
     const signups = (await (await platform()).get('/api/platform/signups')).body;
     expect(signups.find((s: any) => s.email === form.email).state).toBe('COMPLETED');
+  });
+
+  test('billing: seller settings, issue an invoice, record a bank transfer, cancel another, PDF; 2FA enforcement', async () => {
+    const c = await platform();
+    const g = (pan: string, st: string) => { const b = `${st}${pan}1Z`; return b + gstinCheckChar(b); };
+    const base = { seller: { name: 'Integratatech.ai Pvt Ltd', gstin: g('AAFCI1234K', '29'), address: '1 MG Road, Bengaluru', stateCode: '33' }, prices: { INR: { standard: { monthly: 25000 } } }, gstRate: 18, sac: '997331', dueDays: 15, prefix: 'VGP' };
+    expect((await c.put('/api/platform/billing', base)).status).toBe(422); // GSTIN state ≠ chosen state
+    expect((await c.put('/api/platform/billing', { ...base, seller: { ...base.seller, gstin: g('AAFCI1234K', '33') } })).status).toBe(200);
+
+    const globex = await db.query.tenants.findFirst({ where: eq(schema.tenants.slug, 'globex') });
+    expect((await c.put(`/api/platform/tenants/${globex!.id}/billing`, { legalName: 'Globex Corp', address: 'Baner, Pune 411045', country: 'IN', stateCode: '27', email: 'ap@globex.test', autoInvoice: false })).status).toBe(200);
+    const a = await c.post(`/api/platform/tenants/${globex!.id}/invoices`, { plan: 'standard', cycle: 'monthly', note: 'PO 4500012345' });
+    expect(a.status, JSON.stringify(a.body)).toBe(201);
+    expect(a.body.invoice).toMatchObject({ number: expect.stringMatching(/^VGP\//), taxMode: 'INTER', total: 2_950_000 });
+    const b = await c.post(`/api/platform/tenants/${globex!.id}/invoices`, { plan: 'standard', cycle: 'monthly', amount: 1000 });
+    expect(b.body.invoice.subtotal).toBe(100_000);
+    expect((await c.post(`/api/platform/tenants/${globex!.id}/invoices/${a.body.invoice.id}/payment`, { ref: 'UTR123456', paidOn: '2026-10-10' })).body.invoice).toMatchObject({ status: 'PAID', paymentRef: 'UTR123456', paymentMethod: 'bank transfer' });
+    expect((await c.post(`/api/platform/tenants/${globex!.id}/invoices/${a.body.invoice.id}/void`, { reason: 'mistake' })).status).toBe(409);
+    expect((await c.post(`/api/platform/tenants/${globex!.id}/invoices/${b.body.invoice.id}/void`, { reason: 'Duplicate' })).status).toBe(200);
+    const list = (await c.get(`/api/platform/tenants/${globex!.id}/billing`)).body.invoices;
+    expect(list.map((i: any) => i.status).sort()).toEqual(['PAID', 'VOID']);
+    const pdf = await c.agent.get(`/api/platform/tenants/${globex!.id}/invoices/${a.body.invoice.id}/pdf`).buffer(true).parse((res, cb) => { const x: Buffer[] = []; res.on('data', (d: Buffer) => x.push(d)); res.on('end', () => cb(null, Buffer.concat(x))); });
+    expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+
+    expect((await c.patch(`/api/platform/tenants/${globex!.id}`, { requireMfa: true })).status).toBe(200);
+    expect((await c.get(`/api/platform/tenants/${globex!.id}`)).body.tenant.security).toEqual({ requireMfa: true, enforced: true });
+    expect((await c.patch(`/api/platform/tenants/${globex!.id}`, { requireMfa: false })).status).toBe(200);
+    expect((await c.get(`/api/platform/tenants/${globex!.id}`)).body.tenant.security).toEqual({ requireMfa: true, enforced: false });
+    const t = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, globex!.id) });
+    await db.update(schema.tenants).set({ settings: { ...t!.settings, requireMfa: false } }).where(eq(schema.tenants.id, globex!.id));
   });
 });

@@ -18,9 +18,9 @@ describe('UAE and Bahrain packs', () => {
     expect(packFor('AE')).toMatchObject({ currency: 'AED', timeZoneLabel: 'GST', weekend: [6, 0], skipWeekendsByDefault: true });
     expect(packFor('BH')).toMatchObject({ currency: 'BHD', timeZoneLabel: 'AST', weekend: [5, 6], skipWeekendsByDefault: true });
     const kinds = (home: string, country: string) => checksForVendor(home, { basic: { supplierCountry: country } }).map((c) => c.def.kind);
-    expect(kinds('AE', 'United Arab Emirates')).toEqual(['sanctions', 'ae_trn']);
-    expect(kinds('BH', 'Bahrain')).toEqual(['sanctions', 'bh_cr', 'bh_vat']);
-    expect(kinds('AE', 'Saudi Arabia')).toEqual(['sanctions', 'sa_cr', 'sa_vat', 'ae_trn']); // a Saudi supplier of a UAE buyer
+    expect(kinds('AE', 'United Arab Emirates')).toEqual(['sanctions', 'gcc_iban', 'ae_trn']);
+    expect(kinds('BH', 'Bahrain')).toEqual(['sanctions', 'gcc_iban', 'bh_cr', 'bh_vat']);
+    expect(kinds('AE', 'Saudi Arabia')).toEqual(['sanctions', 'gcc_iban', 'sa_cr', 'sa_vat', 'ae_trn']); // a Saudi supplier of a UAE buyer
   });
 
   test('formats: UAE TRN and licence, Bahrain CR and VAT, block numbers, P.O. Box, IBAN by country', () => {
@@ -94,7 +94,7 @@ describe('UAE and Bahrain packs', () => {
       const ok = await admin.post('/api/staff/vendors', { name: `${country} Good Supplier`, vendorType: 'DOMESTIC', contactFirstName: 'A', contactLastName: 'B', contactEmail: `ok@${slug}.test`, contactMobile: mobile });
       expect(ok.status, JSON.stringify(ok.body)).toBe(201);
       const cfg = (await admin.get('/api/config')).body;
-      expect(cfg.checks.filter((c: any) => c.home).map((c: any) => c.kind)).toEqual(country === 'AE' ? ['sanctions', 'ae_trn'] : ['sanctions', 'bh_cr', 'bh_vat']);
+      expect(cfg.checks.filter((c: any) => c.home).map((c: any) => c.kind)).toEqual(country === 'AE' ? ['sanctions', 'gcc_iban', 'ae_trn'] : ['sanctions', 'gcc_iban', 'bh_cr', 'bh_vat']);
       // Screening works for a workspace's own suppliers
       expect((await admin.post(`/api/staff/vendors/${ok.body.vendor.id}/verify/sanctions`)).body.status).toBe('VERIFIED');
     }

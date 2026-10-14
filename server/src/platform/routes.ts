@@ -20,12 +20,17 @@ import { createSession } from '../auth/session.js';
 import { createTenant, slugProblem } from '../services/tenants.js';
 import { sendStaffInvite } from '../services/users.js';
 import { assertCanAddUser, startOfDay, usage } from '../services/limits.js';
+import { senderFor } from '../integrations/email/index.js';
+import { GST_STATES } from '../countries/in/gstStates.js';
+import { COUNTRY_LIST } from '../countries/list.js';
+import { currencyFor, invoicePdf, issueInvoice, markPaid, razorpayLive, validGstin, voidInvoice } from '../services/billing.js';
+import { billingDetailsSchema, cleanBilling, publicInvoice } from '../routes/billing.js';
 import { effectiveLimits, FEATURE_LABELS, PLAN_KEYS, PLANS } from '../lib/plans.js';
 import { homeCountries, packFor } from '../countries/registry.js';
 import { adminByToken, createPlatformSession, destroyPlatformSession, issuePlatformToken, platformCtx, platformLog, requirePlatform, verifyTotp } from './session.js';
 import { getPlatformSettings } from './settings.js';
 
-const { platformAdmins, platformSessions, tenants, users, userRoles, roles, vendors, emailOutbox, auditLogs, sessions, signups, platformAudit, platformSettings } = schema;
+const { platformAdmins, platformSessions, tenants, users, userRoles, roles, vendors, emailOutbox, auditLogs, sessions, signups, platformAudit, platformSettings, invoices } = schema;
 export const platformRouter = Router();
 
 const MAX_FAILED = 5;
@@ -266,7 +271,9 @@ platformRouter.get('/tenants/:id', ah(async (req, res) => {
   ]);
   const platformHistory = await db.select().from(platformAudit).where(eq(platformAudit.tenantId, t.id)).orderBy(desc(platformAudit.createdAt)).limit(20);
   res.json({
-    tenant: { id: t.id, slug: t.slug, name: t.name, status: t.status, statusReason: t.statusReason, plan: t.plan, limits: t.limits, trialEndsAt: t.trialEndsAt, source: t.source, notes: t.notes, createdAt: t.createdAt, branding: t.branding, country: t.country, countryName: packFor(t.country).name },
+    tenant: { id: t.id, slug: t.slug, name: t.name, status: t.status, statusReason: t.statusReason, plan: t.plan, limits: t.limits, trialEndsAt: t.trialEndsAt, source: t.source, notes: t.notes, createdAt: t.createdAt, branding: t.branding, country: t.country, countryName: packFor(t.country).name,
+      security: { requireMfa: !!t.settings.requireMfa, enforced: !!t.settings.mfaEnforcedByPlatform },
+      email: { sender: senderFor(t).from, replyTo: senderFor(t).replyTo ?? null, domain: t.settings.email?.domain ? { name: t.settings.email.domain.name, status: t.settings.email.domain.status } : null } },
     effective: effectiveLimits(t),
     usage: { ...u, emailsLast30: Number(emails30.n), emailsFailedLast30: Number(failed30.n), vendorsByStatus: Object.fromEntries(vendorStatus.map((r) => [r.status, Number(r.n)])), lastActiveAt: lastSeen?.at ?? null },
     admins, activity, platformHistory,
@@ -279,6 +286,7 @@ platformRouter.patch('/tenants/:id', ah(async (req, res) => {
     name: z.string().trim().min(2).max(120).optional(), plan: z.enum(PLAN_KEYS).optional(),
     trialEndsAt: z.string().datetime({ offset: true }).nullable().optional().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
     limits: limitsSchema.optional(), notes: z.string().max(2000).nullable().optional(),
+    requireMfa: z.boolean().optional(),
   }).parse(req.body);
   const set: Partial<typeof tenants.$inferInsert> = {};
   if (input.name) set.name = input.name;
@@ -287,7 +295,9 @@ platformRouter.patch('/tenants/:id', ah(async (req, res) => {
   if (input.plan === 'trial' && !t.trialEndsAt && input.trialEndsAt === undefined) set.trialEndsAt = new Date(Date.now() + (await getPlatformSettings()).trialDays * DAY);
   if (input.limits) set.limits = Object.fromEntries(Object.entries(input.limits).filter(([, v]) => v !== undefined));
   if (input.notes !== undefined) set.notes = input.notes;
+  if (input.requireMfa !== undefined) set.settings = { ...t.settings, requireMfa: input.requireMfa ? true : !!t.settings.requireMfa, mfaEnforcedByPlatform: input.requireMfa };
   await db.update(tenants).set(set).where(eq(tenants.id, t.id));
+  if (input.requireMfa !== undefined && input.requireMfa !== !!t.settings.mfaEnforcedByPlatform) await audit({ tenantId: t.id, actor: 'VendorGate', action: input.requireMfa ? 'MFA_ENFORCED_BY_PLATFORM' : 'MFA_ENFORCEMENT_LIFTED' });
   const changed = Object.fromEntries(Object.entries(input).filter(([k]) => k !== 'notes'));
   if (input.plan && input.plan !== t.plan) await audit({ tenantId: t.id, actor: 'VendorGate', action: 'PLAN_CHANGED', detail: { from: t.plan, to: input.plan } });
   await platformLog({ actor: actor(req), action: 'TENANT_UPDATED', tenantId: t.id, detail: { ...changed, ...(input.notes !== undefined ? { notes: 'edited' } : {}) }, ip: req.ip });
@@ -368,6 +378,75 @@ platformRouter.get('/signups', ah(async (_req, res) => {
     .from(signups).orderBy(desc(signups.createdAt)).limit(200);
   const now = new Date();
   res.json(rows.map((r) => ({ ...r, state: r.completedAt ? 'COMPLETED' : r.expiresAt < now ? 'EXPIRED' : 'WAITING' })));
+}));
+
+/* ---------- Billing ---------- */
+
+const priceSchema = z.object({ monthly: z.number().min(0).max(1e9).optional(), yearly: z.number().min(0).max(1e10).optional() });
+platformRouter.get('/billing', ah(async (_req, res) => {
+  res.json({ billing: (await getPlatformSettings()).billing ?? {}, states: Object.entries(GST_STATES).map(([code, name]) => ({ code, name })), online: razorpayLive() });
+}));
+platformRouter.put('/billing', ah(async (req, res) => {
+  const input = z.object({
+    seller: z.object({ name: z.string().trim().min(2).max(160), gstin: z.string().trim().toUpperCase().max(15).optional().or(z.literal('')), pan: z.string().trim().toUpperCase().max(10).optional().or(z.literal('')), address: z.string().trim().min(5).max(300), stateCode: z.string().regex(/^\d{2}$/, 'Choose the state'), email: z.string().trim().email().optional().or(z.literal('')), bank: z.string().trim().max(400).optional().or(z.literal('')) }),
+    prices: z.record(z.enum(['INR', 'USD']), z.record(z.enum(['standard', 'enterprise']), priceSchema)),
+    gstRate: z.number().min(0).max(28), sac: z.string().trim().regex(/^\d{4,8}$/, 'SAC is 4 to 8 digits'), dueDays: z.number().int().min(0).max(90),
+    prefix: z.string().trim().regex(/^[A-Z0-9-]{1,10}$/, 'Use capitals, digits or dashes'), exportNote: z.string().trim().max(300).optional().or(z.literal('')),
+  }).parse(req.body);
+  if (input.seller.gstin && (!validGstin(input.seller.gstin) || input.seller.gstin.slice(0, 2) !== input.seller.stateCode)) throw new HttpError(422, 'The GSTIN is not valid for the chosen state', { gstin: 'Check the GSTIN' });
+  await getPlatformSettings();
+  await db.update(platformSettings).set({ billing: input as never, updatedAt: new Date() }).where(eq(platformSettings.id, 'default'));
+  await platformLog({ actor: actor(req), action: 'BILLING_SETTINGS_CHANGED', ip: req.ip });
+  res.json({ billing: input });
+}));
+
+platformRouter.get('/tenants/:id/billing', ah(async (req, res) => {
+  const t = await loadTenant(req.params.id);
+  const rows = await db.select().from(invoices).where(eq(invoices.tenantId, t.id)).orderBy(desc(invoices.issuedAt)).limit(100);
+  res.json({ billing: t.billing, invoices: rows.map(publicInvoice), currency: currencyFor(t.billing), online: razorpayLive(), states: Object.entries(GST_STATES).map(([code, name]) => ({ code, name })), countries: COUNTRY_LIST.map((c) => ({ code: c.iso, name: c.name })) });
+}));
+platformRouter.put('/tenants/:id/billing', ah(async (req, res) => {
+  const t = await loadTenant(req.params.id);
+  const extra = z.object({ autoInvoice: z.boolean().optional(), nextInvoiceOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional() }).parse(req.body);
+  const billing = { ...cleanBilling(billingDetailsSchema.parse(req.body), t.billing), ...(extra.autoInvoice !== undefined ? { autoInvoice: extra.autoInvoice } : {}), ...(extra.nextInvoiceOn !== undefined ? { nextInvoiceOn: extra.nextInvoiceOn ?? undefined } : {}) };
+  await db.update(tenants).set({ billing }).where(eq(tenants.id, t.id));
+  await platformLog({ actor: actor(req), action: 'TENANT_BILLING_UPDATED', tenantId: t.id, ip: req.ip });
+  res.json({ billing });
+}));
+platformRouter.post('/tenants/:id/invoices', ah(async (req, res) => {
+  const t = await loadTenant(req.params.id);
+  const input = z.object({ plan: z.enum(['standard', 'enterprise']), cycle: z.enum(['monthly', 'yearly']), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), amount: z.number().positive().max(1e10).optional(), note: z.string().max(500).optional(), activatesPlan: z.boolean().optional() }).parse(req.body);
+  const inv = await issueInvoice(t, { plan: input.plan, cycle: input.cycle, periodStart: input.periodStart ? new Date(`${input.periodStart}T00:00:00Z`) : undefined, amountOverride: input.amount, note: input.note, activatesPlan: input.activatesPlan, actor: 'VendorGate' });
+  await platformLog({ actor: actor(req), action: 'INVOICE_ISSUED', tenantId: t.id, detail: { number: inv.number }, ip: req.ip });
+  res.status(201).json({ invoice: publicInvoice(inv) });
+}));
+const tenantInvoice = async (tenantId: string, id: string) => {
+  const inv = await db.query.invoices.findFirst({ where: and(eq(invoices.id, id), eq(invoices.tenantId, tenantId)) });
+  if (!inv) throw new HttpError(404, 'Invoice not found');
+  return inv;
+};
+platformRouter.post('/tenants/:id/invoices/:invoiceId/payment', ah(async (req, res) => {
+  const t = await loadTenant(req.params.id);
+  const input = z.object({ ref: z.string().trim().min(2, 'Enter the payment reference (UTR, cheque no.)').max(120), method: z.string().trim().min(2).max(60).default('bank transfer'), paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).parse(req.body);
+  const inv = await markPaid(await tenantInvoice(t.id, req.params.invoiceId), { ref: input.ref, method: input.method, actor: actor(req), paidAt: input.paidOn ? new Date(`${input.paidOn}T12:00:00Z`) : undefined });
+  await platformLog({ actor: actor(req), action: 'INVOICE_PAYMENT_RECORDED', tenantId: t.id, detail: { number: inv.number, ref: input.ref }, ip: req.ip });
+  res.json({ invoice: publicInvoice(inv) });
+}));
+platformRouter.post('/tenants/:id/invoices/:invoiceId/void', ah(async (req, res) => {
+  const t = await loadTenant(req.params.id);
+  const { reason } = z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) }).parse(req.body);
+  const inv = await tenantInvoice(t.id, req.params.invoiceId);
+  await voidInvoice(inv, actor(req), reason);
+  await platformLog({ actor: actor(req), action: 'INVOICE_VOIDED', tenantId: t.id, detail: { number: inv.number, reason }, ip: req.ip });
+  res.json({ ok: true });
+}));
+platformRouter.get('/tenants/:id/invoices/:invoiceId/pdf', ah(async (req, res) => {
+  const t = await loadTenant(req.params.id);
+  const inv = await tenantInvoice(t.id, req.params.invoiceId);
+  const pdf = await invoicePdf(inv, (await getPlatformSettings()).billing?.exportNote);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${inv.number.replace(/\//g, '-')}.pdf"`);
+  res.send(pdf);
 }));
 
 /* ---------- Settings ---------- */

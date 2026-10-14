@@ -57,6 +57,27 @@ export type VendorType = (typeof vendorTypeEnum.enumValues)[number];
 export type VendorStatus = (typeof vendorStatusEnum.enumValues)[number];
 
 export interface TenantBranding { productName?: string; primaryColor?: string; logoUrl?: string }
+/** Who the workspace is billed as (tax invoice "Bill to"). */
+export interface TenantBilling {
+  legalName?: string; gstin?: string; address?: string; city?: string; postalCode?: string;
+  /** ISO country of the billing address; India uses stateCode (GST place of supply). */
+  country?: string; stateCode?: string; email?: string;
+  cycle?: 'monthly' | 'yearly';
+  /** Issue the next invoice automatically on this date (YYYY-MM-DD). */
+  nextInvoiceOn?: string; autoInvoice?: boolean;
+}
+/** Seller details, prices and invoice numbering (platform settings). */
+export interface PlatformBilling {
+  seller?: { name: string; gstin?: string; pan?: string; address: string; stateCode: string; email?: string; bank?: string };
+  /** Prices in major units per currency → plan → cycle, e.g. { INR: { standard: { monthly: 25000, yearly: 250000 } } } */
+  prices?: Record<string, Record<string, { monthly?: number; yearly?: number }>>;
+  gstRate?: number; sac?: string; dueDays?: number; prefix?: string;
+  /** Text printed on export invoices (e.g. the LUT reference). */
+  exportNote?: string;
+}
+export interface InvoiceLine { description: string; sac: string; quantity: number; unitPrice: number; amount: number }
+export interface InvoiceParty { name: string; gstin?: string; address: string; country: string; stateCode?: string; stateName?: string; email?: string }
+
 export interface TenantSettings {
   requireMfa?: boolean;
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
@@ -72,6 +93,18 @@ export interface TenantSettings {
   privacy?: { version: number; text: string; contactEmail?: string; updatedAt?: string };
   /** Days after which vendor data is anonymised: rejected registrations, and ones abandoned before submitting (0 = keep). */
   retention?: { rejectedDays: number; abandonedDays: number };
+  /** Answer F1 help questions with AI (from the help articles only). Default on. */
+  helpAi?: boolean;
+  /** Invoice matching: allowed difference in unit price (%) before an invoice is flagged. Default 2. */
+  priceTolerancePct?: number;
+  /** India: suppliers registered for GST must give the e-invoice IRN (flagged when missing). */
+  einvoiceRequired?: boolean;
+  /** Set once the workspace admin has confirmed (or changed) the home country; after that it is fixed. */
+  countryConfirmed?: boolean;
+  /** Two-factor sign-in required by the platform operator; the workspace admin can't turn it off. */
+  mfaEnforcedByPlatform?: boolean;
+  /** Outgoing email: sender name, reply-to, and an own sending domain (verified through the email provider). */
+  email?: { fromName?: string; replyTo?: string; domain?: { name: string; providerId?: string; status: 'pending' | 'verified' | 'failed'; fromLocal?: string; records?: { type: string; name: string; value: string; priority?: number; status?: string }[]; checkedAt?: string } };
 }
 
 /** Per-tenant overrides of the plan's limits (see lib/plans.ts). Missing = use the plan's value; null = unlimited. */
@@ -100,6 +133,7 @@ export const tenants = pgTable('tenants', {
   statusReason: text('status_reason'),
   /** Internal notes, visible only in the platform console. */
   notes: text('notes'),
+  billing: jsonb('billing').$type<TenantBilling>().notNull().default({}),
   createdAt: createdAt(),
 });
 
@@ -202,6 +236,9 @@ export const vendors = pgTable('vendors', {
   blockedById: text('blocked_by_id').references(() => users.id),
   /** Why the vendor is on hold: MANUAL (a person blocked it) or EXPIRY (a required document lapsed — released automatically on renewal). */
   blockSource: text('block_source'),
+  /** Set when email to the contact bounces or is marked as spam (Resend webhook); cleared when the address changes. */
+  emailBouncedAt: timestamp('email_bounced_at', { withTimezone: true }),
+  emailBounceReason: text('email_bounce_reason'),
   /** Next periodic re-verification (set on approval from the workspace's re-check interval). */
   nextReviewAt: timestamp('next_review_at', { withTimezone: true }),
   lastReviewAt: timestamp('last_review_at', { withTimezone: true }),
@@ -429,6 +466,20 @@ export const emailOutbox = pgTable('email_outbox', {
   error: text('error'),
   attempts: integer('attempts').notNull().default(0),
   sentAt: timestamp('sent_at', { withTimezone: true }),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  bouncedAt: timestamp('bounced_at', { withTimezone: true }),
+  bounceType: text('bounce_type'),
+  complainedAt: timestamp('complained_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** Addresses we stop sending to after a hard bounce or a spam complaint (any workspace). */
+export const emailSuppressions = pgTable('email_suppressions', {
+  id: id(),
+  address: text('address').notNull().unique(),
+  reason: text('reason').notNull(), // BOUNCE | COMPLAINT
+  detail: text('detail'),
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
 });
 
@@ -579,14 +630,15 @@ export const poReceipts = pgTable('po_receipts', {
   receiptNumber: text('receipt_number').notNull(),
   receiptDate: date('receipt_date'),
   quantity: qty('quantity').notNull(),
+  /** The shipment notice this receipt was matched to, if any. */
+  shipmentId: text('shipment_id'),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('po_receipts_uq').on(t.tenantId, t.erpId)]);
 
-/** Outbound messages to the ERP about orders (acceptances now; shipment notices later). */
+/** Outbound messages to the ERP about orders: ACCEPTANCE · ASN · ASN_CANCEL · INVOICE. */
 export const poMessages = pgTable('po_messages', {
   id: id(), tenantId: tenantId(),
   poId: text('po_id').notNull().references(() => purchaseOrders.id, { onDelete: 'cascade' }),
-  /** ACCEPTANCE */
   kind: text('kind').notNull(),
   connector: text('connector').notNull(),
   /** PENDING · SENT · TEST · FAILED · NO_CONNECTOR */
@@ -614,6 +666,93 @@ export const poImports = pgTable('po_imports', {
   detail: jsonb('detail'),
   createdAt: createdAt(),
 }, (t) => [index('po_imports_tenant_idx').on(t.tenantId, t.createdAt)]);
+
+/**
+ * Advance shipping notice (ASN) from the supplier against accepted lines. Partial shipments allowed.
+ * status: SHIPPED · PARTLY_RECEIVED · RECEIVED · CANCELLED
+ */
+export const shipments = pgTable('shipments', {
+  id: id(), tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  poId: text('po_id').notNull().references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  /** Our reference (ASN-2026-000123) and the supplier's own delivery note / dispatch number. */
+  number: text('number').notNull(),
+  supplierRef: text('supplier_ref'),
+  status: text('status').notNull().default('SHIPPED'),
+  shipDate: date('ship_date').notNull(),
+  expectedDate: date('expected_date'),
+  carrier: text('carrier'), trackingNo: text('tracking_no'), vehicleNo: text('vehicle_no'),
+  /** India: e-way bill number for goods movement. */
+  ewayBill: text('eway_bill'),
+  packages: integer('packages'),
+  notes: text('notes'),
+  createdBy: text('created_by').notNull(),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }), cancelReason: text('cancel_reason'),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('shipments_number_uq').on(t.tenantId, t.number), index('shipments_po_idx').on(t.poId), index('shipments_vendor_idx').on(t.tenantId, t.vendorId, t.createdAt)]);
+
+export const shipmentLines = pgTable('shipment_lines', {
+  id: id(), tenantId: tenantId(),
+  shipmentId: text('shipment_id').notNull().references(() => shipments.id, { onDelete: 'cascade' }),
+  lineId: text('line_id').notNull().references(() => poLines.id, { onDelete: 'cascade' }),
+  quantity: qty('quantity').notNull(),
+  receivedQty: qty('received_qty').notNull().default('0'),
+  batchNo: text('batch_no'),
+}, (t) => [index('shipment_lines_shipment_idx').on(t.shipmentId), index('shipment_lines_line_idx').on(t.lineId)]);
+
+/**
+ * Supplier invoice raised from a PO (and optionally a shipment), matched against the order, receipts and
+ * earlier invoices. status: SUBMITTED · EXCEPTION · APPROVED · REJECTED · CANCELLED · PARTLY_PAID · PAID
+ */
+export const supplierInvoices = pgTable('supplier_invoices', {
+  id: id(), tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  poId: text('po_id').notNull().references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  shipmentId: text('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
+  invoiceNumber: text('invoice_number').notNull(),
+  invoiceDate: date('invoice_date').notNull(),
+  currency: text('currency').notNull(),
+  subtotal: qty('subtotal').notNull(), taxAmount: qty('tax_amount').notNull(), total: qty('total').notNull(),
+  status: text('status').notNull().default('SUBMITTED'),
+  /** Match result: problems (blocking) and notes (for the reviewer). */
+  checks: jsonb('checks').$type<{ code: string; level: 'error' | 'warning' | 'ok'; message: string }[]>().notNull().default([]),
+  /** Country rules (e.g. India e-invoice IRN / signed QR, supplier GSTIN). */
+  einvoice: jsonb('einvoice').$type<Record<string, string>>(),
+  documentId: text('document_id'),
+  notes: text('notes'),
+  submittedBy: text('submitted_by').notNull(),
+  decidedBy: text('decided_by'), decidedAt: timestamp('decided_at', { withTimezone: true }), decisionNote: text('decision_note'),
+  erpInvoiceId: text('erp_invoice_id'),
+  paidAmount: qty('paid_amount').notNull().default('0'),
+  dueDate: date('due_date'),
+  createdAt: createdAt(),
+}, (t) => [index('supplier_invoices_number_idx').on(t.tenantId, t.vendorId, t.invoiceNumber), index('supplier_invoices_po_idx').on(t.poId), index('supplier_invoices_status_idx').on(t.tenantId, t.status, t.createdAt)]);
+
+export const supplierInvoiceLines = pgTable('supplier_invoice_lines', {
+  id: id(), tenantId: tenantId(),
+  invoiceId: text('invoice_id').notNull().references(() => supplierInvoices.id, { onDelete: 'cascade' }),
+  lineId: text('line_id').notNull().references(() => poLines.id, { onDelete: 'cascade' }),
+  quantity: qty('quantity').notNull(), unitPrice: qty('unit_price').notNull(), amount: qty('amount').notNull(),
+  taxRate: qty('tax_rate'), taxAmount: qty('tax_amount').notNull().default('0'),
+}, (t) => [index('supplier_invoice_lines_invoice_idx').on(t.invoiceId), index('supplier_invoice_lines_line_idx').on(t.lineId)]);
+
+/** Payments the ERP made to a supplier (remittance advice), allocated to invoices. */
+export const supplierPayments = pgTable('supplier_payments', {
+  id: id(), tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  erpId: text('erp_id').notNull(),
+  reference: text('reference').notNull(),
+  paymentDate: date('payment_date').notNull(),
+  method: text('method'),
+  currency: text('currency').notNull(),
+  amount: qty('amount').notNull(),
+  /** Tax deducted at source / withholding, total across the invoices. */
+  withheld: qty('withheld').notNull().default('0'),
+  notes: text('notes'),
+  allocations: jsonb('allocations').$type<{ invoiceId: string | null; invoiceNumber: string; amount: number; withheld?: number }[]>().notNull().default([]),
+  notifiedAt: timestamp('notified_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('supplier_payments_erp_uq').on(t.tenantId, t.erpId), index('supplier_payments_vendor_idx').on(t.tenantId, t.vendorId, t.paymentDate)]);
 
 /** Keys an ERP or middleware uses to call the VendorGate API (stored hashed). */
 export const apiKeys = pgTable('api_keys', {
@@ -701,12 +840,82 @@ export const platformSettings = pgTable('platform_settings', {
   blockFreeEmail: boolean('block_free_email').notNull().default(true),
   notifyEmail: text('notify_email'),
   termsUrl: text('terms_url'),
+  billing: jsonb('billing').$type<PlatformBilling>().notNull().default({}),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** A workspace's own help topics (its approval policy, who to call…), shown in F1 help next to the built-in ones. */
+export const helpTopics = pgTable('help_topics', {
+  id: id(),
+  tenantId: tenantId(),
+  title: text('title').notNull(),
+  summary: text('summary').notNull().default(''),
+  body: text('body').notNull(),
+  /** staff | supplier | both */
+  audience: text('audience').notNull().default('staff'),
+  keywords: text('keywords'),
+  updatedBy: text('updated_by'),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('help_topics_tenant_idx').on(t.tenantId)]);
+
+/** Questions asked in F1 help (for answering limits and to see what people struggle with). */
+export const helpQuestions = pgTable('help_questions', {
+  id: id(),
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+  audience: text('audience').notNull(),
+  askedBy: text('asked_by'),
+  question: text('question').notNull(),
+  answered: boolean('answered').notNull().default(false),
+  sources: jsonb('sources').$type<string[]>().notNull().default([]),
+  provider: text('provider').notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('help_questions_tenant_idx').on(t.tenantId, t.createdAt)]);
+
+/** Tax invoices for subscriptions. Amounts in minor units (paise / cents). */
+export const invoices = pgTable('invoices', {
+  id: id(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  number: text('number').notNull().unique(),
+  /** DUE | PAID | VOID */
+  status: text('status').notNull().default('DUE'),
+  plan: text('plan').notNull(),
+  cycle: text('cycle').notNull(),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+  dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+  currency: text('currency').notNull(),
+  lines: jsonb('lines').$type<InvoiceLine[]>().notNull(),
+  subtotal: integer('subtotal').notNull(),
+  /** INTRA (CGST+SGST) | INTER (IGST) | EXPORT (zero-rated) */
+  taxMode: text('tax_mode').notNull(),
+  taxRate: integer('tax_rate').notNull().default(0),
+  cgst: integer('cgst').notNull().default(0),
+  sgst: integer('sgst').notNull().default(0),
+  igst: integer('igst').notNull().default(0),
+  total: integer('total').notNull(),
+  seller: jsonb('seller').$type<InvoiceParty>().notNull(),
+  buyer: jsonb('buyer').$type<InvoiceParty>().notNull(),
+  /** Activate this plan when paid (upgrade from trial). */
+  activatesPlan: boolean('activates_plan').notNull().default(false),
+  paymentLinkId: text('payment_link_id'),
+  paymentLinkUrl: text('payment_link_url'),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  paymentRef: text('payment_ref'),
+  paymentMethod: text('payment_method'),
+  remindersSent: integer('reminders_sent').notNull().default(0),
+  notes: text('notes'),
+  createdAt: createdAt(),
+}, (t) => [index('invoices_tenant_idx').on(t.tenantId, t.issuedAt)]);
 
 export type Tenant = typeof tenants.$inferSelect;
 export type PlatformAdmin = typeof platformAdmins.$inferSelect;
 export type PlatformSettings = typeof platformSettings.$inferSelect;
+export type Invoice = typeof invoices.$inferSelect;
+export type Shipment = typeof shipments.$inferSelect;
+export type SupplierInvoice = typeof supplierInvoices.$inferSelect;
+export type SupplierPayment = typeof supplierPayments.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Vendor = typeof vendors.$inferSelect;

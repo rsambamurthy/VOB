@@ -67,6 +67,41 @@ After 5 wrong passwords the account is locked for 15 minutes. An administrator c
 6. **Invite your first vendor.** See [Inviting a vendor](#invite-vendor).`,
   },
   {
+    id: 'billing', title: 'Plan, billing and invoices', audience: ['staff'], perms: ['tenant.settings'],
+    summary: 'Upgrade from the trial, keep your billing details current, and download and pay tax invoices.',
+    screens: ['^/staff/admin/billing'],
+    keywords: 'billing invoice plan upgrade trial pay payment razorpay gst gstin tax invoice pdf renewal subscription price',
+    related: ['workspace-settings'],
+    body: `Administration → **Billing** shows your plan, billing details and invoices.
+
+- **Billing details**: the legal name, address, billing email and — in India — the state and GSTIN printed on your tax invoices. With a GSTIN, the state is taken from it.
+- **Upgrade**: on the free trial, choose monthly or yearly and click **Upgrade to Standard**. An invoice is created at once; the Standard plan starts as soon as it is paid. Nothing you set up in the trial is lost.
+- **Invoices**: download each as a PDF. **Pay now** opens a secure payment page (cards, UPI, net banking). You can also pay by bank transfer to the account on the invoice.
+- **Tax**: Indian customers are charged GST — CGST and SGST in the seller's state, IGST elsewhere. Customers outside India are invoiced in US dollars as an export of services, without GST.
+- **Renewals**: the next invoice is issued automatically at the end of each period and emailed to the billing email. Reminders follow if it isn't paid by the due date.`,
+  },
+  {
+    id: 'help-topics', title: 'Your own help topics and AI answers', audience: ['staff'], perms: ['tenant.settings'],
+    summary: 'Add pages about your own policies to F1 help, and let people ask questions in their own words.',
+    screens: ['^/staff/admin/help-topics'],
+    keywords: 'help topic policy faq ask question ai answer assistant own page suppliers',
+    related: ['integrations'],
+    body: `Administration → **Help topics** lets you add your own pages to F1 help — for example your approval policy, payment terms, cut-off dates or who to call. Choose whether each is shown to **your staff**, to **suppliers** in their portal, or to both. They appear in search straight away.
+
+**Ask a question**: type a question in the F1 search box (for example “who approves a bank change?”) and click **Ask**. The answer is written only from the help topics that person can see — VendorGate's and yours — with links to the topics it used. Turn this on or off under Administration → **Integrations** → AI.`,
+  },
+  {
+    id: 'email-delivery', title: 'Email delivery', audience: ['staff'], perms: ['tenant.settings'],
+    summary: 'Sender name, reply-to, your own sending domain, and what happens when an email bounces.',
+    keywords: 'email sender from name reply to domain dns spf dkim bounce bounced spam complaint suppressed contact change',
+    related: ['workspace-settings', 'integrations'],
+    body: `Administration → **Workspace** → **Email**:
+
+- **Sender name** and **Replies go to**: what suppliers see in their inbox and where their replies land.
+- **Your own sending domain** (paid plans): enter a domain such as mail.yourcompany.com, add the DNS records shown at your DNS provider, then **Check again**. Once verified, email goes out from that domain.
+- **Addresses that bounced**: when a supplier's contact address doesn't exist or reports our email as spam, VendorGate stops sending to it and flags the supplier **Contact email bouncing**. Fix it with **change** next to the contact on the supplier's page (the old address gets a security notice), or click **Send to it again** if the mailbox is working again.`,
+  },
+  {
     id: 'workspace-settings', title: 'Workspace settings', audience: ['staff'], perms: ['tenant.settings'],
     summary: 'Company name, branding, staff 2FA, session length and the vendor re-check cycle.',
     screens: ['^/staff/admin/workspace'],
@@ -79,6 +114,7 @@ After 5 wrong passwords the account is locked for 15 minutes. An administrator c
 - **Company & branding**: the name, portal name, brand colour and logo link that suppliers see in their portal and in emails.
 - **Security**: tick **Require two-factor authentication for all staff** to make 2FA compulsory. Set how many hours a sign-in lasts (1–72, default 12).
 - **Vendor lifecycle**: how often approved vendors are re-checked (default 12 months; 0 turns it off). See [Block and re-check](#block-recheck).
+- **Email**: the sender name suppliers see, where replies go, sending from your own domain (paid plans), and addresses that bounced. See [Email delivery](#email-delivery).
 - **Privacy & data retention**: the privacy notice suppliers accept and how long old registrations are kept. See [Privacy and data protection](#privacy).
 
 Changes apply as soon as you click **Save**.`,
@@ -372,7 +408,7 @@ Suppliers renew a document by sending a change request with the new file.`,
   },
   {
     id: 'erp', title: 'ERP integration', audience: ['staff'], perms: ['tenant.settings', 'vendors.export'], feature: 'erp',
-    summary: 'Send approved vendors to Oracle EBS, a webhook or CSV files.',
+    summary: 'Send approved vendors to Oracle EBS, SAP S/4HANA, Dynamics 365, a webhook or CSV files.',
     screens: ['^/staff/admin/erp'],
     keywords: 'erp oracle ebs e-business suite webhook csv sftp export push sync integration test mode payload deliveries retry',
     related: ['block-recheck', 'reports'],
@@ -382,6 +418,8 @@ Suppliers renew a document by sending a change request with the new file.`,
 
 ## Connectors
 - **Oracle E-Business Suite**: creates and updates suppliers; needs the endpoint, credentials and operating unit (ORG_ID).
+- **SAP S/4HANA**: creates the business partner with supplier roles, address, tax number, bank and company code through API_BUSINESS_PARTNER; needs the system URL and a communication user (scenario SAP_COM_0008 in the cloud edition).
+- **Dynamics 365 Finance**: creates the vendor (VendorsV2) and its bank account; needs the environment URL, an Entra ID app registration (tenant, client id, secret) and the legal entity.
 - **Webhook**: posts each vendor as JSON to your URL, signed with a secret.
 - **CSV file**: one file per change, delivered to an SFTP folder or kept here for download.
 
@@ -721,7 +759,40 @@ If the order's buying group has a waiting time, the order accepts itself when th
 If the supplier confirmed by phone or email, open the order and use **Record supplier acceptance**. Choose the lines and say how they confirmed. It's recorded under your name, on behalf of the supplier.
 
 ## Messages to the ERP
-Each acceptance is sent to the ERP and listed under **Messages to the ERP**. **Payload** shows exactly what was sent. If sending failed, fix the cause (often the Acknowledgement URL or the ERP being down) and click **Retry**. "No ERP connection" means nothing is set up to receive acceptances — ERPs can still read them from \`/api/v1/acknowledgements\`.`,
+Each acceptance — and later each shipment notice and approved invoice — is sent to the ERP and listed under **Messages to the ERP**. **Payload** shows exactly what was sent. If sending failed, fix the cause (often the Acknowledgement URL or the ERP being down) and click **Retry**. "No ERP connection" means nothing is set up to receive acceptances — ERPs can still read them from \`/api/v1/acknowledgements\`.`,
+  },
+  {
+    id: 'shipments', title: 'Shipment notices (ASN)', audience: ['staff'], perms: ['orders.view', 'orders.manage'], feature: 'collab',
+    summary: 'What suppliers tell you is on the way, how receipts are matched, and cancelling a notice.',
+    screens: ['^/staff/orders/[^/]+$'], contexts: ['order'],
+    keywords: 'asn shipment notice dispatch delivery in transit received receipt grn e-way bill carrier tracking cancel',
+    related: ['orders-acceptance', 'supplier-invoices'],
+    body: `Once a supplier has accepted goods lines, they can send a **shipment notice** for what is on the way: quantities per line (part of a line is fine), ship and expected dates, carrier, tracking and vehicle numbers, the e-way bill number in India, and batch numbers.
+
+- A line can't be shipped beyond its ordered quantity plus the line's over-delivery tolerance.
+- Each notice is sent to your ERP like an acceptance (see **Messages to the ERP**), and the buyer gets an email.
+- **Receipts** your ERP reports (with the order import or \`POST /api/v1/receipts\`) are matched to the notices: a receipt that names the notice number goes to that notice, others go to the oldest open notice for the line. Notices show **In transit**, **Partly received** or **Received**.
+- A notice can be cancelled until goods on it are received. The supplier is told why.
+
+**ASN required**: tick it on a buying group to ask suppliers for a notice on every delivery. Orders in that group show a reminder to the supplier and to you while none has been sent.`,
+  },
+  {
+    id: 'supplier-invoices', title: 'Supplier invoices and matching', audience: ['staff'], perms: ['orders.view', 'invoices.manage'], feature: 'collab',
+    summary: 'How invoices are matched to orders and receipts, exceptions, and approving or rejecting them.',
+    screens: ['^/staff/invoices', '^/staff/payments'], contexts: ['invoices'],
+    keywords: 'invoice supplier invoice three way match 3-way price tolerance exception approve reject e-invoice irn qr gstin duplicate payment remittance paid',
+    related: ['shipments', 'purchasing-groups'],
+    body: `Suppliers raise invoices from an accepted order (or a shipment notice). Each invoice is matched before it reaches you:
+
+- **Quantity**: never more than ordered (plus tolerance) minus what's already invoiced — these are refused outright. For goods, invoicing more than has been received so far is flagged.
+- **Price**: a unit price above the order price by more than your tolerance (Purchasing setup → **Invoice matching**, default 2%) is flagged.
+- **Arithmetic and duplicates**: the lines and tax must add up to the invoice total; the same invoice number can't be submitted twice; the same date and amount under another number is flagged.
+- **India e-invoice**: the IRN must be 64 characters. If the supplier pastes the signed QR text, its GSTIN, invoice number, IRN and value are compared with the invoice. (The QR's digital signature isn't verified.)
+
+Clean invoices wait **In review**; flagged ones are **Exceptions**. Open **Supplier invoices**, check the **Matching** list, and **Approve** or **Reject**. Approving an exception needs a note; rejecting always needs a reason, which the supplier sees. Approved invoices are sent to the ERP and count against the order lines.
+
+## Payments
+When your ERP reports a payment (\`POST /api/v1/payments\`, with the invoices it settles), the invoices become **Partly paid** or **Paid** and the supplier gets a payment advice by email. **Payments** lists them all. You need the *Approve supplier invoices* permission to decide invoices and see payments.`,
   },
   {
     id: 'purchasing-groups', title: 'Buying groups', audience: ['staff'], perms: ['orders.view', 'orders.manage'], feature: 'collab',
@@ -802,6 +873,26 @@ Your acceptance is sent to the customer's system straight away.
 - If the customer changes a line, it comes back to you as waiting.
 - Anything wrong with an order? Use the buyer's email on the order to contact them before accepting.`,
   },
+  {
+    id: 'supplier-ship-invoice', title: 'Shipment notices, invoices and payments', audience: ['supplier'], feature: 'collab',
+    summary: 'Tell the buyer what is on the way, raise invoices against an order, and see payments.',
+    screens: ['^/vendor/orders/', '^/vendor/invoices', '^/vendor/payments'], contexts: ['supplier-order'],
+    keywords: 'shipment notice asn dispatch delivery e-way bill invoice raise submit irn e-invoice qr withdraw rejected payment advice remittance paid',
+    related: ['supplier-accept'],
+    body: `## Shipment notices
+After you accept an order, open it and click **Create shipment notice** when goods leave. Enter how much of each line is on this shipment (you can ship the rest later), the dates, carrier and tracking, vehicle and e-way bill numbers. The buyer is told straight away. You can cancel a notice until the buyer has received the goods.
+
+## Invoices
+1. Open the order and click **Raise invoice** (choose the shipment if it's for one).
+2. Enter the invoice number and date as printed, and the quantity, price and tax for each line. Attach the invoice PDF.
+3. In India, if you e-invoice, enter the **IRN** and paste the text from the signed QR code.
+4. Click **Check** to see how it matches the order, then **Submit invoice**.
+
+You can't invoice more than ordered (less anything already invoiced). Prices above the order price or goods not yet received are allowed but the buyer will review them more closely. **Invoices** in the top bar shows where each one stands. You can **Withdraw** an invoice while it is in review; if one is rejected, the reason is shown and you can submit a corrected one with the same number.
+
+## Payments
+When the buyer pays, you get a payment advice by email and the invoices show **Paid** or **Partly paid**. **Payments** lists each payment with the invoices it covers and any tax withheld.`,
+  },
   /* ---------------- Country rules (Saudi Arabia and the Gulf) ---------------- */
   {
     id: 'expiry-hold', title: 'Automatic hold when a document lapses', audience: ['staff'], perms: ['vendors.view', 'config.manage'],
@@ -823,18 +914,20 @@ In **Configuration → Documents**, open a document, tick **Track expiry date**,
   },
   {
     id: 'sanctions-screening', title: 'Sanctions screening', audience: ['staff'], perms: ['vendors.view'],
-    summary: 'Gulf workspaces screen every supplier’s legal name against sanctions lists on submission and at each re-check.',
+    summary: 'Gulf workspaces screen every supplier and its listed owners against sanctions lists on submission and at each re-check.',
     keywords: 'sanctions screening ofac un eu uk list match aml compliance possible match clear',
     related: ['expiry-hold'],
-    body: `In Saudi (and other Gulf) workspaces every supplier is screened against sanctions lists:
+    body: `In Saudi (and other Gulf) workspaces every supplier — its legal name and each owner listed on the Ownership tab — is screened against sanctions lists:
 
 - automatically when they submit for review,
 - again at every periodic re-check,
 - and on demand with **Run** in the vendor’s **Verifications** card.
 
-**Clear** means no match. **Possible match** means a reviewer must look at the details before approving — most possible matches turn out to be similar names. Record your conclusion in the approval remarks.
+**Clear** means no match. **Possible match** means a reviewer must look at the details before approving — the result names who matched, the listed entity, how close the match is and which lists it is on. Most possible matches turn out to be similar names. Record your conclusion in the approval remarks.
 
-> Until a live screening provider is connected, results come from a test list.`,
+Suppliers never see screening results.
+
+> Admin → Integrations shows whether screening is live (OpenSanctions) or still answered from a test list.`,
   },
   {
     id: 'working-days', title: 'Deadlines in working days', audience: ['staff'], perms: ['tenant.settings', 'orders.manage'],

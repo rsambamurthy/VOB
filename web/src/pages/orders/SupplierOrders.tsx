@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import { fmtDate, fmtDateTime, loc } from '../../lib/format';
 import { Alert, Empty, Modal } from '../../components/ui';
 import { AcceptanceBadge, DueText, Facts, LinesTable, money, type Counts, type OrderDetailData, type OrderRow } from '../../orders/common';
+import { SupplierCollab } from '../../orders/collab';
 import { useSupplier } from '../../orders/SupplierShell';
 import { useHelpContext } from '../../help/HelpPanel';
 
@@ -116,6 +117,7 @@ export function SupplierOrderDetail() {
         <div className="toolbar"><h3>Lines</h3>{canAccept && pending.length > 1 && <span className="muted small">Untick lines you can’t accept yet</span>}</div>
         <LinesTable lines={d.lines} currency={po.currency} select={canAccept ? { selected: sel, toggle: (lid) => { const n = new Set(sel); if (n.has(lid)) n.delete(lid); else n.add(lid); setSel(n); }, toggleAll: (on) => setSel(on ? new Set(pending.map((l) => l.id)) : new Set()) } : undefined} />
       </section>
+      <SupplierCollab key={`${po.id}:${po.acceptance}`} poId={po.id} currency={po.currency} open={po.status === 'OPEN'} onFlash={(m) => { setError(undefined); setFlash(m); load(); }} />
       <div className="detail-grid">
         <div>
           <section className="card pad">

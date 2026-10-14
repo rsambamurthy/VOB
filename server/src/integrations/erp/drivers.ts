@@ -13,8 +13,10 @@ import net from 'node:net';
 import type { Vendor } from '../../db/schema.js';
 import { env } from '../../lib/env.js';
 import { CSV_COLUMNS, toCsv, toCsvRow, toGenericVendor, toOracleSupplier } from '../../lib/erpMapper.js';
+import { sapSend, sapTest } from './sap.js';
+import { dynamicsSend, dynamicsTest } from './dynamics.js';
 
-export type ErpKind = 'none' | 'oracle' | 'webhook' | 'csv';
+export type ErpKind = 'none' | 'oracle' | 'webhook' | 'csv' | 'sap' | 'dynamics';
 export type ErpEvent = 'CREATE' | 'UPDATE' | 'BLOCK' | 'UNBLOCK' | 'MANUAL';
 
 export interface Connection {
@@ -29,7 +31,7 @@ export interface SendResult {
 }
 
 /** Which secret fields each connector takes (stored encrypted, never returned to the browser). */
-export const SECRET_FIELDS: Record<ErpKind, string[]> = { none: [], oracle: ['password'], webhook: ['signingSecret'], csv: ['password'] };
+export const SECRET_FIELDS: Record<ErpKind, string[]> = { none: [], oracle: ['password'], webhook: ['signingSecret'], csv: ['password'], sap: ['password'], dynamics: ['clientSecret'] };
 
 export const WEBHOOK_EVENTS: Record<ErpEvent, string> = { CREATE: 'vendor.approved', UPDATE: 'vendor.updated', BLOCK: 'vendor.blocked', UNBLOCK: 'vendor.unblocked', MANUAL: 'vendor.synced' };
 
@@ -61,17 +63,32 @@ export async function assertSafeTarget(raw: string) {
   return u;
 }
 
-export async function post(url: string, body: string, headers: Record<string, string>) {
+export const post = (url: string, body: string, headers: Record<string, string>) => request('POST', url, body, headers);
+
+let fetchImpl: typeof fetch = (...a) => fetch(...a);
+/** Tests: replace the network. */
+export function setErpFetch(f?: typeof fetch) { fetchImpl = f ?? ((...a) => fetch(...a)); }
+
+export async function request(method: string, url: string, body: string | undefined, headers: Record<string, string>) {
   await assertSafeTarget(url);
   let res: Response;
   try {
-    res = await fetch(url, { method: 'POST', body, headers, redirect: 'manual', signal: AbortSignal.timeout(env.int.ERP_TIMEOUT_MS) });
+    res = await fetchImpl(url, { method, body, headers, redirect: 'manual', signal: AbortSignal.timeout(env.int.ERP_TIMEOUT_MS) });
   } catch (e: any) {
     throw new ErpError(e?.name === 'TimeoutError' ? `No response from the ERP within ${Math.round(env.int.ERP_TIMEOUT_MS / 1000)} s` : `Couldn’t reach the ERP: ${e?.cause?.code ?? e?.message ?? e}`);
   }
   const text = (await res.text().catch(() => '')).slice(0, 4000);
-  if (!res.ok) throw new ErpError(`The ERP answered ${res.status} ${res.statusText}`.trim(), res.status, text);
-  return { status: res.status, text };
+  if (!res.ok) throw new ErpError(`The ERP answered ${res.status} ${res.statusText}${erpMessage(text)}`.trim(), res.status, text);
+  return { status: res.status, text, headers: res.headers };
+}
+
+/** Pull a readable message out of an OData / JSON error body. */
+function erpMessage(text: string) {
+  try {
+    const j = JSON.parse(text);
+    const m = j?.error?.message?.value ?? j?.error?.message ?? j?.message ?? j?.error_description;
+    return typeof m === 'string' && m ? `: ${m.slice(0, 300)}` : '';
+  } catch { return ''; }
 }
 
 /** GET JSON from the ERP (purchase order pull), with the connection's Basic auth. */
@@ -80,7 +97,7 @@ export async function getJson(url: string, conn: Connection): Promise<unknown> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (conn.config.username) headers.Authorization = `Basic ${Buffer.from(`${conn.config.username}:${conn.secrets.password ?? ''}`).toString('base64')}`;
   let res: Response;
-  try { res = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(env.int.ERP_TIMEOUT_MS * 3) }); }
+  try { res = await fetchImpl(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(env.int.ERP_TIMEOUT_MS * 3) }); }
   catch (e: any) { throw new ErpError(e?.name === 'TimeoutError' ? 'No response from the ERP in time' : `Couldn’t reach the ERP: ${e?.cause?.code ?? e?.message ?? e}`); }
   const text = await res.text().catch(() => '');
   if (!res.ok) throw new ErpError(`The ERP answered ${res.status} ${res.statusText}`.trim(), res.status, text.slice(0, 4000));
@@ -91,7 +108,7 @@ export async function getJson(url: string, conn: Connection): Promise<unknown> {
 export function findVendorId(text: string): string | null {
   let json: unknown;
   try { json = JSON.parse(text); } catch { return null; }
-  const keys = ['VENDOR_ID', 'vendorId', 'vendor_id', 'erpVendorId', 'supplierId', 'SUPPLIER_ID', 'PartyId'];
+  const keys = ['VENDOR_ID', 'BusinessPartner', 'VendorAccountNumber', 'vendorId', 'vendor_id', 'erpVendorId', 'supplierId', 'SUPPLIER_ID', 'PartyId'];
   const walk = (o: unknown, depth: number): string | null => {
     if (!o || typeof o !== 'object' || depth > 5) return null;
     for (const k of keys) { const v = (o as Record<string, unknown>)[k]; if ((typeof v === 'string' && v.trim()) || typeof v === 'number') return String(v); }
@@ -146,6 +163,8 @@ export async function send(conn: Connection, v: Vendor, event: ErpEvent, ctx: { 
     await sftpPut(conn, joinDir(c.remoteDir, fileName), Buffer.from(csv, 'utf8'));
     return result;
   }
+  if (conn.kind === 'sap') return sapSend(conn, v, event, ctx);
+  if (conn.kind === 'dynamics') return dynamicsSend(conn, v, event, ctx);
   throw new ErpError('No ERP connection is set up');
 }
 
@@ -192,6 +211,8 @@ export async function testConnection(conn: Connection, tenantSlug: string): Prom
       return { ok: true, message: `Reached the server (${res.status}). The first real push will confirm the payload is accepted.` };
     } catch (e: any) { return { ok: false, message: `Couldn’t reach the server: ${e?.cause?.code ?? e?.message ?? e}` }; }
   }
+  if (conn.kind === 'sap') return sapTest(conn);
+  if (conn.kind === 'dynamics') return dynamicsTest(conn);
   if (c.delivery !== 'sftp') return { ok: true, message: 'Files are kept here for download — nothing to connect to.' };
   const client = await sftpClient(conn);
   try { await client.list(c.remoteDir || '/'); return { ok: true, message: `Connected and listed ${c.remoteDir || '/'}.` }; }
