@@ -1,0 +1,1 @@
+ALTER TABLE "shipments" ADD COLUMN "overdue_notified_at" timestamp with time zone;

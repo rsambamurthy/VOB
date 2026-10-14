@@ -7,6 +7,9 @@ import { decodeSignedQr, einvoiceChecks, termDays } from '../src/services/collab
 import { toSapBusinessPartner } from '../src/integrations/erp/sap.js';
 import { toDynamicsVendor, iso3, clearDynamicsTokens } from '../src/integrations/erp/dynamics.js';
 import { send, setErpFetch, type Connection } from '../src/integrations/erp/drivers.js';
+import { remindOverdueShipments } from '../src/services/collab/shipments.js';
+
+const lastMail = (to: string) => db.query.emailOutbox.findFirst({ where: eq(schema.emailOutbox.to, to), orderBy: desc(schema.emailOutbox.createdAt) });
 
 let acme: typeof schema.tenants.$inferSelect;
 let vendor: typeof schema.vendors.$inferSelect;
@@ -96,6 +99,9 @@ describe('shipment notices (ASN)', () => {
     expect(r.body.errors[0]).toContain('line not found');
     let ship = await db.query.shipments.findFirst({ where: eq(schema.shipments.id, asnId) });
     expect(ship?.status).toBe('PARTLY_RECEIVED');
+    let mail = await lastMail('ops@helix.test');
+    expect(mail?.subject).toBe(`Partly received: shipment ${ship!.number} (PO-COL-1)`);
+    expect(mail?.body).toContain('40 of 60 KG received');
     const line1 = await db.query.poLines.findFirst({ where: eq(schema.poLines.id, lines[1]) });
     expect(Number(line1?.receivedQty)).toBe(40);
     const s = await supplier();
@@ -103,8 +109,24 @@ describe('shipment notices (ASN)', () => {
     await api('post', '/receipts').send([{ erpId: 'RCV-3', poNumber: 'PO-COL-1', lineErpId: 'COL-1-1', receiptNumber: 'GRN-3', quantity: 20 }, { erpId: 'RCV-4', poNumber: 'PO-COL-1', lineErpId: 'COL-1-2', receiptNumber: 'GRN-3', quantity: 10 }]);
     ship = await db.query.shipments.findFirst({ where: eq(schema.shipments.id, asnId) });
     expect(ship?.status).toBe('RECEIVED');
+    mail = await lastMail('ops@helix.test');
+    expect(mail?.subject).toBe(`Received: shipment ${ship!.number} (PO-COL-1)`);
+    expect(mail?.body).toContain('You can now invoice');
     const polled = await api('get', `/shipments?since=${encodeURIComponent('2020-01-01T00:00:00Z')}`);
     expect(polled.body.find((x: any) => x.number === ship!.number)?.lines).toHaveLength(2);
+  });
+
+  test('one reminder to buyer and supplier when the expected delivery date has passed', async () => {
+    const s = await supplier();
+    const n = await s.post(`/api/vendor/collab/orders/${poId}/shipments`, { shipDate: '2026-10-05', expectedDate: '2026-10-08', carrier: 'VRL', lines: [{ lineId: lines[1], quantity: 5 }] });
+    expect(n.status).toBe(201);
+    expect(await remindOverdueShipments(new Date('2026-10-08T12:00:00Z'))).toBe(0); // not late yet
+    expect(await remindOverdueShipments(new Date('2026-10-11T04:00:00Z'))).toBe(1);
+    expect((await lastMail('priya@acme.test'))?.subject).toBe(`Overdue delivery: ${n.body.number} (PO-COL-1)`);
+    expect((await lastMail('priya@acme.test'))?.body).toContain('3 days ago');
+    expect((await lastMail('ops@helix.test'))?.subject).toBe(`Delivery overdue: shipment ${n.body.number} (PO-COL-1)`);
+    expect(await remindOverdueShipments(new Date('2026-10-12T04:00:00Z'))).toBe(0); // only once
+    expect((await s.post(`/api/vendor/collab/shipments/${n.body.id}/cancel`, { reason: 'Re-sending' })).status).toBe(200);
   });
 
   test('a notice not yet received can be cancelled, and the quantity is free again', async () => {

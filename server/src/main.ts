@@ -42,7 +42,7 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 
 try {
   // Background jobs: email/SMS delivery with retries, AI document reading, SLA sweep every 5 minutes.
-  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }, { name: 'po.hourly', cron: '7 * * * *' }, { name: 'billing.daily', cron: '35 9 * * *' }];
+  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }, { name: 'po.hourly', cron: '7 * * * *' }, { name: 'billing.daily', cron: '35 9 * * *' }, { name: 'shipments.daily', cron: '45 3 * * *' }];
   if (env.int.PO_SYNC_SCHEDULE && env.int.PO_SYNC_SCHEDULE !== 'off') schedules.push({ name: 'po.sync', cron: env.int.PO_SYNC_SCHEDULE });
   await import('./services/orders/pull.js'); await import('./services/orders/acceptance.js'); await import('./services/billing.js');
   if (env.int.BACKUP_SCHEDULE) { await import('./services/backups.js'); schedules.push({ name: 'db.backup', cron: env.int.BACKUP_SCHEDULE }); }

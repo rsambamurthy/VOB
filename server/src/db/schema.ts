@@ -688,6 +688,8 @@ export const shipments = pgTable('shipments', {
   notes: text('notes'),
   createdBy: text('created_by').notNull(),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }), cancelReason: text('cancel_reason'),
+  /** When the buyer and supplier were reminded that the expected delivery date has passed. */
+  overdueNotifiedAt: timestamp('overdue_notified_at', { withTimezone: true }),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('shipments_number_uq').on(t.tenantId, t.number), index('shipments_po_idx').on(t.poId), index('shipments_vendor_idx').on(t.tenantId, t.vendorId, t.createdAt)]);
 

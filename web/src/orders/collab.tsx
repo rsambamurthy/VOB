@@ -58,7 +58,8 @@ export function ShipmentsCard({ shipments, onCancel, title = 'Shipment notices',
               <td className="small nowrap">{fmtDate(s.shipDate)}{s.expectedDate && <div className="muted">due {fmtDate(s.expectedDate)}</div>}</td>
               <td className="small">{s.lines.map((l) => <div key={l.id}>Line {l.lineNo}: {qty(l.quantity)} {l.uom}{l.receivedQty > 0 && <span className="muted"> · {qty(l.receivedQty)} received</span>}{l.batchNo && <span className="muted"> · batch {l.batchNo}</span>}</div>)}</td>
               <td className="small">{[s.carrier, s.trackingNo, s.vehicleNo].filter(Boolean).join(' · ') || '—'}{s.ewayBill && <div className="muted">E-way bill {s.ewayBill}</div>}{s.packages && <div className="muted">{s.packages} package{s.packages === 1 ? '' : 's'}</div>}</td>
-              <td><ShipmentBadge s={s.status} />{s.cancelReason && <div className="muted small">{s.cancelReason}</div>}</td>
+              <td><ShipmentBadge s={s.status} />{s.cancelReason && <div className="muted small">{s.cancelReason}</div>}
+                {s.expectedDate && s.expectedDate < today() && (s.status === 'SHIPPED' || s.status === 'PARTLY_RECEIVED') && <div className="warn-text small">Overdue since {fmtDate(s.expectedDate)}</div>}</td>
               <td className="actions">{onCancel && s.status === 'SHIPPED' && <button className="link-btn small danger" onClick={() => onCancel(s)}>Cancel</button>}</td>
             </tr>))}</tbody>
         </table></div>

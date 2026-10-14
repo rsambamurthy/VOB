@@ -772,6 +772,8 @@ Each acceptance — and later each shipment notice and approved invoice — is s
 - A line can't be shipped beyond its ordered quantity plus the line's over-delivery tolerance.
 - Each notice is sent to your ERP like an acceptance (see **Messages to the ERP**), and the buyer gets an email.
 - **Receipts** your ERP reports (with the order import or \`POST /api/v1/receipts\`) are matched to the notices: a receipt that names the notice number goes to that notice, others go to the oldest open notice for the line. Notices show **In transit**, **Partly received** or **Received**.
+- The supplier is emailed when goods on a notice are first received and again when it is complete.
+- If the expected delivery date passes and the notice isn't fully received, you and the supplier each get one reminder the next morning, and the notice shows **Overdue**.
 - A notice can be cancelled until goods on it are received. The supplier is told why.
 
 **ASN required**: tick it on a buying group to ask suppliers for a notice on every delivery. Orders in that group show a reminder to the supplier and to you while none has been sent.`,
@@ -880,7 +882,7 @@ Your acceptance is sent to the customer's system straight away.
     keywords: 'shipment notice asn dispatch delivery e-way bill invoice raise submit irn e-invoice qr withdraw rejected payment advice remittance paid',
     related: ['supplier-accept'],
     body: `## Shipment notices
-After you accept an order, open it and click **Create shipment notice** when goods leave. Enter how much of each line is on this shipment (you can ship the rest later), the dates, carrier and tracking, vehicle and e-way bill numbers. The buyer is told straight away. You can cancel a notice until the buyer has received the goods.
+After you accept an order, open it and click **Create shipment notice** when goods leave. Enter how much of each line is on this shipment (you can ship the rest later), the dates, carrier and tracking, vehicle and e-way bill numbers. The buyer is told straight away. You get an email when the buyer receives the goods (and when the whole shipment is in), and a reminder if the expected delivery date passes without a receipt. You can cancel a notice until the buyer has received the goods.
 
 ## Invoices
 1. Open the order and click **Raise invoice** (choose the shipment if it's for one).

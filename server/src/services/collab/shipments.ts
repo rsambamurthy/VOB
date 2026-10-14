@@ -3,7 +3,7 @@
  * Partial shipments are fine; the total shipped per line may not go over the ordered quantity plus the
  * line's over-delivery tolerance. Receipts from the ERP are matched back to shipments.
  */
-import { and, asc, desc, eq, inArray, like, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, like, lt, ne, sql } from 'drizzle-orm';
 import { db, schema } from '../../lib/db.js';
 import { HttpError } from '../../lib/http.js';
 import { audit } from '../../lib/audit.js';
@@ -11,6 +11,8 @@ import { logger } from '../../lib/logger.js';
 import { sendMail } from '../../lib/mailer.js';
 import { env } from '../../lib/env.js';
 import type { PoLine, PurchaseOrder, Shipment, Tenant } from '../../db/schema.js';
+import { defineJob } from '../../jobs/queue.js';
+import { hasFeature } from '../limits.js';
 import { queueMessage } from '../orders/outbound.js';
 import { supplierLink, supplierRecipients } from '../orders/importer.js';
 
@@ -124,13 +126,69 @@ export async function matchReceipts(poId: string) {
   for (const r of receipts.filter((r) => r.lineId && r.shipmentId)) spread(r.lineId!, Number(r.quantity), r.shipmentId!);
   for (const r of receipts.filter((r) => r.lineId && !r.shipmentId)) spread(r.lineId!, Number(r.quantity));
   for (const x of sl) if (Number(x.receivedQty) !== got.get(x.id)) await db.update(shipmentLines).set({ receivedQty: String(got.get(x.id)) }).where(eq(shipmentLines.id, x.id));
+  const RANK: Record<string, number> = { SHIPPED: 0, PARTLY_RECEIVED: 1, RECEIVED: 2 };
   for (const s of ships) {
     const mine = sl.filter((x) => x.shipmentId === s.id);
     const all = mine.every((x) => got.get(x.id)! >= Number(x.quantity)), any = mine.some((x) => got.get(x.id)! > 0);
     const status = all ? 'RECEIVED' : any ? 'PARTLY_RECEIVED' : 'SHIPPED';
-    if (status !== s.status) await db.update(shipments).set({ status }).where(eq(shipments.id, s.id));
+    if (status === s.status) continue;
+    await db.update(shipments).set({ status }).where(eq(shipments.id, s.id));
+    // Tell the supplier when goods on a notice arrive (first part, and when it is complete).
+    if (RANK[status] > RANK[s.status]) {
+      const lines = mine.map((x) => ({ ...x, got: got.get(x.id)! }));
+      await notifyReceived(s, status as 'PARTLY_RECEIVED' | 'RECEIVED', lines).catch((err) => logger.warn({ err }, 'receipt email failed'));
+    }
   }
 }
+
+async function notifyReceived(s: Shipment, status: 'PARTLY_RECEIVED' | 'RECEIVED', lines: { lineId: string; quantity: string; got: number }[]) {
+  const [po, tenant] = await Promise.all([db.query.purchaseOrders.findFirst({ where: eq(purchaseOrders.id, s.poId) }), db.query.tenants.findFirst({ where: eq(schema.tenants.id, s.tenantId) })]);
+  if (!po || !tenant) return;
+  const poL = await db.select({ id: poLines.id, lineNo: poLines.lineNo, description: poLines.description, uom: poLines.uom }).from(poLines).where(eq(poLines.poId, po.id));
+  const detail = lines.map((x) => { const l = poL.find((p) => p.id === x.lineId); return `- Line ${l?.lineNo ?? '?'} ${l?.description ?? ''}: ${x.got} of ${Number(x.quantity)}${l?.uom ? ` ${l.uom}` : ''} received`; }).join('\n');
+  const done = status === 'RECEIVED';
+  for (const r of await supplierRecipients(s.vendorId)) {
+    await sendMail({ tenantId: tenant.id, to: r.email, subject: `${done ? 'Received' : 'Partly received'}: shipment ${s.number} (${po.poNumber})`,
+      body: `Hello ${r.name},\n\n${tenant.name} has ${done ? 'received the goods' : 'received part of the goods'} on your shipment notice ${s.number} for purchase order ${po.poNumber}.\n\n${detail}${done ? '\n\nYou can now invoice for these goods from the order.' : ''}`,
+      link: supplierLink(tenant, `/vendor/orders/${po.id}`) });
+  }
+}
+
+/**
+ * Once a day: notices whose expected delivery date has passed and that aren't fully received.
+ * One reminder per notice, to the buyer (chase or record the receipt) and the supplier (confirm where it is).
+ */
+export async function remindOverdueShipments(now = new Date()) {
+  const today = now.toISOString().slice(0, 10);
+  const rows = await db.select().from(shipments).where(and(inArray(shipments.status, ['SHIPPED', 'PARTLY_RECEIVED']), isNotNull(shipments.expectedDate), lt(shipments.expectedDate, today), isNull(shipments.overdueNotifiedAt))).limit(500);
+  let n = 0;
+  for (const s of rows) {
+    const [po, tenant] = await Promise.all([db.query.purchaseOrders.findFirst({ where: eq(purchaseOrders.id, s.poId) }), db.query.tenants.findFirst({ where: eq(schema.tenants.id, s.tenantId) })]);
+    if (!po || !tenant || tenant.status !== 'ACTIVE' || !hasFeature(tenant, 'collab')) continue;
+    const vendor = await db.query.vendors.findFirst({ where: eq(schema.vendors.id, s.vendorId), columns: { name: true } });
+    const late = Math.round((new Date(today).getTime() - new Date(s.expectedDate!).getTime()) / DAY);
+    const part = s.status === 'PARTLY_RECEIVED' ? 'Only part of it has been received.' : 'Nothing on it has been received yet.';
+    if (po.buyerEmail) {
+      await sendMail({ tenantId: tenant.id, to: po.buyerEmail, subject: `Overdue delivery: ${s.number} (${po.poNumber})`,
+        body: `Hello ${po.buyerName ?? ''},\n\nShipment ${s.number} from ${vendor?.name ?? 'the supplier'} for ${po.poNumber} was expected on ${s.expectedDate} (${late} day${late === 1 ? '' : 's'} ago). ${part}\n\nIf the goods have arrived, record the receipt in your ERP so it reaches VendorGate. Otherwise check with the supplier.${s.carrier ? `\n\nCarrier: ${s.carrier}${s.trackingNo ? ` (${s.trackingNo})` : ''}` : ''}`,
+        link: `${env.appBaseUrl}/staff/orders/${po.id}` }).catch(() => {});
+    }
+    for (const r of await supplierRecipients(s.vendorId)) {
+      await sendMail({ tenantId: tenant.id, to: r.email, subject: `Delivery overdue: shipment ${s.number} (${po.poNumber})`,
+        body: `Hello ${r.name},\n\nYour shipment ${s.number} for ${tenant.name}'s purchase order ${po.poNumber} was expected on ${s.expectedDate}. ${part}\n\nPlease check where it is and let the buyer${po.buyerEmail ? ` (${po.buyerEmail})` : ''} know. If it won't arrive, cancel the notice and send a new one.`,
+        link: supplierLink(tenant, `/vendor/orders/${po.id}`) }).catch(() => {});
+    }
+    await db.update(shipments).set({ overdueNotifiedAt: now }).where(eq(shipments.id, s.id));
+    await audit({ tenantId: tenant.id, vendorId: s.vendorId, actor: 'system', action: 'PO_SHIPMENT_OVERDUE', detail: { po: po.poNumber, asn: s.number, expected: s.expectedDate } });
+    n++;
+  }
+  return n;
+}
+
+defineJob('shipments.daily', async () => {
+  const n = await remindOverdueShipments();
+  if (n) logger.info({ n }, 'overdue shipment reminders');
+});
 
 export interface ReceiptInput { erpId: string; poNumber?: string; poErpId?: string; lineErpId?: string | null; lineNo?: number | null; receiptNumber: string; receiptDate?: string | null; quantity: number; shipmentNumber?: string | null }
 
