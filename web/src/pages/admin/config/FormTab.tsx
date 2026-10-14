@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../../../components/ui';
 import type { ConfigIssue, FieldDef, FieldType, OnboardingConfig } from '../../../lib/types';
-import { FIELD_TYPE_LABELS, validatorLabel, RulePicker, fieldCatalog, issuesFor, move, ruleSummary, toKey, type EditorMeta, type Update } from './shared';
+import { ArInput, FIELD_TYPE_LABELS, setAr, validatorLabel, RulePicker, fieldCatalog, issuesFor, move, ruleSummary, toKey, type EditorMeta, type Update } from './shared';
 
 interface Props { config: OnboardingConfig; update: Update; meta: EditorMeta; publishedIds: Set<string>; issues: ConfigIssue[]; sectionKey: string; setSectionKey: (k: string) => void }
 
@@ -49,6 +49,7 @@ export function FormTab({ config, update, meta, publishedIds, issues, sectionKey
           {renaming === si ? (
             <input autoFocus defaultValue={section.label} onBlur={(e) => { const v = e.target.value.trim(); if (v) update((c) => { c.sections[si].label = v; }); setRenaming(undefined); }} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} aria-label="Tab name" />
           ) : <h2>{section.label} <button className="link-btn small" onClick={() => setRenaming(si)}>Rename</button></h2>}
+          {meta.arabic && <div className="ar-inline"><ArInput id={`sec-ar-${section.key}`} meta={meta} english={section.label} value={section.tr?.ar?.label} onChange={(v) => update((c) => { setAr(c.sections[si], 'label', v); })} /></div>}
           {!coreSection && <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm(`Delete the “${section.label}” tab and all its fields?`)) { update((c) => { c.sections.splice(si, 1); }); setSectionKey(config.sections[0].key); } }}>Delete tab</button>}
         </div>
 
@@ -56,6 +57,7 @@ export function FormTab({ config, update, meta, publishedIds, issues, sectionKey
           <div key={g.key} className="card group-card">
             <div className="group-head">
               <input className="group-title" value={g.label} aria-label="Group name" onChange={(e) => update((c) => { c.sections[si].groups[gi].label = e.target.value; })} />
+              {meta.arabic && <div className="ar-inline"><ArInput id={`grp-ar-${g.key}`} meta={meta} english={g.label} value={g.tr?.ar?.label} onChange={(v) => update((c) => { setAr(c.sections[si].groups[gi], 'label', v); })} /></div>}
               <span className="row-tools">
                 <button className="icon-btn" aria-label="Move group up" disabled={gi === 0} onClick={() => update((c) => move(c.sections[si].groups, gi, -1))}>↑</button>
                 <button className="icon-btn" aria-label="Move group down" disabled={gi === section.groups.length - 1} onClick={() => update((c) => move(c.sections[si].groups, gi, 1))}>↓</button>
@@ -142,6 +144,7 @@ function FieldModal({ config, meta, sectionIndex, groupIndex, field, keyLocked, 
     const clean: FieldDef = { ...f, label: f.label.trim() };
     if (!needsOptions) delete clean.options;
     for (const k of ['placeholder', 'help', 'validator'] as const) if (!clean[k]) delete clean[k];
+    if (clean.tr?.ar?.options) { const n = clean.options?.length ?? 0; clean.tr = { ...clean.tr, ar: { ...clean.tr.ar, options: Array.from({ length: n }, (_, i) => clean.tr!.ar!.options![i] ?? '') } }; if (!needsOptions) setAr(clean, 'options', undefined); }
     onSave(clean, group);
   }
 
@@ -171,6 +174,20 @@ function FieldModal({ config, meta, sectionIndex, groupIndex, field, keyLocked, 
         <div className="field"><label htmlFor="fe-ph">Placeholder</label><input id="fe-ph" value={f.placeholder ?? ''} onChange={(e) => setF({ ...f, placeholder: e.target.value })} /></div>
         <div className="field field-wide"><label htmlFor="fe-help">Help text</label><input id="fe-help" value={f.help ?? ''} onChange={(e) => setF({ ...f, help: e.target.value })} /></div>
       </div>
+      {meta.arabic && (
+        <fieldset className="group ar-group"><legend>Arabic (supplier portal)</legend>
+          <p className="small muted">Suppliers using the portal in Arabic see these. Left empty, they see the built-in translation shown in grey — or the English if there is none.</p>
+          <div className="field-grid">
+            <ArInput id="fe-ar-label" label="Label" meta={meta} english={f.label} value={f.tr?.ar?.label} onChange={(v) => setF(setAr({ ...f }, 'label', v))} />
+            <ArInput id="fe-ar-ph" label="Placeholder" meta={meta} english={f.placeholder} value={f.tr?.ar?.placeholder} onChange={(v) => setF(setAr({ ...f }, 'placeholder', v))} />
+            <div className="field-wide"><ArInput id="fe-ar-help" label="Help text" meta={meta} english={f.help} value={f.tr?.ar?.help} onChange={(v) => setF(setAr({ ...f }, 'help', v))} /></div>
+            {needsOptions && <div className="field field-wide ar-field"><label htmlFor="fe-ar-opts">Options, same order (one per line) <span className="muted small">عربي</span></label>
+              <textarea id="fe-ar-opts" dir="rtl" lang="ar" rows={4} value={(f.tr?.ar?.options ?? []).join('\n')} placeholder={(f.options ?? []).map((o) => meta.arabic!.defaults[o] ?? o).join('\n')}
+                onChange={(e) => setF(setAr({ ...f }, 'options', e.target.value ? e.target.value.split('\n').map((x) => x.trim()) : undefined))} />
+              <div className="field-help">The stored answer stays the English option; only what suppliers see changes.</div></div>}
+          </div>
+        </fieldset>
+      )}
       <RulePicker label="Required" value={f.required} allowNever onChange={(v) => setF({ ...f, required: v })} catalog={catalog} excludeId={id} />
       <RulePicker label="Show this field" value={f.showIf} onChange={(v) => setF({ ...f, showIf: v && typeof v === 'object' ? v : undefined })} catalog={catalog} excludeId={id} />
     </Modal>

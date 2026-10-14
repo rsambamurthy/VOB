@@ -25,6 +25,7 @@ import { assertCanAddUser, assertFeature } from '../services/limits.js';
 import { checkConnection, connectionInput, getConnection, publicConnection, saveConnection } from '../integrations/erp/index.js';
 import { send as sendErp } from '../integrations/erp/drivers.js';
 import { defaultNotice, noticeFor, retentionFor } from '../services/privacy.js';
+import { supplierLanguages } from '../i18n/index.js';
 
 const { users, roles, userRoles, auditLogs, tenants, approvalSteps } = schema;
 export const adminRouter = Router();
@@ -181,7 +182,7 @@ adminRouter.patch('/tenant', requireStaff('tenant.settings'), ah(async (req, res
       logoUrl: z.string().url().max(500).optional().or(z.literal('')),
     }).optional(),
     email: z.object({ fromName: z.string().trim().max(80).optional(), replyTo: z.string().trim().email('Enter a valid reply-to address').max(200).optional().or(z.literal('')) }).optional(),
-    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), helpAi: z.boolean().optional(), priceTolerancePct: z.number().min(0).max(50).optional(), einvoiceRequired: z.boolean().optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
+    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), helpAi: z.boolean().optional(), supplierLanguage: z.enum(['en', 'ar']).optional(), priceTolerancePct: z.number().min(0).max(50).optional(), einvoiceRequired: z.boolean().optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
   }).parse(req.body);
   if (input.settings?.requireMfa === false && s.tenant.settings.mfaEnforcedByPlatform) throw new HttpError(409, 'Two-factor authentication is required for this workspace by VendorGate and can’t be turned off here');
   const email = input.email ? { ...(s.tenant.settings.email ?? {}), fromName: input.email.fromName || undefined, replyTo: input.email.replyTo || undefined } : undefined;
@@ -340,7 +341,9 @@ adminRouter.get('/erp/preview', requireStaff('tenant.settings'), ah(async (req, 
 
 adminRouter.get('/privacy', requireStaff('tenant.settings'), ah(async (req, res) => {
   const t = staffCtx(req).tenant;
-  res.json({ notice: noticeFor(t), retention: retentionFor(t), template: defaultNotice(t.name, noticeFor(t).contactEmail ?? undefined, t.country), law: packFor(t.country).privacy ?? null });
+  const ar = supplierLanguages(t).includes('ar');
+  res.json({ notice: noticeFor(t), retention: retentionFor(t), template: defaultNotice(t.name, noticeFor(t).contactEmail ?? undefined, t.country), law: packFor(t.country).privacy ?? null,
+    arabic: ar ? { text: noticeFor(t, 'ar').text, template: packFor(t.country).privacy?.defaultNoticeAr?.(t.name, noticeFor(t).contactEmail ?? undefined) ?? '' } : null });
 }));
 
 adminRouter.put('/privacy', requireStaff('tenant.settings'), ah(async (req, res) => {
@@ -349,10 +352,14 @@ adminRouter.put('/privacy', requireStaff('tenant.settings'), ah(async (req, res)
     text: z.string().trim().min(200, 'The privacy notice is too short to cover what DPDP requires').max(20000),
     contactEmail: z.string().trim().email('Enter the grievance officer’s email').or(z.literal('')),
     retention: z.object({ rejectedDays: z.number().int().min(0).max(3650), abandonedDays: z.number().int().min(0).max(3650) }),
+    /** Arabic version shown to suppliers using the portal in Arabic. */
+    textAr: z.string().trim().max(20000).optional(),
   }).parse(req.body);
   const cur = noticeFor(s.tenant);
-  const changed = input.text !== cur.text || (input.contactEmail || null) !== cur.contactEmail;
-  const privacy = changed ? { version: cur.version + 1 /* vendors are asked to accept the new version */, text: input.text, contactEmail: input.contactEmail || undefined, updatedAt: new Date().toISOString() } : s.tenant.settings.privacy;
+  const curAr = s.tenant.settings.privacy?.textAr ?? '';
+  const arChanged = input.textAr !== undefined && input.textAr !== curAr && input.textAr !== noticeFor(s.tenant, 'ar').text;
+  const changed = input.text !== cur.text || (input.contactEmail || null) !== cur.contactEmail || arChanged;
+  const privacy = changed ? { version: cur.version + 1 /* vendors are asked to accept the new version */, text: input.text, ...(input.textAr ? { textAr: input.textAr } : curAr && !arChanged ? { textAr: curAr } : {}), contactEmail: input.contactEmail || undefined, updatedAt: new Date().toISOString() } : s.tenant.settings.privacy;
   await db.update(schema.tenants).set({ settings: { ...s.tenant.settings, privacy, retention: input.retention } }).where(eq(schema.tenants.id, s.tenant.id));
   await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'PRIVACY_SETTINGS_UPDATED', detail: { noticeVersion: privacy?.version ?? cur.version, newVersion: changed ? 'yes' : 'no', ...input.retention }, ip: req.ip });
   res.json({ notice: { ...noticeFor({ name: s.tenant.name, settings: { ...s.tenant.settings, privacy } }) }, retention: input.retention });

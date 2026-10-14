@@ -35,6 +35,7 @@ import { handleResendEvent, verifySvix } from './integrations/email/resend.js';
 import { handleRazorpayEvent, verifyRazorpaySignature } from './services/billing.js';
 import { billingRouter } from './routes/billing.js';
 import { helpRouter } from './routes/help.js';
+import { translateMessage } from './i18n/index.js';
 
 export function createApp() {
   const app = express();
@@ -109,9 +110,13 @@ export function createApp() {
   }
 
   app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof ZodError) return res.status(400).json({ error: err.issues[0]?.message ?? 'Invalid input', details: err.issues });
-    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, details: err.details, code: err.code });
-    if (err instanceof multer.MulterError) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'File is larger than 5 MB' : err.message });
+    // Supplier screens in Arabic send X-Lang: ar; their error messages come back in Arabic.
+    const lang = req.get('x-lang') === 'ar' && /^\/api\/(vendor|vendor-auth|help|documents)(\/|$)/.test(req.originalUrl) ? 'ar' : 'en';
+    const tx = (s: string) => translateMessage(s, lang);
+    const txDetails = (d: unknown) => (lang === 'en' || !Array.isArray(d) ? d : d.map((x) => (x && typeof x === 'object' ? { ...x, ...('message' in x && typeof x.message === 'string' ? { message: tx(x.message) } : {}), ...('label' in x && typeof x.label === 'string' ? { label: tx(x.label) } : {}) } : x)));
+    if (err instanceof ZodError) return res.status(400).json({ error: tx(err.issues[0]?.message ?? 'Invalid input'), details: txDetails(err.issues) });
+    if (err instanceof HttpError) return res.status(err.status).json({ error: tx(err.message), details: txDetails(err.details), code: err.code });
+    if (err instanceof multer.MulterError) return res.status(400).json({ error: tx(err.code === 'LIMIT_FILE_SIZE' ? 'File is larger than 5 MB' : err.message) });
     req.log?.error({ err }, 'unhandled error');
     res.status(500).json({ error: 'Something went wrong' });
   });

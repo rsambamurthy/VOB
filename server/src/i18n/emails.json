@@ -1,0 +1,452 @@
+{
+  "invite": {
+    "en": {
+      "subject": "{buyer}: invitation to register as a vendor",
+      "body": "Dear {first},\n\n{buyer} has invited you to register {vendor} as a vendor. Open the link below and sign in with the one-time code sent to this email address."
+    },
+    "ar": {
+      "subject": "{buyer}: دعوة للتسجيل كمورد",
+      "body": "مرحباً {first}،\n\nدعاكم {buyer} لتسجيل {vendor} كمورد. افتحوا الرابط أدناه وسجّلوا الدخول برمز التحقق الذي سيُرسل إلى هذا البريد الإلكتروني."
+    }
+  },
+  "otp": {
+    "en": {
+      "subject": "Your {buyer} supplier portal sign-in code",
+      "body": "Your one-time code is {code}. It expires in 10 minutes. Never share this code."
+    },
+    "ar": {
+      "subject": "رمز الدخول إلى بوابة الموردين لدى {buyer}",
+      "body": "رمز التحقق الخاص بكم هو {code}، وهو صالح لمدة 10 دقائق. لا تشاركوا هذا الرمز مع أحد."
+    }
+  },
+  "otpSms": {
+    "en": {
+      "subject": "",
+      "body": "{code} is your {buyer} supplier portal code. Valid 10 min. Do not share."
+    },
+    "ar": {
+      "subject": "",
+      "body": "{code} رمز الدخول إلى بوابة الموردين لدى {buyer}. صالح 10 دقائق. لا تشاركه."
+    }
+  },
+  "contactChanged": {
+    "en": {
+      "subject": "{buyer}: your supplier contact email was changed",
+      "body": "The contact email for {vendor} on {buyer}'s supplier portal was changed by {by}. Sign-in codes will now go to the new address.\n\nIf you did not expect this, contact {buyer} straight away."
+    },
+    "ar": {
+      "subject": "{buyer}: تم تغيير البريد الإلكتروني لجهة الاتصال",
+      "body": "غيّر {by} البريد الإلكتروني لجهة الاتصال الخاصة بـ {vendor} في بوابة الموردين لدى {buyer}. ستُرسل رموز الدخول من الآن إلى العنوان الجديد.\n\nإذا لم تكونوا تتوقعون ذلك، فتواصلوا مع {buyer} فوراً."
+    }
+  },
+  "approved": {
+    "en": {
+      "subject": "Your vendor registration is approved",
+      "body": "Dear {first},\n\n{vendor} has been approved as a vendor (vendor code {code}). Welcome aboard."
+    },
+    "ar": {
+      "subject": "تم اعتماد تسجيلكم كمورد",
+      "body": "مرحباً {first}،\n\nتم اعتماد {vendor} كمورد (رمز المورد {code}). أهلاً بكم."
+    }
+  },
+  "sentBack": {
+    "en": {
+      "subject": "Corrections needed on your vendor registration",
+      "body": "Dear {first},\n\nOur {level} team has asked for changes before approving {vendor}:\n\n\"{remarks}\"\n\nPlease sign in, update the form and submit again."
+    },
+    "ar": {
+      "subject": "مطلوب تصحيحات على تسجيلكم كمورد",
+      "body": "مرحباً {first}،\n\nطلب فريق {level} لدينا إجراء تعديلات قبل اعتماد {vendor}:\n\n«{remarks}»\n\nيرجى تسجيل الدخول وتحديث النموذج وإعادة الإرسال."
+    }
+  },
+  "rejected": {
+    "en": {
+      "subject": "Update on your vendor registration",
+      "body": "Dear {first},\n\nWe are unable to approve {vendor} as a vendor at this time.\n\nReason: {remarks}"
+    },
+    "ar": {
+      "subject": "بخصوص تسجيلكم كمورد",
+      "body": "مرحباً {first}،\n\nنعتذر عن عدم إمكانية اعتماد {vendor} كمورد في الوقت الحالي.\n\nالسبب: {remarks}"
+    }
+  },
+  "buyerUpdating": {
+    "en": {
+      "subject": "{buyer} is updating your registered details",
+      "body": "Dear {first},\n\n{buyer} has proposed an update to {vendor}'s registered details:\n\n{changes}\n\nReason: {reason}\n\nIt will take effect after internal approval. If this is not expected, reply to this email or contact the buyer."
+    },
+    "ar": {
+      "subject": "{buyer} يحدّث بياناتكم المسجلة",
+      "body": "مرحباً {first}،\n\nاقترح {buyer} تحديث البيانات المسجلة لـ {vendor}:\n\n{changes}\n\nالسبب: {reason}\n\nيسري التحديث بعد الاعتماد الداخلي. إذا لم تكونوا تتوقعون ذلك، فردّوا على هذا البريد أو تواصلوا مع المشتري."
+    }
+  },
+  "newDocuments": {
+    "en": {
+      "subject": "",
+      "body": "- New / renewed documents"
+    },
+    "ar": {
+      "subject": "",
+      "body": "- مستندات جديدة / مجددة"
+    }
+  },
+  "bankChange": {
+    "en": {
+      "subject": "Security notice: bank details change requested",
+      "body": "Dear {first},\n\nA request to change the bank account registered for {vendor} was submitted on the supplier portal. It will only take effect after review.\n\nIf you did not make this request, reply to this email or contact the buyer immediately."
+    },
+    "ar": {
+      "subject": "تنبيه أمني: طلب تغيير البيانات المصرفية",
+      "body": "مرحباً {first}،\n\nقُدّم في بوابة الموردين طلب لتغيير الحساب المصرفي المسجل لـ {vendor}، ولن يسري إلا بعد المراجعة.\n\nإذا لم تقدّموا هذا الطلب، فردّوا على هذا البريد أو تواصلوا مع المشتري فوراً."
+    }
+  },
+  "crRejected": {
+    "en": {
+      "subject": "Your change request was not approved",
+      "body": "Dear {first},\n\nYour requested change to {vendor}'s details was not approved.\n\nReason: {remarks}\n\nYour existing details remain in effect."
+    },
+    "ar": {
+      "subject": "لم يُعتمد طلب التعديل",
+      "body": "مرحباً {first}،\n\nلم يُعتمد التعديل الذي طلبتموه على بيانات {vendor}.\n\nالسبب: {remarks}\n\nتبقى بياناتكم الحالية سارية."
+    }
+  },
+  "crAppliedByBuyer": {
+    "en": {
+      "subject": "Your registered details have been updated",
+      "body": "Dear {first},\n\nThe update to {vendor}'s registered details is now in effect:\n\n{changes}\n\nIf anything looks wrong, contact the buyer."
+    },
+    "ar": {
+      "subject": "تم تحديث بياناتكم المسجلة",
+      "body": "مرحباً {first}،\n\nأصبح تحديث البيانات المسجلة لـ {vendor} سارياً:\n\n{changes}\n\nإذا بدا أي شيء غير صحيح، فتواصلوا مع المشتري."
+    }
+  },
+  "crApproved": {
+    "en": {
+      "subject": "Your change request was approved",
+      "body": "Dear {first},\n\nThe changes you requested to {vendor}'s details have been approved and are now in effect."
+    },
+    "ar": {
+      "subject": "تم اعتماد طلب التعديل",
+      "body": "مرحباً {first}،\n\nتم اعتماد التعديلات التي طلبتموها على بيانات {vendor} وأصبحت سارية."
+    }
+  },
+  "blocked": {
+    "en": {
+      "subject": "Your vendor account has been put on hold",
+      "body": "Dear {first},\n\n{vendor}'s vendor account has been put on hold. New orders and payments may be paused.\n\nReason: {reason}\n\nPlease contact us if you have questions."
+    },
+    "ar": {
+      "subject": "تم إيقاف حسابكم كمورد مؤقتاً",
+      "body": "مرحباً {first}،\n\nتم إيقاف حساب المورد الخاص بـ {vendor} مؤقتاً، وقد تتوقف أوامر الشراء الجديدة والمدفوعات.\n\nالسبب: {reason}\n\nيرجى التواصل معنا إذا كانت لديكم أي استفسارات."
+    }
+  },
+  "unblocked": {
+    "en": {
+      "subject": "Your vendor account is active again",
+      "body": "Dear {first},\n\n{vendor}'s vendor account is active again."
+    },
+    "ar": {
+      "subject": "أُعيد تفعيل حسابكم كمورد",
+      "body": "مرحباً {first}،\n\nأُعيد تفعيل حساب المورد الخاص بـ {vendor}."
+    }
+  },
+  "holdExpiry": {
+    "en": {
+      "subject": "Your vendor account is on hold: {doc} expired",
+      "body": "Dear {first},\n\nThe {doc} for {vendor} expired on {date}, so the account has been put on hold and payments may be paused.\n\nSign in, upload the renewed document and send it for review. The hold is lifted as soon as it is approved."
+    },
+    "ar": {
+      "subject": "تم إيقاف حسابكم مؤقتاً: انتهت صلاحية {doc}",
+      "body": "مرحباً {first}،\n\nانتهت صلاحية {doc} الخاص بـ {vendor} بتاريخ {date}، لذا تم إيقاف الحساب مؤقتاً وقد تتوقف المدفوعات.\n\nسجّلوا الدخول وارفعوا المستند المجدد وأرسلوه للمراجعة. يُرفع الإيقاف فور اعتماده."
+    }
+  },
+  "holdReleased": {
+    "en": {
+      "subject": "Your vendor account is active again",
+      "body": "Dear {first},\n\nThanks for sending the renewed document. {vendor}'s vendor account is active again."
+    },
+    "ar": {
+      "subject": "أُعيد تفعيل حسابكم كمورد",
+      "body": "مرحباً {first}،\n\nشكراً لإرسال المستند المجدد. أُعيد تفعيل حساب المورد الخاص بـ {vendor}."
+    }
+  },
+  "docExpiring": {
+    "en": {
+      "subject": "Expiring soon: {doc}",
+      "body": "Dear {first},\n\nThe {doc} on file for {vendor} expires on {date} ({days} days). Please sign in and upload the renewed document so your account stays active."
+    },
+    "ar": {
+      "subject": "قرب انتهاء الصلاحية: {doc}",
+      "body": "مرحباً {first}،\n\nتنتهي صلاحية {doc} المحفوظ لـ {vendor} بتاريخ {date} (بعد {days} يوماً). يرجى تسجيل الدخول ورفع المستند المجدد ليبقى حسابكم نشطاً."
+    }
+  },
+  "docExpired": {
+    "en": {
+      "subject": "Expired: {doc}",
+      "body": "Dear {first},\n\nThe {doc} on file for {vendor} expired on {date}. Please sign in and upload the renewed document so your account stays active."
+    },
+    "ar": {
+      "subject": "منتهي الصلاحية: {doc}",
+      "body": "مرحباً {first}،\n\nانتهت صلاحية {doc} المحفوظ لـ {vendor} بتاريخ {date}. يرجى تسجيل الدخول ورفع المستند المجدد ليبقى حسابكم نشطاً."
+    }
+  },
+  "periodicConfirm": {
+    "en": {
+      "subject": "Please confirm your registered details",
+      "body": "Dear {first},\n\nAs part of our periodic review, please sign in and confirm that {vendor}'s registered details (address, bank account, tax registrations) are still correct, or request a change if anything is out of date."
+    },
+    "ar": {
+      "subject": "يرجى تأكيد بياناتكم المسجلة",
+      "body": "مرحباً {first}،\n\nضمن المراجعة الدورية، يرجى تسجيل الدخول وتأكيد أن البيانات المسجلة لـ {vendor} (العنوان والحساب المصرفي والتسجيلات الضريبية) لا تزال صحيحة، أو تقديم طلب تعديل إذا تغيّر شيء."
+    }
+  },
+  "erasureRefused": {
+    "en": {
+      "subject": "Your data deletion request",
+      "body": "Dear {first},\n\nWe could not delete {vendor}'s data at this time.\n\nReason: {reason}\n\nWe will keep only what is needed for this purpose and delete it when we are allowed to."
+    },
+    "ar": {
+      "subject": "بخصوص طلب حذف بياناتكم",
+      "body": "مرحباً {first}،\n\nتعذّر علينا حذف بيانات {vendor} في الوقت الحالي.\n\nالسبب: {reason}\n\nسنحتفظ فقط بما يلزم لهذا الغرض، ونحذفه متى سُمح لنا بذلك."
+    }
+  },
+  "erasureDone": {
+    "en": {
+      "subject": "Your data has been deleted",
+      "body": "Dear {first},\n\nAs requested, the personal data we held for {vendor} has been deleted."
+    },
+    "ar": {
+      "subject": "تم حذف بياناتكم",
+      "body": "مرحباً {first}،\n\nبناءً على طلبكم، تم حذف البيانات الشخصية التي كنا نحتفظ بها لـ {vendor}."
+    }
+  },
+  "poNew": {
+    "en": {
+      "subject": "New purchase order {po} from {buyer}",
+      "body": "Hello {name},\n\n{buyer} has sent you purchase order {po} for {amount}.\n\n{due}"
+    },
+    "ar": {
+      "subject": "أمر شراء جديد {po} من {buyer}",
+      "body": "مرحباً {name}،\n\nأرسل إليكم {buyer} أمر الشراء {po} بقيمة {amount}.\n\n{due}"
+    }
+  },
+  "poRevised": {
+    "en": {
+      "subject": "Purchase order {po} has been revised — please review",
+      "body": "Hello {name},\n\n{buyer} has revised purchase order {po} (revision {rev}). Lines that changed need your acceptance again.\n\n{due}"
+    },
+    "ar": {
+      "subject": "تم تعديل أمر الشراء {po} — يرجى المراجعة",
+      "body": "مرحباً {name}،\n\nعدّل {buyer} أمر الشراء {po} (التعديل {rev}). البنود المعدلة تحتاج إلى قبولكم مجدداً.\n\n{due}"
+    }
+  },
+  "poReminder": {
+    "en": {
+      "subject": "Reminder: purchase order {po} is waiting for your acceptance",
+      "body": "Hello {name},\n\nPurchase order {po} for {amount} is still waiting for your acceptance.\n\n{due}"
+    },
+    "ar": {
+      "subject": "تذكير: أمر الشراء {po} بانتظار قبولكم",
+      "body": "مرحباً {name}،\n\nلا يزال أمر الشراء {po} بقيمة {amount} بانتظار قبولكم.\n\n{due}"
+    }
+  },
+  "poDueAuto": {
+    "en": {
+      "subject": "",
+      "body": "If you don't respond, it will be accepted automatically on {date}."
+    },
+    "ar": {
+      "subject": "",
+      "body": "إذا لم تردّوا، فسيُقبل تلقائياً بتاريخ {date}."
+    }
+  },
+  "poDueManual": {
+    "en": {
+      "subject": "",
+      "body": "Please accept it in the supplier portal; it is not accepted automatically."
+    },
+    "ar": {
+      "subject": "",
+      "body": "يرجى قبوله في بوابة الموردين؛ فهو لا يُقبل تلقائياً."
+    }
+  },
+  "poAutoAccepted": {
+    "en": {
+      "subject": "Purchase order {po} was accepted automatically",
+      "body": "Hello {name},\n\nYou didn't respond to {what}, so it has been accepted on your behalf as agreed with {buyer}."
+    },
+    "ar": {
+      "subject": "تم قبول أمر الشراء {po} تلقائياً",
+      "body": "مرحباً {name}،\n\nلم تردّوا على {what}، لذا تم قبوله نيابةً عنكم وفق ما تم الاتفاق عليه مع {buyer}."
+    }
+  },
+  "poWhatWhole": {
+    "en": {
+      "subject": "",
+      "body": "purchase order {po}"
+    },
+    "ar": {
+      "subject": "",
+      "body": "أمر الشراء {po}"
+    }
+  },
+  "poWhatLines": {
+    "en": {
+      "subject": "",
+      "body": "{n} lines of purchase order {po}"
+    },
+    "ar": {
+      "subject": "",
+      "body": "{n} بنود من أمر الشراء {po}"
+    }
+  },
+  "shipmentCancelled": {
+    "en": {
+      "subject": "Shipment notice {asn} was cancelled",
+      "body": "Hello {name},\n\n{buyer} cancelled your shipment notice {asn} for {po}.\n\nReason: {reason}"
+    },
+    "ar": {
+      "subject": "تم إلغاء إشعار الشحن {asn}",
+      "body": "مرحباً {name}،\n\nألغى {buyer} إشعار الشحن {asn} الخاص بأمر الشراء {po}.\n\nالسبب: {reason}"
+    }
+  },
+  "shipmentReceived": {
+    "en": {
+      "subject": "Received: shipment {asn} ({po})",
+      "body": "Hello {name},\n\n{buyer} has received the goods on your shipment notice {asn} for purchase order {po}.\n\n{lines}\n\nYou can now invoice for these goods from the order."
+    },
+    "ar": {
+      "subject": "تم الاستلام: الشحنة {asn} ({po})",
+      "body": "مرحباً {name}،\n\nاستلم {buyer} البضاعة الواردة في إشعار الشحن {asn} لأمر الشراء {po}.\n\n{lines}\n\nيمكنكم الآن إصدار فاتورة بهذه البضاعة من صفحة الأمر."
+    }
+  },
+  "shipmentPartlyReceived": {
+    "en": {
+      "subject": "Partly received: shipment {asn} ({po})",
+      "body": "Hello {name},\n\n{buyer} has received part of the goods on your shipment notice {asn} for purchase order {po}.\n\n{lines}"
+    },
+    "ar": {
+      "subject": "استلام جزئي: الشحنة {asn} ({po})",
+      "body": "مرحباً {name}،\n\nاستلم {buyer} جزءاً من البضاعة الواردة في إشعار الشحن {asn} لأمر الشراء {po}.\n\n{lines}"
+    }
+  },
+  "shipmentLine": {
+    "en": {
+      "subject": "",
+      "body": "- Line {n} {item}: {got} of {qty} received"
+    },
+    "ar": {
+      "subject": "",
+      "body": "- البند {n} {item}: تم استلام {got} من {qty}"
+    }
+  },
+  "shipmentOverdue": {
+    "en": {
+      "subject": "Delivery overdue: shipment {asn} ({po})",
+      "body": "Hello {name},\n\nYour shipment {asn} for {buyer}'s purchase order {po} was expected on {date}. {state}\n\nPlease check where it is and let the buyer{buyerEmail} know. If it won't arrive, cancel the notice and send a new one."
+    },
+    "ar": {
+      "subject": "تأخر التسليم: الشحنة {asn} ({po})",
+      "body": "مرحباً {name}،\n\nكان من المتوقع وصول شحنتكم {asn} لأمر الشراء {po} الصادر من {buyer} بتاريخ {date}. {state}\n\nيرجى التحقق من موقعها وإبلاغ المشتري{buyerEmail}. وإذا لم تصل، فألغوا الإشعار وأرسلوا إشعاراً جديداً."
+    }
+  },
+  "shipmentStatePartly": {
+    "en": {
+      "subject": "",
+      "body": "Only part of it has been received."
+    },
+    "ar": {
+      "subject": "",
+      "body": "لم يُستلم منها إلا جزء."
+    }
+  },
+  "shipmentStateNone": {
+    "en": {
+      "subject": "",
+      "body": "Nothing on it has been received yet."
+    },
+    "ar": {
+      "subject": "",
+      "body": "لم يُستلم منها شيء بعد."
+    }
+  },
+  "invoiceApproved": {
+    "en": {
+      "subject": "Invoice {inv} approved",
+      "body": "Hello {name},\n\n{buyer} approved your invoice {inv} ({amount}) for {po}.{due}"
+    },
+    "ar": {
+      "subject": "تم اعتماد الفاتورة {inv}",
+      "body": "مرحباً {name}،\n\nاعتمد {buyer} فاتورتكم {inv} ({amount}) لأمر الشراء {po}.{due}"
+    }
+  },
+  "invoiceDue": {
+    "en": {
+      "subject": "",
+      "body": " It is due for payment on {date}."
+    },
+    "ar": {
+      "subject": "",
+      "body": " وتستحق الدفع بتاريخ {date}."
+    }
+  },
+  "invoiceRejected": {
+    "en": {
+      "subject": "Invoice {inv} rejected",
+      "body": "Hello {name},\n\n{buyer} rejected your invoice {inv} for {po}.\n\nReason: {reason}\n\nYou can submit a corrected invoice from the order."
+    },
+    "ar": {
+      "subject": "تم رفض الفاتورة {inv}",
+      "body": "مرحباً {name}،\n\nرفض {buyer} فاتورتكم {inv} لأمر الشراء {po}.\n\nالسبب: {reason}\n\nيمكنكم إرسال فاتورة مصححة من صفحة الأمر."
+    }
+  },
+  "paymentAdvice": {
+    "en": {
+      "subject": "Payment advice: {amount} from {buyer}",
+      "body": "Hello {name},\n\n{buyer} paid you {amount} on {date}{method} (reference {ref}).\n\n{lines}{withheld}"
+    },
+    "ar": {
+      "subject": "إشعار دفع: {amount} من {buyer}",
+      "body": "مرحباً {name}،\n\nسدّد لكم {buyer} مبلغ {amount} بتاريخ {date}{method} (المرجع {ref}).\n\n{lines}{withheld}"
+    }
+  },
+  "paymentMethod": {
+    "en": {
+      "subject": "",
+      "body": " by {method}"
+    },
+    "ar": {
+      "subject": "",
+      "body": " عن طريق {method}"
+    }
+  },
+  "paymentLine": {
+    "en": {
+      "subject": "",
+      "body": "- {inv}: {amount}{wh}"
+    },
+    "ar": {
+      "subject": "",
+      "body": "- {inv}: {amount}{wh}"
+    }
+  },
+  "paymentLineWithheld": {
+    "en": {
+      "subject": "",
+      "body": " (tax withheld {amount})"
+    },
+    "ar": {
+      "subject": "",
+      "body": " (ضريبة مستقطعة {amount})"
+    }
+  },
+  "paymentWithheld": {
+    "en": {
+      "subject": "",
+      "body": "\n\nTax withheld in total: {amount}"
+    },
+    "ar": {
+      "subject": "",
+      "body": "\n\nإجمالي الضريبة المستقطعة: {amount}"
+    }
+  }
+}

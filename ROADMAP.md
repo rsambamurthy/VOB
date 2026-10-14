@@ -26,6 +26,7 @@ Planned work that has been discussed but not built yet.
 ## Country packs
 - **Phase 0 (done):** India moved into its own pack; workspaces have a home country; checks, formats, documents, template, privacy notice, ERP mapping and formatting come from packs. See docs/COUNTRY_PACKS.md.
 - **Phase 1 (done):** shared Gulf pack + Saudi Arabia: Saudi template, CR/VAT checks (test mode), UBO/PEP, sanctions screening, automatic hold on lapsed Zakat/GOSI/Nitaqat/CR, working-day deadlines, SAR/AST, PDPL notice, country on sign-up, demo workspace "najd".
-- **Phase 2:** Arabic supplier portal (RTL, bilingual names, Hijri dates, Arabic document reading).
+- **Phase 2 (done):** Arabic supplier portal for all six Gulf countries — right-to-left screens, the Gulf form, documents, guide, help, privacy notice, errors and every supplier email/SMS in Arabic; Hijri dates beside Gregorian; Arabic document reading (Arabic names kept exact, Arabic-Indic digits, Hijri dates). Each supplier picks a language (workspace default in Settings); staff screens stay English. Workspaces add Arabic for their own fields in the Configuration editor; built-in wording is maintained in translation files with a spreadsheet export/import (docs/TRANSLATIONS.md).
+- Next (to decide): an in-console Translations page so platform admins can edit the built-in Arabic without a release.
 - **Phase 3 (built, needs credentials):** OpenSanctions screening of supplier and owners, Wathq CR, Gulf IBAN/account check, registry connectors and a KYC aggregator for every other check — see docs/VERIFICATION.md.
 - **Phase 4:** UAE, Bahrain, Qatar, Kuwait and Oman packs (done) on the shared Gulf template — all six GCC countries covered. **Phase 5:** in-region hosting when a customer requires it.

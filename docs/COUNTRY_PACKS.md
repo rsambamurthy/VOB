@@ -80,6 +80,12 @@ re-checks, AI document reading, ERP export and formatting all read from the regi
 - `keyChangeFields` (any pack): changes flagged "sensitive" for reviewers (India: GSTIN, PAN; Gulf: CR, VAT/TRN, licence, Arabic name).
 - `registerIds` (home pack): the id columns of the vendor register report (India: GSTIN, PAN; Saudi Arabia: CR, VAT; …).
 
+## Languages
+- `languages` (home pack): languages the supplier portal offers. The Gulf pack sets `['en', 'ar']`, so every Gulf
+  workspace can run its supplier portal in Arabic; India offers English only.
+- `privacy.defaultNoticeAr`: the built-in privacy notice in Arabic (Saudi PDPL, UAE PDPL, Bahrain PDPL, Qatar, Kuwait, Oman PDPL).
+- Template wording is translated in `server/src/i18n/config.ar.json`, keyed by the English text — new template text
+  needs an Arabic line there (`npm run i18n:check` lists anything missing). See docs/TRANSLATIONS.md.
+
 ## Not yet pack-driven (next phases)
 - Live providers: OpenSanctions (sanctions), Wathq (Saudi CR), generic registry connectors and a KYC aggregator are built (docs/VERIFICATION.md); each check stays in test mode until its credentials are set.
-- Arabic UI, Hijri dates (Phase 2).

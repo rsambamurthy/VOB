@@ -1,18 +1,19 @@
 import type { Check } from '../lib/types';
 import { fmtDateTime } from '../lib/format';
+import { t } from '../i18n';
 
 /** An online check the workspace can run (from the country packs). */
 export interface CheckDefinition { kind: string; label: string; home?: boolean; country?: string; resultLabels?: { ok: string; fail: string } | null }
 
 export function CheckBadge({ c, compact, labels }: { c: Check; compact?: boolean; labels?: { ok: string; fail: string } | null }) {
   const cls = c.status === 'VERIFIED' ? 'v-verified' : c.status === 'ERROR' ? 'v-error' : 'v-not_found';
-  const text = c.status === 'VERIFIED' ? `✓ ${labels?.ok ?? 'Verified'}` : c.status === 'NOT_FOUND' ? labels?.fail ?? 'Not found' : c.status === 'INVALID_FORMAT' ? 'Invalid' : 'Try again';
+  const text = c.status === 'VERIFIED' ? `✓ ${labels?.ok ?? t('check.verified')}` : c.status === 'NOT_FOUND' ? labels?.fail ?? t('check.notFound') : c.status === 'INVALID_FORMAT' ? t('check.invalid') : t('check.tryAgain');
   const weakName = c.status === 'VERIFIED' && c.nameMatch !== null && c.nameMatch < 70;
   return (
     <span className="check-badge" title={c.message}>
       <span className={`vbadge ${cls}`}>{text}</span>
-      {weakName && <span className="vbadge v-warn" title={`Name on record: ${c.nameOnRecord}`}>Name {c.nameMatch}% match</span>}
-      {c.test && !compact && <span className="vbadge v-test">test</span>}
+      {weakName && <span className="vbadge v-warn" title={t('check.nameOnRecord', { name: c.nameOnRecord })}>{t('check.nameMatch', { pct: c.nameMatch })}</span>}
+      {c.test && !compact && <span className="vbadge v-test">{t('check.test')}</span>}
     </span>
   );
 }

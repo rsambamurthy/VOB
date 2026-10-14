@@ -20,6 +20,7 @@ import { queueMessage } from '../orders/outbound.js';
 import { supplierLink, supplierRecipients } from '../orders/importer.js';
 import { usersWithPermission } from '../approvers.js';
 import { r4 } from './shipments.js';
+import { langForVendorId, mailDate, mailSupplier, snippet } from '../../i18n/emails.js';
 
 const { purchaseOrders, poLines, shipments, shipmentLines, supplierInvoices, supplierInvoiceLines, supplierPayments, supplierCodes, vendors } = schema;
 const DAY = 86_400_000;
@@ -212,11 +213,11 @@ export async function decideInvoice(tenant: Tenant, inv: SupplierInvoice, decisi
   });
   await audit({ tenantId: tenant.id, vendorId: inv.vendorId, actor: by.email, action: decision === 'APPROVE' ? 'INVOICE_APPROVED' : 'INVOICE_REJECTED', detail: { po: po.poNumber, invoice: inv.invoiceNumber, ...(note ? { note } : {}) }, ip });
   if (decision === 'APPROVE') await queueMessage(po, 'INVOICE', { invoiceId: inv.id }, by.name).catch((err) => logger.error({ err }, 'could not queue invoice message'));
+  const lang = await langForVendorId(inv.vendorId);
+  const due = row.dueDate ? snippet(lang, 'invoiceDue', { date: lang === 'ar' ? mailDate(row.dueDate, lang) : row.dueDate }) : '';
   for (const r of await supplierRecipients(inv.vendorId)) {
-    await sendMail({ tenantId: tenant.id, to: r.email, subject: `Invoice ${inv.invoiceNumber} ${decision === 'APPROVE' ? 'approved' : 'rejected'}`,
-      body: decision === 'APPROVE' ? `Hello ${r.name},\n\n${tenant.name} approved your invoice ${inv.invoiceNumber} (${inv.currency} ${inv.total}) for ${po.poNumber}.${row.dueDate ? ` It is due for payment on ${row.dueDate}.` : ''}`
-        : `Hello ${r.name},\n\n${tenant.name} rejected your invoice ${inv.invoiceNumber} for ${po.poNumber}.\n\nReason: ${note}\n\nYou can submit a corrected invoice from the order.`,
-      link: supplierLink(tenant, `/vendor/invoices/${inv.id}`) }).catch(() => {});
+    await mailSupplier(lang, { tenantId: tenant.id, to: r.email, link: supplierLink(tenant, `/vendor/invoices/${inv.id}`) }, decision === 'APPROVE' ? 'invoiceApproved' : 'invoiceRejected',
+      { name: r.name, buyer: tenant.name, inv: inv.invoiceNumber, amount: `${inv.currency} ${inv.total}`, po: po.poNumber, due, reason: note }).catch(() => {});
   }
   return row;
 }
@@ -324,11 +325,13 @@ export async function recordPayments(tenant: Tenant, items: PaymentInput[]) {
 
 async function notifyPayment(tenant: Tenant, p: typeof supplierPayments.$inferSelect) {
   const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const lines = p.allocations.map((a) => `- ${a.invoiceNumber}: ${p.currency} ${fmt(a.amount)}${a.withheld ? ` (tax withheld ${fmt(a.withheld)})` : ''}`).join('\n');
+  const lang = await langForVendorId(p.vendorId);
+  const lines = p.allocations.map((a) => snippet(lang, 'paymentLine', { inv: a.invoiceNumber, amount: `${p.currency} ${fmt(a.amount)}`, wh: a.withheld ? snippet(lang, 'paymentLineWithheld', { amount: fmt(a.withheld) }) : '' })).join('\n');
   for (const r of await supplierRecipients(p.vendorId)) {
-    await sendMail({ tenantId: tenant.id, to: r.email, subject: `Payment advice: ${p.currency} ${fmt(Number(p.amount))} from ${tenant.name}`,
-      body: `Hello ${r.name},\n\n${tenant.name} paid you ${p.currency} ${fmt(Number(p.amount))} on ${p.paymentDate}${p.method ? ` by ${p.method}` : ''} (reference ${p.reference}).\n\n${lines}${Number(p.withheld) ? `\n\nTax withheld in total: ${p.currency} ${fmt(Number(p.withheld))}` : ''}`,
-      link: supplierLink(tenant, '/vendor/payments') });
+    await mailSupplier(lang, { tenantId: tenant.id, to: r.email, link: supplierLink(tenant, '/vendor/payments') }, 'paymentAdvice', {
+      name: r.name, buyer: tenant.name, amount: `${p.currency} ${fmt(Number(p.amount))}`, date: lang === 'ar' ? mailDate(p.paymentDate, lang) : p.paymentDate,
+      method: p.method ? snippet(lang, 'paymentMethod', { method: p.method }) : '', ref: p.reference, lines,
+      withheld: Number(p.withheld) ? snippet(lang, 'paymentWithheld', { amount: `${p.currency} ${fmt(Number(p.withheld))}` }) : '' });
   }
   await db.update(supplierPayments).set({ notifiedAt: new Date() }).where(eq(supplierPayments.id, p.id));
 }

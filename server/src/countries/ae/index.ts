@@ -1,3 +1,4 @@
+import { gulfNoticeAr } from '../gcc/shared.js';
 /**
  * United Arab Emirates pack (extends the Gulf pack).
  *  - Saturday–Sunday weekend (since 2022), Gulf Standard Time, AED, +971 mobiles (05x xxx xxxx).
@@ -165,7 +166,7 @@ export const uaePack: CountryPack = {
   documents: aeDocuments,
 
   template: uaeTemplate,
-  privacy: { law: 'Federal Decree-Law No. 45 of 2021 (PDPL)', lawShort: 'PDPL', defaultNotice: uaeNotice },
+  privacy: { law: 'Federal Decree-Law No. 45 of 2021 (PDPL)', lawShort: 'PDPL', defaultNotice: uaeNotice, defaultNoticeAr: gulfNoticeAr({ lawSentence: 'ويُقدَّم هذا الإشعار وفقاً للمرسوم بقانون اتحادي رقم 45 لسنة 2021 بشأن حماية البيانات الشخصية.', abroad: 'وإذا عولجت البيانات خارج الدولة، فلا يتم ذلك إلا وفق ما يسمح به القانون.', complaint: 'كما يحق لكم تقديم شكوى إلى مكتب الإمارات للبيانات.' }) },
   erp: {
     domesticTaxId: (p: Profile) => s(p.tax?.vatNumber),
     domesticBlock: (p: Profile) => ({

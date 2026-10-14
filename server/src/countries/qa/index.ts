@@ -10,7 +10,7 @@
  *  - Local content: Qatarization and QatarEnergy's TAWTEEN programme.
  */
 import type { CheckDef, CountryPack, ExtractKey, Profile, ReadableDocument, ValidatorDef } from '../types.js';
-import { gulfNotice, ibanCountryCheck, registryMock } from '../gcc/shared.js';
+import { gulfNoticeAr, gulfNotice, ibanCountryCheck, registryMock } from '../gcc/shared.js';
 import { gulfTemplate, isCountry, notCountry, YES_NO, yes } from '../gcc/template.js';
 
 const s = (v: unknown) => (v === undefined || v === null ? '' : String(v));
@@ -125,6 +125,7 @@ export const qatarPack: CountryPack = {
       abroad: 'Where data is processed outside Qatar, we do so only as the law permits.',
       complaint: 'You can also complain to the competent authority under the PDPPL.',
     }),
+    defaultNoticeAr: gulfNoticeAr({ lawSentence: 'ويُقدَّم هذا الإشعار وفقاً للقانون رقم 13 لسنة 2016 بشأن حماية خصوصية البيانات الشخصية في دولة قطر.', abroad: 'وإذا عولجت البيانات خارج دولة قطر، فلا يتم ذلك إلا وفق ما يسمح به القانون.', complaint: 'كما يحق لكم تقديم شكوى إلى الجهة المختصة بموجب القانون.' }),
   },
   erp: {
     domesticTaxId: (p: Profile) => s(p.tax?.tinNumber),

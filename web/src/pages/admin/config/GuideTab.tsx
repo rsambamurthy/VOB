@@ -1,7 +1,7 @@
 import type { OnboardingConfig } from '../../../lib/types';
-import { move, type Update } from './shared';
+import { ArInput, move, setAr, type EditorMeta, type Update } from './shared';
 
-export function GuideTab({ config, update }: { config: OnboardingConfig; update: Update }) {
+export function GuideTab({ config, update, meta }: { config: OnboardingConfig; update: Update; meta: EditorMeta }) {
   return (
     <div>
       <p className="muted">Shown to vendors in the portal’s “How onboarding works” panel and help window.</p>
@@ -16,6 +16,10 @@ export function GuideTab({ config, update }: { config: OnboardingConfig; update:
             </span>
           </div>
           <textarea rows={3} value={g.body} aria-label="Step text" onChange={(e) => update((c) => { c.guide[i].body = e.target.value; })} />
+          {meta.arabic && <div className="field-grid ar-group">
+            <ArInput id={`gd-ar-t-${i}`} label="Step title" meta={meta} english={g.title} value={g.tr?.ar?.title} onChange={(v) => update((c) => { setAr(c.guide[i], 'title', v); })} />
+            <ArInput id={`gd-ar-b-${i}`} label="Step text" meta={meta} english={g.body} value={g.tr?.ar?.body} multiline onChange={(v) => update((c) => { setAr(c.guide[i], 'body', v); })} />
+          </div>}
         </div>
       ))}
       <button className="btn btn-secondary btn-sm" onClick={() => update((c) => { c.guide.push({ title: `Step ${c.guide.length + 1}`, body: '' }); })}>+ Add step</button>

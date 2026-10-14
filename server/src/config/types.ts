@@ -28,9 +28,14 @@ export type Op = (typeof OPS)[number];
 export interface Condition { field: string; op: Op; value?: string | number | string[] }
 export interface Rule { match: 'all' | 'any'; conditions: Condition[] }
 
+/** A workspace's Arabic wording for its own form (supplier portal in Arabic). Empty = the built-in translation, else English. */
+export interface ArabicText { label?: string; help?: string; placeholder?: string; options?: string[]; title?: string; body?: string }
+export interface Translations { ar?: ArabicText }
+
 export interface FieldDef {
   key: string;
   label: string;
+  tr?: Translations;
   type: FieldType;
   required?: boolean | Condition;
   showIf?: Condition;
@@ -41,11 +46,12 @@ export interface FieldDef {
   /** Text direction for the input, e.g. 'rtl' for an Arabic name. */
   dir?: 'rtl' | 'ltr' | 'auto';
 }
-export interface GroupDef { key: string; label: string; fields: FieldDef[] }
-export interface SectionDef { key: string; label: string; groups: GroupDef[] }
+export interface GroupDef { key: string; label: string; fields: FieldDef[]; tr?: Translations }
+export interface SectionDef { key: string; label: string; groups: GroupDef[]; tr?: Translations }
 export interface DocumentRequirement {
   type: string;
   label: string;
+  tr?: Translations;
   required?: boolean | Condition;
   showIf?: Condition;
   help?: string;
@@ -75,7 +81,7 @@ export interface OnboardingConfig {
   sections: SectionDef[];
   documents: DocumentRequirement[];
   workflow: { levels: WorkflowLevel[]; changes?: ChangeApproval };
-  guide: { title: string; body: string }[];
+  guide: { title: string; body: string; tr?: Translations }[];
 }
 
 /**
@@ -112,8 +118,13 @@ const condition = z.object({
   op: z.enum(OPS),
   value: z.union([z.string().max(200), z.number(), z.array(z.string().max(200)).max(50)]).optional(),
 });
+const arText = z.object({
+  label: z.string().max(200).optional(), help: z.string().max(400).optional(), placeholder: z.string().max(160).optional(),
+  options: z.array(z.string().max(160)).max(200).optional(), title: z.string().max(160).optional(), body: z.string().max(3000).optional(),
+}).strict();
+const tr = z.object({ ar: arText.optional() }).strict().optional();
 const field = z.object({
-  key: KEY,
+  key: KEY, tr,
   label: z.string().min(1).max(160),
   type: z.enum(FIELD_TYPES),
   required: z.union([z.boolean(), condition]).optional(),
@@ -126,11 +137,11 @@ const field = z.object({
 });
 export const configSchema = z.object({
   sections: z.array(z.object({
-    key: KEY, label: z.string().min(1).max(60),
-    groups: z.array(z.object({ key: KEY, label: z.string().min(1).max(80), fields: z.array(field).max(80) })).max(20),
+    key: KEY, label: z.string().min(1).max(60), tr,
+    groups: z.array(z.object({ key: KEY, label: z.string().min(1).max(80), tr, fields: z.array(field).max(80) })).max(20),
   })).min(1).max(12),
   documents: z.array(z.object({
-    type: DOC_KEY, label: z.string().min(1).max(120),
+    type: DOC_KEY, label: z.string().min(1).max(120), tr,
     required: z.union([z.boolean(), condition]).optional(), showIf: condition.optional(),
     help: z.string().max(300).optional(), hasExpiry: z.boolean().optional(), holdOnExpiry: z.boolean().optional(),
   })).max(60),
@@ -145,7 +156,7 @@ export const configSchema = z.object({
       defaultLevelIds: z.array(KEY).min(1).max(10),
     }).optional(),
   }),
-  guide: z.array(z.object({ title: z.string().min(1).max(120), body: z.string().max(2000) })).max(20),
+  guide: z.array(z.object({ title: z.string().min(1).max(120), body: z.string().max(2000), tr })).max(20),
 });
 
 /* ---------- Semantic validation (references, duplicates, core fields) ---------- */

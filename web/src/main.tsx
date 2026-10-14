@@ -43,10 +43,12 @@ import { StaffInvoiceDetail, StaffInvoices, StaffPayments, SupplierInvoiceDetail
 import './styles.css';
 import { Billing } from './pages/admin/Billing';
 import { HelpTopics } from './pages/admin/HelpTopics';
+import { LangGate } from './i18n/LangGate';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
+        <LangGate />
         <SessionProvider>
           <HelpProvider>
           <Routes>

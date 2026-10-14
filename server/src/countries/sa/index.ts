@@ -25,6 +25,20 @@ How long we keep it: while you are an active supplier and afterwards for as long
 Your rights: you can be informed about how your data is used, access and obtain a copy of it, correct it (request a change in this portal), and ask us to delete it where it is no longer needed. Some records of approved suppliers must be kept by law even after a deletion request. You can also complain to the Saudi Data & AI Authority (SDAIA).${contactEmail ? `\n\nContact for data protection questions: ${contactEmail}` : ''}`;
 }
 
+export function saudiNoticeAr(company: string, contactEmail?: string) {
+  return `تجمع ${company} («نحن») المعلومات الواردة في هذا التسجيل لتقييمكم كمورد، وتسجيلكم في أنظمة المشتريات والمدفوعات لدينا، والسداد لكم، والوفاء بالتزاماتنا النظامية والزكوية والضريبية. ويُقدَّم هذا الإشعار وفقاً لنظام حماية البيانات الشخصية في المملكة العربية السعودية.
+
+ما نجمعه: بيانات الشركة وجهات الاتصال، والسجل التجاري، ومعلومات ضريبة القيمة المضافة والزكاة والتأمينات الاجتماعية والسعودة، وأسماء الملاك وجنسياتهم ونسب ملكيتهم، والبيانات المصرفية، والمعلومات المالية ومعلومات المخاطر، والمستندات التي ترفعونها.
+
+الغرض والأساس النظامي: تقييمكم وتسجيلكم كمورد والسداد لكم (تنفيذاً لعقد معكم)، والوفاء بالتزاماتنا بموجب الأنظمة السعودية، بما في ذلك فحص قوائم العقوبات ومكافحة غسل الأموال.
+
+التحقق والمشاركة: قد يتم التحقق من التسجيلات لدى الجهات الحكومية ومقدمي خدمات التحقق، وتُفحص الأسماء مقابل قوائم العقوبات. وقد تُقرأ المستندات المرفوعة آلياً لتعبئة النموذج مسبقاً. وتُرسل بيانات الموردين المعتمدين إلى نظام تخطيط الموارد / النظام المحاسبي لدينا. وإذا عالج أحد مقدمي الخدمات البيانات خارج المملكة، فلا يتم ذلك إلا وفق ما يسمح به النظام ولوائحه. ولا نبيع بياناتكم.
+
+مدة الاحتفاظ: طوال فترة كونكم مورداً نشطاً، وبعدها للمدة التي تتطلبها أنظمة الزكاة والضريبة وحفظ السجلات التجارية. وتُحذف التسجيلات المرفوضة أو غير المكتملة بعد مدة محددة.
+
+حقوقكم: يحق لكم العلم بكيفية استخدام بياناتكم، والاطلاع عليها والحصول على نسخة منها، وتصحيحها (بتقديم طلب تعديل في هذه البوابة)، وطلب حذفها متى انتفت الحاجة إليها. ويلزم النظام الاحتفاظ ببعض سجلات الموردين المعتمدين حتى بعد طلب الحذف. كما يحق لكم تقديم شكوى إلى الهيئة السعودية للبيانات والذكاء الاصطناعي (سدايا).${contactEmail ? `\n\nللاستفسارات المتعلقة بحماية البيانات: ${contactEmail}` : ''}`;
+}
+
 export const saudiPack: CountryPack = {
   code: 'SA',
   name: 'Saudi Arabia',
@@ -49,7 +63,7 @@ export const saudiPack: CountryPack = {
   documents: saDocuments,
 
   template: saudiTemplate,
-  privacy: { law: 'Personal Data Protection Law (PDPL)', lawShort: 'PDPL', defaultNotice: saudiNotice },
+  privacy: { law: 'Personal Data Protection Law (PDPL)', lawShort: 'PDPL', defaultNotice: saudiNotice, defaultNoticeAr: saudiNoticeAr },
   erp: {
     domesticTaxId: (p: Profile) => s(p.tax?.vatNumber),
     domesticBlock: (p: Profile) => ({

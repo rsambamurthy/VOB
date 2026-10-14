@@ -14,6 +14,8 @@ import { nextReviewFrom, sweepOverdueChanges } from './lifecycle.js';
 import { pushLater } from '../integrations/erp/index.js';
 import { addWorkingHours, calendarFor, formatDeadline } from '../lib/calendar.js';
 import type { WorkflowLevel } from '../config/types.js';
+import { langForVendor, mailSupplier } from '../i18n/emails.js';
+import { arLabel } from '../i18n/index.js';
 
 const { vendors, approvalSteps, roles, users, userRoles, tenants } = schema;
 const setVendor = (tenantId: string, id: string, data: Partial<Vendor>) =>
@@ -110,8 +112,7 @@ export async function decide(tenantId: string, vendorId: string, actor: { id: st
     const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
     await setVendor(tenantId, vendorId, { status: 'APPROVED', decidedAt: now, nextReviewAt: nextReviewFrom(now, tenant?.settings.reKycMonths), reviewStatus: 'OK' });
     await audit({ tenantId, vendorId, actor: 'system', action: 'VENDOR_APPROVED' });
-    await sendMail({ tenantId, to: vendor.contactEmail, subject: 'Your vendor registration is approved',
-      body: `Dear ${vendor.contactFirstName},\n\n${vendor.name} has been approved as a vendor (vendor code ${vendor.code}). Welcome aboard.` });
+    await mailSupplier(await langForVendor(vendor, tenant), { tenantId, to: vendor.contactEmail }, 'approved', { first: vendor.contactFirstName, vendor: vendor.name, code: vendor.code });
     await pushLater(tenantId, vendorId, 'CREATE');
     return { status: 'APPROVED' as const };
   }
@@ -120,13 +121,12 @@ export async function decide(tenantId: string, vendorId: string, actor: { id: st
     .where(and(eq(approvalSteps.vendorId, vendorId), eq(approvalSteps.cycle, vendor.reviewCycle), eq(approvalSteps.status, 'WAITING')));
   if (action === 'SEND_BACK') {
     await setVendor(tenantId, vendorId, { status: 'SENT_BACK' });
-    await sendMail({ tenantId, to: vendor.contactEmail, subject: 'Corrections needed on your vendor registration',
-      body: `Dear ${vendor.contactFirstName},\n\nOur ${current.label} team has asked for changes before approving ${vendor.name}:\n\n"${remarks}"\n\nPlease sign in, update the form and submit again.`, link: vendorLink });
+    const lang = await langForVendor(vendor);
+    await mailSupplier(lang, { tenantId, to: vendor.contactEmail, link: vendorLink }, 'sentBack', { first: vendor.contactFirstName, level: lang === 'ar' ? arLabel(current.label) : current.label, vendor: vendor.name, remarks });
     return { status: 'SENT_BACK' as const };
   }
   await setVendor(tenantId, vendorId, { status: 'REJECTED', decidedAt: now });
-  await sendMail({ tenantId, to: vendor.contactEmail, subject: 'Update on your vendor registration',
-    body: `Dear ${vendor.contactFirstName},\n\nWe are unable to approve ${vendor.name} as a vendor at this time.\n\nReason: ${remarks}` });
+  await mailSupplier(await langForVendor(vendor), { tenantId, to: vendor.contactEmail }, 'rejected', { first: vendor.contactFirstName, vendor: vendor.name, remarks });
   return { status: 'REJECTED' as const };
 }
 

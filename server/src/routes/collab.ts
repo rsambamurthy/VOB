@@ -14,6 +14,7 @@ import { asnRequiredFor, cancelShipment, createShipment, shippableLines, shipmen
 import { upload } from './vendorPortal.js';
 import { storeUpload } from '../integrations/storage/index.js';
 import { cancelInvoice, decideInvoice, invoiceCounts, invoiceDetail, invoiceableLines, listInvoices, listPayments, matchInvoice, submitInvoice } from '../services/collab/invoices.js';
+import { translateMessage } from '../i18n/index.js';
 
 const { purchaseOrders, vendors, shipments, supplierInvoices } = schema;
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date');
@@ -32,6 +33,12 @@ const invoiceInput = z.object({
 });
 
 /* ---------- Supplier ---------- */
+
+/** Match results in the language the supplier is reading (X-Lang from the portal). */
+const txChecks = (req: Request, checks: { code: string; level: string; message: string }[]) => {
+  const lang = req.get('x-lang') === 'ar' ? 'ar' : 'en';
+  return checks.map((c) => ({ ...c, message: translateMessage(c.message, lang) }));
+};
 
 export const supplierCollabRouter = Router();
 supplierCollabRouter.use(requireVendor);
@@ -98,7 +105,7 @@ supplierCollabRouter.post('/orders/:id/invoices/check', ah(async (req, res) => {
   const { c, v } = await supplierActor(req);
   const po = await supplierPo(req, req.params.id);
   const m = await matchInvoice(c.tenant, po, v, invoiceInput.parse(req.body));
-  res.json({ checks: m.checks, subtotal: m.subtotal, tax: m.tax, total: m.total });
+  res.json({ checks: txChecks(req, m.checks), subtotal: m.subtotal, tax: m.tax, total: m.total });
 }));
 
 supplierCollabRouter.post('/orders/:id/invoices', ah(async (req, res) => {
@@ -111,7 +118,7 @@ supplierCollabRouter.post('/orders/:id/invoices', ah(async (req, res) => {
     if (!d) throw new HttpError(400, 'Attach the invoice file again');
   }
   const inv = await submitInvoice(c.tenant, po, v, input, by, req.ip);
-  res.status(201).json({ id: inv.id, status: inv.status, checks: inv.checks });
+  res.status(201).json({ id: inv.id, status: inv.status, checks: txChecks(req, inv.checks) });
 }));
 
 supplierCollabRouter.get('/invoices', ah(async (req, res) => {
@@ -125,7 +132,7 @@ supplierCollabRouter.get('/invoices/:id', ah(async (req, res) => {
   const c = vendorCtx(req);
   const d = await invoiceDetail(c.tenant.id, req.params.id, c.vendorId);
   // The buyer's reviewer names stay internal.
-  res.json({ ...d, invoice: { ...d.invoice, decidedBy: null } });
+  res.json({ ...d, invoice: { ...d.invoice, decidedBy: null, checks: txChecks(req, d.invoice.checks) } });
 }));
 
 supplierCollabRouter.post('/invoices/:id/cancel', ah(async (req, res) => {

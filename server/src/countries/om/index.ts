@@ -8,7 +8,7 @@
  *    to non-residents. Local content: Omanisation and the In-Country Value (ICV) programme.
  */
 import type { CheckDef, CountryPack, ExtractKey, Profile, ReadableDocument, ValidatorDef } from '../types.js';
-import { gulfNotice, ibanCountryCheck, registryMock } from '../gcc/shared.js';
+import { gulfNoticeAr, gulfNotice, ibanCountryCheck, registryMock } from '../gcc/shared.js';
 import { gulfTemplate, isCountry, YES_NO, yes } from '../gcc/template.js';
 
 const s = (v: unknown) => (v === undefined || v === null ? '' : String(v));
@@ -128,6 +128,7 @@ export const omanPack: CountryPack = {
       abroad: 'Where data is processed outside Oman, we do so only as the law permits.',
       complaint: 'You can also complain to the Ministry of Transport, Communications and Information Technology.',
     }),
+    defaultNoticeAr: gulfNoticeAr({ lawSentence: 'ويُقدَّم هذا الإشعار وفقاً لقانون حماية البيانات الشخصية في سلطنة عُمان (المرسوم السلطاني رقم 6/2022).', abroad: 'وإذا عولجت البيانات خارج سلطنة عُمان، فلا يتم ذلك إلا وفق ما يسمح به القانون.', complaint: 'كما يحق لكم تقديم شكوى إلى وزارة النقل والاتصالات وتقنية المعلومات.' }),
   },
   erp: {
     domesticTaxId: (p: Profile) => s(p.tax?.vatNumber),

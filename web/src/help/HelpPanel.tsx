@@ -8,6 +8,8 @@ import { useSession } from '../lib/session';
 import { ARTICLES, type Audience, type HelpArticle } from './articles';
 import { searchHelp } from './search';
 import { api as apiCall } from '../lib/api';
+import { backArrow, getLang, t, useLang } from '../i18n';
+import { ARTICLES_AR } from './articles.ar';
 
 interface HelpApi { openHelp: (id?: string) => void; setContext: (ctx: string | null) => void; setExtra: (a: HelpArticle[]) => void }
 const Ctx = createContext<HelpApi>({ openHelp: () => {}, setContext: () => {}, setExtra: () => {} });
@@ -47,19 +49,20 @@ export function HelpProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!ownKey) { setOwn([]); return; }
     apiCall<{ id: string; title: string; summary: string; body: string; keywords: string }[]>(`/help/topics${audience === 'supplier' ? '?supplier=1' : ''}`)
-      .then((rows) => setOwn(rows.map((r) => ({ id: r.id, title: r.title, summary: r.summary || 'From your organisation', body: r.body, keywords: r.keywords, audience: [audience] }))))
+      .then((rows) => setOwn(rows.map((r) => ({ id: r.id, title: r.title, summary: r.summary || t('help.fromOrg'), body: r.body, keywords: r.keywords, audience: [audience] }))))
       .catch(() => setOwn([]));
   }, [ownKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What this person may see: their audience, their permissions, their plan's features.
-  const visible = useMemo(() => [...extra, ...own, ...ARTICLES].filter((a) => {
+  const lang = useLang();
+  const visible = useMemo(() => [...extra, ...own, ...(lang === 'ar' && audience !== 'staff' ? ARTICLES.map((a) => (ARTICLES_AR[a.id] ? { ...a, ...ARTICLES_AR[a.id], keywords: `${ARTICLES_AR[a.id].keywords ?? ''} ${a.keywords ?? ''}` } : a)) : ARTICLES)].filter((a) => {
     if (!a.audience.includes(audience)) return false;
     if (audience === 'staff' && me) {
       if (a.perms && !a.perms.some((p) => me.permissions.includes(p))) return false;
       if (a.feature && me.plan && me.plan.features[a.feature] === false) return false;
     }
     return true;
-  }), [audience, me, extra, own]);
+  }), [audience, me, extra, own, lang]);
 
   const forScreen = useMemo(() => {
     const byCtx = context ? visible.filter((a) => a.contexts?.includes(context)) : [];
@@ -85,16 +88,16 @@ export function HelpProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      {!open && <button className="help-fab" onClick={() => openHelp()} aria-label="Help (F1)" title="Help (F1)">?</button>}
+      {!open && <button className="help-fab" onClick={() => openHelp()} aria-label={t('help.f1')} title={t('help.f1')}>?</button>}
       {open && (
         <>
           <div className="help-backdrop" onMouseDown={() => setOpen(false)} />
-          <aside className="help-panel" role="dialog" aria-modal="false" aria-label="Help">
+          <aside className="help-panel" role="dialog" aria-modal="false" aria-label={t('help.title')}>
             <header className="help-head">
-              {current ? <button className="help-back" onClick={() => setStack((s) => s.slice(0, -1))} aria-label="Back">←</button> : <span className="help-mark" aria-hidden>?</span>}
-              <strong>Help</strong>
+              {current ? <button className="help-back" onClick={() => setStack((s) => s.slice(0, -1))} aria-label={t('help.back')}>{backArrow()}</button> : <span className="help-mark" aria-hidden>?</span>}
+              <strong>{t('help.title')}</strong>
               <span className="help-key">F1</span>
-              <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Close help">✕</button>
+              <button className="icon-btn" onClick={() => setOpen(false)} aria-label={t('help.close')}>✕</button>
             </header>
             <SearchBox value={query} onChange={(v) => { setQuery(v); setStack([]); }} />
             <div className="help-body">
@@ -102,7 +105,7 @@ export function HelpProvider({ children }: { children: ReactNode }) {
                 : query.trim() ? <><Ask key={query} query={query} visible={visible} forScreen={forScreen} audience={audience} go={(id) => setStack([id])} /><Results query={query} visible={visible} go={(id) => setStack([id])} /></>
                 : <Home forScreen={forScreen} visible={visible} audience={audience} go={(id) => setStack([id])} />}
             </div>
-            <footer className="help-foot">Press <kbd>F1</kbd> on any screen for help with it · <kbd>Esc</kbd> to close</footer>
+            <footer className="help-foot">{t('help.footA')} <kbd>F1</kbd> {t('help.footB')} <kbd>Esc</kbd> {t('help.footC')}</footer>
           </aside>
         </>
       )}
@@ -115,7 +118,7 @@ function SearchBox({ value, onChange }: { value: string; onChange: (v: string) =
   useEffect(() => { ref.current?.focus(); }, []);
   return (
     <div className="help-search">
-      <input ref={ref} type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Search help, e.g. “bank change” or “2FA”" aria-label="Search help" />
+      <input ref={ref} type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={t('help.searchPh')} aria-label={t('help.search')} />
     </div>
   );
 }
@@ -128,8 +131,8 @@ function Home({ forScreen, visible, audience, go }: { forScreen: HelpArticle[]; 
   const rest = visible.filter((a) => !forScreen.includes(a));
   return (
     <>
-      {forScreen.length > 0 && (<><h4 className="help-sec">On this screen</h4><ul className="help-list">{forScreen.map((a) => <Item key={a.id} a={a} go={go} />)}</ul></>)}
-      <h4 className="help-sec">{forScreen.length ? 'All topics' : audience === 'supplier' ? 'Help for suppliers' : 'Help topics'}</h4>
+      {forScreen.length > 0 && (<><h4 className="help-sec">{t('help.onScreen')}</h4><ul className="help-list">{forScreen.map((a) => <Item key={a.id} a={a} go={go} />)}</ul></>)}
+      <h4 className="help-sec">{forScreen.length ? t('help.allTopics') : audience === 'supplier' ? t('help.forSuppliers') : t('help.topics')}</h4>
       <ul className="help-list compact">{rest.map((a) => <Item key={a.id} a={a} go={go} />)}</ul>
     </>
   );
@@ -146,20 +149,20 @@ function Ask({ query, visible, forScreen, audience, go }: { query: string; visib
     setState({ busy: true });
     const picked = [...searchHelp(q, visible).map((r) => r.a), ...forScreen].filter((a, i, all) => all.indexOf(a) === i).slice(0, 8);
     const articles = (picked.length ? picked : visible.slice(0, 8)).map((a) => ({ id: a.id, title: a.title, summary: a.summary, body: a.body.replace(/!\[[^\]]*\]\([^)]+\)/g, '').slice(0, 6000) }));
-    try { setState(await apiCall<{ answer: string; answered: boolean; sources: string[]; test: boolean }>('/help/ask', { body: { question: q, audience, articles } })); }
+    try { setState(await apiCall<{ answer: string; answered: boolean; sources: string[]; test: boolean }>('/help/ask', { body: { question: q, audience, articles, language: getLang() } })); }
     catch (e: any) { setState({ error: e.message }); }
   }
   const byId = new Map(visible.map((a) => [a.id, a]));
   return (
     <div className="help-ask">
-      {!state.answer && !state.error && <button className="btn btn-secondary btn-sm" disabled={state.busy} onClick={ask}>{state.busy ? 'Thinking…' : 'Ask: get a short answer'}</button>}
+      {!state.answer && !state.error && <button className="btn btn-secondary btn-sm" disabled={state.busy} onClick={ask}>{state.busy ? t('help.thinking') : t('help.ask')}</button>}
       {state.error && <p className="small help-ask-err">{state.error}</p>}
       {state.answer && (
         <div className={`help-answer ${state.answered ? '' : 'unsure'}`}>
-          <div className="help-answer-h">Answer{state.test ? ' (test mode)' : ''}</div>
+          <div className="help-answer-h">{t('help.answer')}{state.test ? t('help.testMode') : ''}</div>
           <p>{state.answer}</p>
-          {state.sources && state.sources.length > 0 && <p className="small">From: {state.sources.map((id, i) => byId.get(id) && <span key={id}>{i > 0 && ', '}<button className="help-link" onClick={() => go(id)}>{byId.get(id)!.title}</button></span>)}</p>}
-          <p className="small muted">Answers come only from these help topics and can be wrong — check the topic before acting.</p>
+          {state.sources && state.sources.length > 0 && <p className="small">{t('help.from')} {state.sources.map((id, i) => byId.get(id) && <span key={id}>{i > 0 && ', '}<button className="help-link" onClick={() => go(id)}>{byId.get(id)!.title}</button></span>)}</p>}
+          <p className="small muted">{t('help.disclaimer')}</p>
         </div>
       )}
     </div>
@@ -168,8 +171,8 @@ function Ask({ query, visible, forScreen, audience, go }: { query: string; visib
 
 function Results({ query, visible, go }: { query: string; visible: HelpArticle[]; go: (id: string) => void }) {
   const results = useMemo(() => searchHelp(query, visible), [query, visible]);
-  if (!results.length) return <p className="help-empty">No help topics match “{query}”. Try fewer or different words, for example “approve”, “bank” or “password”.</p>;
-  return <><h4 className="help-sec">{results.length} result{results.length === 1 ? '' : 's'}</h4><ul className="help-list">{results.map((r) => <Item key={r.a.id} a={r.a} go={go} />)}</ul></>;
+  if (!results.length) return <p className="help-empty">{t('help.noMatch', { q: query })}</p>;
+  return <><h4 className="help-sec">{t('help.results', { count: results.length })}</h4><ul className="help-list">{results.map((r) => <Item key={r.a.id} a={r.a} go={go} />)}</ul></>;
 }
 
 function ArticleView({ a, visible, go }: { a: HelpArticle; visible: HelpArticle[]; go: (id: string) => void }) {
@@ -180,7 +183,7 @@ function ArticleView({ a, visible, go }: { a: HelpArticle; visible: HelpArticle[
     <article className="help-article" ref={body}>
       <h2>{a.title}</h2>
       <HelpBody text={a.body} go={go} known={new Set(visible.map((x) => x.id))} />
-      {related.length > 0 && (<><h4 className="help-sec">Related topics</h4><ul className="help-list compact">{related.map((r) => <Item key={r.id} a={r} go={go} />)}</ul></>)}
+      {related.length > 0 && (<><h4 className="help-sec">{t('help.related')}</h4><ul className="help-list compact">{related.map((r) => <Item key={r.id} a={r} go={go} />)}</ul></>)}
     </article>
   );
 }
@@ -213,7 +216,7 @@ export function HelpBody({ text, go, known }: { text: string; go: (id: string) =
       {blocks.map((b, i) => {
         const lines = b.split('\n');
         const img = b.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-        if (img) return <a key={i} href={img[2]} target="_blank" rel="noreferrer" className="help-shot" title="Open full size"><img src={img[2]} alt={img[1]} loading="lazy" /></a>;
+        if (img) return <a key={i} href={img[2]} target="_blank" rel="noreferrer" className="help-shot" title={t('help.openFull')}><img src={img[2]} alt={img[1]} loading="lazy" /></a>;
         const vid = b.match(/^@video\(([^|)]+)\|?([^)]*)\)$/);
         if (vid) return <figure key={i} className="help-video"><video ref={autoplay} autoPlay loop muted playsInline aria-label={vid[2].trim()}><source src={vid[1].trim().replace(/\.mp4$/, '.webm')} type='video/webm' /><source src={vid[1].trim()} type='video/mp4' /></video><figcaption>▶ {vid[2].trim()}</figcaption></figure>;
         if (b.startsWith('## ')) {

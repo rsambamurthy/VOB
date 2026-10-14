@@ -23,9 +23,12 @@ const SYNONYMS: Record<string, string[]> = {
 };
 const STOP = new Set(['a', 'an', 'the', 'to', 'of', 'in', 'on', 'for', 'and', 'or', 'i', 'my', 'is', 'it', 'do', 'does', 'how', 'what', 'why', 'can', 'cant', 'cannot', 'not', 'be', 'with', 'from', 'this', 'that', 'where', 'when', 'who', 'you', 'your', 'me', 'we', 'am', 'are', 'was', 'get']);
 
-const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
-const stem = (w: string) => w.replace(/(ies)$/, 'y').replace(/(ing|ed|es|s)$/, '').replace(/(.)\1$/, '$1');
-export const tokens = (s: string) => norm(s).split(/[^a-z0-9]+/).filter((w) => w && !STOP.has(w));
+const AR_STOP = new Set(['في', 'من', 'على', 'الى', 'إلى', 'عن', 'مع', 'كيف', 'ماذا', 'لماذا', 'هل', 'ما', 'او', 'أو', 'و', 'لا', 'ان', 'أن', 'هذا', 'هذه', 'التي', 'الذي']);
+/** Lower-case, drop accents and Arabic vowel marks, and unify Arabic letter variants (أ/إ/آ → ا, ة → ه, ى → ي). */
+const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
+  .replace(/[\u0622\u0623\u0625]/g, '\u0627').replace(/\u0629/g, '\u0647').replace(/\u0649/g, '\u064a');
+const stem = (w: string) => (/^[a-z0-9]+$/.test(w) ? w.replace(/(ies)$/, 'y').replace(/(ing|ed|es|s)$/, '').replace(/(.)\1$/, '$1') : w.replace(/^(وال|بال|كال|فال|لل|ال)/, '').replace(/(ات|ون|ين|ها|هم)$/, ''));
+export const tokens = (s: string) => norm(s).split(/[^\p{L}\p{N}]+/u).filter((w) => w && !STOP.has(w) && !AR_STOP.has(w));
 
 /** Edit distance where a swapped pair of letters counts as one typo ("bnak" → "bank"). */
 function close(a: string, b: string, max: number) {

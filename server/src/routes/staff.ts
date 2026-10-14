@@ -29,6 +29,9 @@ import { validators } from '../lib/validators.js';
 import { isSensitive, maskField, maskProfile } from '../lib/fieldCrypto.js';
 import { assertCanAddVendor, assertFeature } from '../services/limits.js';
 import { declineErasure, eraseVendor, exportVendorData, noticeFor } from '../services/privacy.js';
+import { mailSupplier } from '../i18n/emails.js';
+import type { Tenant } from '../db/schema.js';
+import { supplierLanguages, vendorLanguage } from '../i18n/index.js';
 
 /** Staff views get PAN / bank numbers masked; the full value needs an explicit, logged reveal. */
 const maskChanges = <T extends { fieldId: string; old: string; new: string }>(cs: T[]) => cs.map((c) => (isSensitive(c.fieldId) ? { ...c, old: maskField(c.fieldId, c.old), new: maskField(c.fieldId, c.new) } : c));
@@ -68,10 +71,9 @@ async function nextVendorCode(tenantId: string) {
   return `VND-${String(Number(max) + 1).padStart(5, '0')}`;
 }
 
-async function sendInvite(tenantName: string, v: { tenantId: string; name: string; contactEmail: string; contactFirstName: string; inviteToken: string }) {
+async function sendInvite(tenant: Tenant, v: { tenantId: string; name: string; contactEmail: string; contactFirstName: string; inviteToken: string; language: string | null }) {
   const link = `${env.appBaseUrl}/onboard/${v.inviteToken}`;
-  await sendMail({ tenantId: v.tenantId, to: v.contactEmail, subject: `${tenantName}: invitation to register as a vendor`,
-    body: `Dear ${v.contactFirstName},\n\n${tenantName} has invited you to register ${v.name} as a vendor. Open the link below and sign in with the one-time code sent to this email address.`, link });
+  await mailSupplier(vendorLanguage(tenant, v), { tenantId: v.tenantId, to: v.contactEmail, link }, 'invite', { first: v.contactFirstName, buyer: tenant.name, vendor: v.name });
   return link;
 }
 
@@ -115,6 +117,8 @@ const createSchema = z.object({
   contactEmail: z.string().trim().email('Enter a valid email'),
   contactMobile: z.string().trim().min(1, 'Enter a mobile number'),
   notify: z.boolean().default(true),
+  /** Portal and email language for this supplier (where the country offers a choice). */
+  language: z.enum(['en', 'ar']).optional(),
 });
 
 staffRouter.post('/vendors', requireStaff('vendors.create'), ah(async (req, res) => {
@@ -126,10 +130,10 @@ staffRouter.post('/vendors', requireStaff('vendors.create'), ah(async (req, res)
   await assertCanAddVendor(s.tenant);
   const dup = await db.query.vendors.findFirst({ where: and(eq(vendors.tenantId, s.tenant.id), sql`lower(${vendors.name}) = lower(${input.name})`, ne(vendors.status, 'REJECTED')) });
   if (dup) throw new HttpError(409, `A vendor named "${dup.name}" already exists (${dup.code})`);
-  const { notify, ...data } = input;
+  const { notify, language, ...data } = input;
   const email = data.contactEmail.toLowerCase();
   const [vendor] = await db.insert(vendors).values({
-    ...data, tenantId: s.tenant.id, contactEmail: email,
+    ...data, tenantId: s.tenant.id, contactEmail: email, language: language && supplierLanguages(s.tenant).includes(language) ? language : null,
     code: await nextVendorCode(s.tenant.id),
     inviteToken: crypto.randomBytes(24).toString('base64url'),
     createdById: s.user.id,
@@ -140,7 +144,7 @@ staffRouter.post('/vendors', requireStaff('vendors.create'), ah(async (req, res)
   }).returning();
   await audit({ tenantId: s.tenant.id, vendorId: vendor.id, actor: s.user.name, action: 'VENDOR_CREATED', detail: { vendorType: data.vendorType }, ip: req.ip });
   if (notify) {
-    await sendInvite(s.tenant.name, vendor);
+    await sendInvite(s.tenant, vendor);
     await audit({ tenantId: s.tenant.id, vendorId: vendor.id, actor: s.user.name, action: 'INVITE_SENT', detail: { to: vendor.contactEmail }, ip: req.ip });
   }
   res.status(201).json({ vendor: { id: vendor.id, code: vendor.code } });
@@ -151,7 +155,7 @@ staffRouter.post('/vendors/:id/invite', requireStaff('vendors.create'), ah(async
   const v = await findVendor(s.tenant.id, req.params.id);
   if (!v) throw new HttpError(404, 'Vendor not found');
   if (!['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status)) throw new HttpError(409, 'Vendor has already submitted');
-  await sendInvite(s.tenant.name, v);
+  await sendInvite(s.tenant, v);
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'INVITE_SENT', detail: { to: v.contactEmail }, ip: req.ip });
   res.json({ ok: true });
 }));
@@ -168,8 +172,8 @@ staffRouter.post('/vendors/:id/contact', requireStaff('vendors.edit'), ah(async 
   const basic = profile.basic && String(profile.basic.contactEmail ?? '').toLowerCase() === old.toLowerCase() ? { ...profile.basic, contactEmail: email } : profile.basic;
   await db.update(vendors).set({ contactEmail: email, emailBouncedAt: null, emailBounceReason: null, profile: { ...profile, ...(basic ? { basic } : {}) }, updatedAt: new Date() }).where(eq(vendors.id, v.id));
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'CONTACT_EMAIL_CHANGED', detail: { from: old.replace(/^(.).*(@.*)$/, '$1***$2'), to: email.replace(/^(.).*(@.*)$/, '$1***$2'), reason }, ip: req.ip });
-  await sendMail({ tenantId: s.tenant.id, to: old, subject: `${s.tenant.name}: your supplier contact email was changed`, body: `The contact email for ${v.name} on ${s.tenant.name}'s supplier portal was changed by ${s.user.name}. Sign-in codes will now go to the new address.\n\nIf you did not expect this, contact ${s.tenant.name} straight away.` });
-  if (['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status)) await sendInvite(s.tenant.name, { ...v, contactEmail: email });
+  await mailSupplier(vendorLanguage(s.tenant, v), { tenantId: s.tenant.id, to: old }, 'contactChanged', { vendor: v.name, buyer: s.tenant.name, by: s.user.name });
+  if (['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status)) await sendInvite(s.tenant, { ...v, contactEmail: email });
   res.json({ ok: true });
 }));
 

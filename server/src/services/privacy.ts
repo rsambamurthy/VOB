@@ -20,6 +20,7 @@ import { DEFAULT_HOME, packFor } from '../countries/registry.js';
 import { aiStatus } from '../integrations/ai/index.js';
 import { usersWithPermission } from './approvers.js';
 import { getConfig } from './config.js';
+import { langForVendor, mailSupplier } from '../i18n/emails.js';
 
 const { vendors, documents, verifications, documentExtractions, changeRequests, erpSyncs, emailOutbox, smsLog, otpCodes, sessions, auditLogs, tenants, approvalSteps } = schema;
 const DAY = 86_400_000;
@@ -32,9 +33,13 @@ export function defaultNotice(company: string, contactEmail?: string, country?: 
   return p.defaultNotice(company, contactEmail);
 }
 
-export function noticeFor(t: Pick<Tenant, 'name' | 'settings'> & { country?: string }) {
+export function noticeFor(t: Pick<Tenant, 'name' | 'settings'> & { country?: string }, lang: 'en' | 'ar' = 'en') {
   const p = (t.settings as TenantSettings).privacy;
-  return { version: p?.version ?? 1, text: p?.text || defaultNotice(t.name, p?.contactEmail, t.country), contactEmail: p?.contactEmail ?? null, updatedAt: p?.updatedAt ?? null, isDefault: !p?.text };
+  // Arabic: the workspace's own Arabic text, else (for the built-in notice) the pack's Arabic version.
+  const builtInAr = () => packFor(t.country ?? DEFAULT_HOME).privacy?.defaultNoticeAr?.(t.name, p?.contactEmail);
+  // An unchanged starting template keeps using the built-in Arabic; a notice the workspace wrote needs its own Arabic.
+  const arabic = lang === 'ar' ? (p?.textAr || (!p?.text || p.text === defaultNotice(t.name, p?.contactEmail, t.country) ? builtInAr() : undefined)) : undefined;
+  return { version: p?.version ?? 1, text: arabic || p?.text || defaultNotice(t.name, p?.contactEmail, t.country), contactEmail: p?.contactEmail ?? null, updatedAt: p?.updatedAt ?? null, isDefault: !p?.text };
 }
 
 export const retentionFor = (t: Pick<Tenant, 'settings'>) => ({ rejectedDays: 365, abandonedDays: 180, ...((t.settings as TenantSettings).retention ?? {}) });
@@ -107,7 +112,7 @@ export async function declineErasure(tenantId: string, vendorId: string, reason:
   if (!reason.trim()) throw new HttpError(400, 'Explain why — the vendor is told');
   await db.update(vendors).set({ erasureRequestedAt: null, erasureReason: null }).where(eq(vendors.id, v.id));
   await audit({ tenantId, vendorId, actor, action: 'ERASURE_DECLINED', detail: { reason }, ip });
-  await sendMail({ tenantId, to: v.contactEmail, subject: 'Your data deletion request', body: `Dear ${v.contactFirstName},\n\nWe could not delete ${v.name}'s data at this time.\n\nReason: ${reason}\n\nWe will keep only what is needed for this purpose and delete it when we are allowed to.` });
+  await mailSupplier(await langForVendor(v), { tenantId, to: v.contactEmail }, 'erasureRefused', { first: v.contactFirstName, vendor: v.name, reason });
 }
 
 /**
@@ -121,7 +126,7 @@ export async function eraseVendor(tenantId: string, vendorId: string, reason: st
   if (v.status === 'UNDER_REVIEW') throw new HttpError(409, 'Decide the registration (reject it) before erasing its data');
   if (v.status === 'APPROVED' && !v.blockedAt) throw new HttpError(409, 'Block this supplier first. Check with finance that its records no longer need to be kept (tax law usually requires about 8 years).');
   if (!reason.trim()) throw new HttpError(400, 'Give a reason — it stays in the audit log');
-  const notifyTo = v.erasureRequestedAt ? { email: v.contactEmail, first: v.contactFirstName, name: v.name } : null;
+  const notifyTo = v.erasureRequestedAt ? { email: v.contactEmail, first: v.contactFirstName, name: v.name, lang: await langForVendor(v) } : null;
 
   const docs = await db.select().from(documents).where(eq(documents.vendorId, v.id));
   for (const d of docs) await removeStored(d).catch((err) => logger.warn({ err, doc: d.id }, 'could not remove stored file during erasure'));
@@ -148,7 +153,7 @@ export async function eraseVendor(tenantId: string, vendorId: string, reason: st
   await audit({ tenantId, vendorId: v.id, actor, action: 'VENDOR_ERASED', detail: { reason, documents: docs.length, ...(opts.policy ? { by: 'retention policy' } : {}) }, ip: opts.ip });
   // The deletion confirmation goes to the address we just erased — sent once, not stored afterwards.
   if (notifyTo) {
-    await sendMail({ tenantId, to: notifyTo.email, subject: 'Your data has been deleted', body: `Dear ${notifyTo.first},\n\nAs requested, the personal data we held for ${notifyTo.name} has been deleted.` });
+    await mailSupplier(notifyTo.lang, { tenantId, to: notifyTo.email }, 'erasureDone', { first: notifyTo.first, vendor: notifyTo.name });
     await db.delete(emailOutbox).where(and(eq(emailOutbox.tenantId, tenantId), eq(emailOutbox.to, notifyTo.email)));
   }
 }

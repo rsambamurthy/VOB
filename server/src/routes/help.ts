@@ -29,6 +29,7 @@ helpRouter.post('/ask', ah(async (req, res) => {
   const input = z.object({
     question: z.string().trim().min(3, 'Type a question').max(500),
     audience: z.enum(['staff', 'supplier']),
+    language: z.enum(['en', 'ar']).optional(),
     articles: z.array(z.object({ id: z.string().max(80), title: z.string().max(200), summary: z.string().max(400).optional(), body: z.string().max(20000) })).min(1).max(12),
   }).parse(req.body);
   const { tenant, who } = asker(req, input.audience);
@@ -39,7 +40,7 @@ helpRouter.post('/ask', ah(async (req, res) => {
     const [{ n }] = await db.select({ n: count() }).from(helpQuestions).where(and(eq(helpQuestions.tenantId, tenant.id), gte(helpQuestions.createdAt, new Date(Date.now() - 86_400_000)), eq(helpQuestions.provider, a.name)));
     if (Number(n) >= limit) throw new HttpError(429, 'Your workspace has used today’s AI help answers. Search the help topics instead, or try again tomorrow.', undefined, 'PLAN_LIMIT');
   }
-  const r = await a.answer(input.question, input.articles, { audience: input.audience, product: tenant.branding.productName ?? 'VendorGate' });
+  const r = await a.answer(input.question, input.articles, { audience: input.audience, product: tenant.branding.productName ?? 'VendorGate', language: input.audience === 'supplier' ? input.language ?? 'en' : 'en' });
   await db.insert(helpQuestions).values({ tenantId: tenant.id, audience: input.audience, askedBy: who, question: input.question, answered: r.answered, sources: r.sources, provider: a.name });
   res.json({ ...r, test: !a.live });
 }));

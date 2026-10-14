@@ -8,16 +8,17 @@ import { loc, localeInfo } from '../../lib/format';
 export function Workspace() {
   const { me, refresh } = useSession();
   const t = me!.tenant;
+  const arabic = !!t.supplierLanguages?.includes('ar');
   const welcome = useSearchParams()[0].get('welcome') === '1';
   const [f, setF] = useState({
     name: t.name, productName: t.branding.productName ?? '', primaryColor: t.branding.primaryColor ?? '#1f2758', logoUrl: t.branding.logoUrl ?? '',
-    requireMfa: !!t.settings.requireMfa, sessionHours: t.settings.sessionHours ?? 12, reKycMonths: t.settings.reKycMonths ?? 12, skipWeekends: !!t.settings.skipWeekends,
+    requireMfa: !!t.settings.requireMfa, sessionHours: t.settings.sessionHours ?? 12, reKycMonths: t.settings.reKycMonths ?? 12, skipWeekends: !!t.settings.skipWeekends, supplierLanguage: (t.settings.supplierLanguage ?? 'en') as 'en' | 'ar',
   });
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
   async function save(e: React.FormEvent) {
     e.preventDefault(); setMsg(undefined);
     try {
-      await api('/admin/tenant', { method: 'PATCH', body: { name: f.name, branding: { productName: f.productName || undefined, primaryColor: f.primaryColor, logoUrl: f.logoUrl }, settings: { requireMfa: f.requireMfa || !!t.settings.mfaEnforcedByPlatform, sessionHours: Number(f.sessionHours), reKycMonths: Number(f.reKycMonths), skipWeekends: f.skipWeekends } } });
+      await api('/admin/tenant', { method: 'PATCH', body: { name: f.name, branding: { productName: f.productName || undefined, primaryColor: f.primaryColor, logoUrl: f.logoUrl }, settings: { requireMfa: f.requireMfa || !!t.settings.mfaEnforcedByPlatform, sessionHours: Number(f.sessionHours), reKycMonths: Number(f.reKycMonths), skipWeekends: f.skipWeekends, ...(arabic ? { supplierLanguage: f.supplierLanguage } : {}) } } });
       await refresh();
       setMsg({ kind: 'success', text: 'Workspace settings saved.' });
     } catch (err: any) { setMsg({ kind: 'error', text: err.message }); }
@@ -49,6 +50,16 @@ export function Workspace() {
           </div>
         </section>
         <CountryChoice onChanged={refresh} />
+        {arabic && (
+          <section className="card pad section-card">
+            <h3>Supplier portal language</h3>
+            <p className="muted small">Suppliers can switch between English and Arabic at any time; emails follow their choice. This is the language new suppliers start in.</p>
+            <div className="radio-row">
+              <label className="radio"><input type="radio" checked={f.supplierLanguage === 'en'} onChange={() => setF({ ...f, supplierLanguage: 'en' })} /> English</label>
+              <label className="radio"><input type="radio" checked={f.supplierLanguage === 'ar'} onChange={() => setF({ ...f, supplierLanguage: 'ar' })} /> <span lang="ar">العربية</span> (Arabic)</label>
+            </div>
+          </section>
+        )}
         <section className="card pad section-card">
           <h3>Security</h3>
           <label className="check-item"><input type="checkbox" checked={f.requireMfa || !!t.settings.mfaEnforcedByPlatform} disabled={!!t.settings.mfaEnforcedByPlatform} onChange={(e) => setF({ ...f, requireMfa: e.target.checked })} /><span><strong>Require two-factor authentication for all staff</strong><span className="muted small block">Users without 2FA will be asked to set it up before they can do anything else.{t.settings.mfaEnforcedByPlatform && ' Required for your workspace by VendorGate.'}</span></span></label>
@@ -163,23 +174,24 @@ function EmailSettings() {
   );
 }
 
-interface PrivacyData { notice: { version: number; text: string; contactEmail: string | null; updatedAt: string | null; isDefault: boolean }; retention: { rejectedDays: number; abandonedDays: number }; template: string }
+interface PrivacyData { notice: { version: number; text: string; contactEmail: string | null; updatedAt: string | null; isDefault: boolean }; retention: { rejectedDays: number; abandonedDays: number }; template: string; arabic: { text: string; template: string } | null }
 
 /** DPDP: privacy notice vendors accept, grievance contact, and how long unfinished registrations are kept. */
 function PrivacySettings() {
   const [d, setD] = useState<PrivacyData>();
   const [text, setText] = useState('');
   const [email, setEmail] = useState('');
+  const [textAr, setTextAr] = useState('');
   const [ret, setRet] = useState({ rejectedDays: 365, abandonedDays: 180 });
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
-  useEffect(() => { api<PrivacyData>('/admin/privacy').then((r) => { setD(r); setText(r.notice.text); setEmail(r.notice.contactEmail ?? ''); setRet(r.retention); }).catch((e) => setMsg({ kind: 'error', text: e.message })); }, []);
+  useEffect(() => { api<PrivacyData>('/admin/privacy').then((r) => { setD(r); setText(r.notice.text); setTextAr(r.arabic?.text ?? ''); setEmail(r.notice.contactEmail ?? ''); setRet(r.retention); }).catch((e) => setMsg({ kind: 'error', text: e.message })); }, []);
   if (!d) return null;
-  const textChanged = text !== d.notice.text || (email || null) !== d.notice.contactEmail;
+  const textChanged = text !== d.notice.text || (email || null) !== d.notice.contactEmail || (!!d.arabic && textAr !== d.arabic.text);
   async function save() {
     setMsg(undefined);
     try {
-      const r = await api<{ notice: PrivacyData['notice']; retention: PrivacyData['retention'] }>('/admin/privacy', { method: 'PUT', body: { text, contactEmail: email, retention: ret } });
-      setD({ ...d!, ...r }); setText(r.notice.text);
+      const r = await api<{ notice: PrivacyData['notice']; retention: PrivacyData['retention'] }>('/admin/privacy', { method: 'PUT', body: { text, contactEmail: email, retention: ret, ...(d!.arabic ? { textAr } : {}) } });
+      setD({ ...d!, ...r, arabic: d!.arabic ? { ...d!.arabic, text: textAr } : null }); setText(r.notice.text);
       setMsg({ kind: 'success', text: textChanged ? `Saved as version ${r.notice.version}. Vendors will be asked to accept it the next time they sign in.` : 'Saved.' });
     } catch (e: any) { setMsg({ kind: 'error', text: e.message }); }
   }
@@ -189,6 +201,8 @@ function PrivacySettings() {
       <p className="muted small">Vendors must accept this notice before entering any data. Changing it creates a new version and asks every vendor to accept again. {d.notice.isDefault ? <strong>You are using the starting template — have it reviewed by your legal team.</strong> : <>Current version {d.notice.version}{d.notice.updatedAt ? `, updated ${new Date(d.notice.updatedAt).toLocaleDateString(loc())}` : ''}.</>}</p>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <div className="field"><label htmlFor="pv-text">Privacy notice</label><textarea id="pv-text" rows={14} value={text} onChange={(e) => setText(e.target.value)} /></div>
+      {d.arabic && <div className="field"><label htmlFor="pv-text-ar">Privacy notice in Arabic <span className="muted small">(suppliers using the portal in Arabic)</span></label><textarea id="pv-text-ar" dir="rtl" lang="ar" rows={12} value={textAr} onChange={(e) => setTextAr(e.target.value)} />
+        <div className="field-help">Keep it saying the same as the English notice. If you change the English notice and leave this empty, Arabic-speaking suppliers see the English. <button type="button" className="link-btn small" onClick={() => setTextAr(d.arabic!.template)}>Use the Arabic template</button></div></div>}
       <div className="field-grid">
         <div className="field"><label htmlFor="pv-email">Grievance officer email</label><input id="pv-email" type="email" value={email} placeholder="privacy@yourcompany.com" onChange={(e) => setEmail(e.target.value)} /></div>
         <div />

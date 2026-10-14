@@ -5,6 +5,8 @@ import { api, docUrl } from '../lib/api';
 import { fmtDate, fmtDateTime } from '../lib/format';
 import { Alert, Empty, Modal } from '../components/ui';
 import { Facts, money, qty } from './common';
+import { t } from '../i18n';
+import { HijriHint } from '../i18n/dates';
 
 export interface ShipLine { lineId: string; lineNo: number; itemCode: string | null; description: string; uom: string | null; needByDate: string | null; ordered: number; tolerancePct: number; shipped: number; received: number; available: number }
 export interface InvLine { lineId: string; lineNo: number; lineType: string; itemCode: string | null; description: string; uom: string | null; hsn: string | null; ordered: number; tolerancePct: number; received: number; billed: number; unitPrice: number; taxRate: number | null; available: number; availableReceived: number }
@@ -31,9 +33,9 @@ export interface InvoiceDetailData {
 export interface Payment { id: string; reference: string; paymentDate: string; method: string | null; currency: string; amount: number; withheld: number; notes: string | null; allocations: { invoiceId: string | null; invoiceNumber: string; amount: number; withheld?: number }[]; vendorName: string; vendorCode: string }
 
 const SHIP: Record<Shipment['status'], [string, string]> = { SHIPPED: ['In transit', 'badge-under_review'], PARTLY_RECEIVED: ['Partly received', 'badge-in_progress'], RECEIVED: ['Received', 'badge-approved'], CANCELLED: ['Cancelled', 'badge-invited'] };
-export const ShipmentBadge = ({ s }: { s: Shipment['status'] }) => <span className={`badge sm ${SHIP[s][1]}`}>{SHIP[s][0]}</span>;
+export const ShipmentBadge = ({ s }: { s: Shipment['status'] }) => <span className={`badge sm ${SHIP[s][1]}`}>{t(`ship.${s}`)}</span>;
 const INV: Record<InvoiceStatus, [string, string]> = { SUBMITTED: ['In review', 'badge-under_review'], EXCEPTION: ['Exception', 'badge-sent_back'], APPROVED: ['Approved', 'badge-approved'], REJECTED: ['Rejected', 'badge-rejected'], CANCELLED: ['Withdrawn', 'badge-invited'], PARTLY_PAID: ['Partly paid', 'badge-in_progress'], PAID: ['Paid', 'badge-auto'] };
-export const InvoiceBadge = ({ s }: { s: InvoiceStatus }) => <span className={`badge sm ${INV[s][1]}`}>{INV[s][0]}</span>;
+export const InvoiceBadge = ({ s }: { s: InvoiceStatus }) => <span className={`badge sm ${INV[s][1]}`}>{t(`inv.${s}`)}</span>;
 export const MESSAGE_KIND: Record<string, string> = { ACCEPTANCE: 'Acceptance', ASN: 'Shipment notice', ASN_CANCEL: 'Shipment notice cancelled', INVOICE: 'Approved invoice' };
 const today = () => new Date().toISOString().slice(0, 10);
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -44,23 +46,23 @@ export function ChecksList({ checks }: { checks: Check[] }) {
   return <ul className="checks-list">{checks.map((c, i) => <li key={i} className={`check-${c.level}`}><span className="check-icon" aria-hidden>{icon[c.level]}</span>{c.message}</li>)}</ul>;
 }
 
-export function ShipmentsCard({ shipments, onCancel, title = 'Shipment notices', action }: { shipments: Shipment[]; onCancel?: (s: Shipment) => void; title?: string; action?: ReactNode }) {
+export function ShipmentsCard({ shipments, onCancel, title = t('ship.title'), action }: { shipments: Shipment[]; onCancel?: (s: Shipment) => void; title?: string; action?: ReactNode }) {
   if (!shipments.length && !action) return null;
   return (
     <section className="card section-card">
       <div className="toolbar"><h3>{title}</h3>{action}</div>
-      {!shipments.length ? <p className="muted small pad">None yet.</p> : (
+      {!shipments.length ? <p className="muted small pad">{t('common.none')}</p> : (
         <div className="table-wrap"><table className="table static compact">
-          <thead><tr><th>Notice</th><th>Shipped</th><th>Lines</th><th>Transport</th><th>Status</th><th /></tr></thead>
+          <thead><tr><th>{t('ship.colNotice')}</th><th>{t('ship.colShipped')}</th><th>{t('ship.colLines')}</th><th>{t('ship.colTransport')}</th><th>{t('common.status')}</th><th /></tr></thead>
           <tbody>{shipments.map((s) => (
             <tr key={s.id}>
-              <td><span className="mono nowrap">{s.number}</span>{s.supplierRef && <div className="muted small">Ref {s.supplierRef}</div>}</td>
-              <td className="small nowrap">{fmtDate(s.shipDate)}{s.expectedDate && <div className="muted">due {fmtDate(s.expectedDate)}</div>}</td>
-              <td className="small">{s.lines.map((l) => <div key={l.id}>Line {l.lineNo}: {qty(l.quantity)} {l.uom}{l.receivedQty > 0 && <span className="muted"> · {qty(l.receivedQty)} received</span>}{l.batchNo && <span className="muted"> · batch {l.batchNo}</span>}</div>)}</td>
-              <td className="small">{[s.carrier, s.trackingNo, s.vehicleNo].filter(Boolean).join(' · ') || '—'}{s.ewayBill && <div className="muted">E-way bill {s.ewayBill}</div>}{s.packages && <div className="muted">{s.packages} package{s.packages === 1 ? '' : 's'}</div>}</td>
+              <td><span className="mono nowrap">{s.number}</span>{s.supplierRef && <div className="muted small">{t('ship.ref', { ref: s.supplierRef })}</div>}</td>
+              <td className="small nowrap">{fmtDate(s.shipDate)}{s.expectedDate && <div className="muted">{t('ship.due', { date: fmtDate(s.expectedDate) })}</div>}</td>
+              <td className="small">{s.lines.map((l) => <div key={l.id}>{t('ship.lineQty', { n: l.lineNo, qty: `${qty(l.quantity)} ${l.uom ?? ''}`.trim() })}{l.receivedQty > 0 && <span className="muted"> · {t('ship.received', { qty: qty(l.receivedQty) })}</span>}{l.batchNo && <span className="muted"> · {t('ship.batch', { b: l.batchNo })}</span>}</div>)}</td>
+              <td className="small">{[s.carrier, s.trackingNo, s.vehicleNo].filter(Boolean).join(' · ') || '—'}{s.ewayBill && <div className="muted">{t('ship.ewayBill', { n: s.ewayBill })}</div>}{s.packages && <div className="muted">{t('ship.packages', { count: s.packages })}</div>}</td>
               <td><ShipmentBadge s={s.status} />{s.cancelReason && <div className="muted small">{s.cancelReason}</div>}
-                {s.expectedDate && s.expectedDate < today() && (s.status === 'SHIPPED' || s.status === 'PARTLY_RECEIVED') && <div className="warn-text small">Overdue since {fmtDate(s.expectedDate)}</div>}</td>
-              <td className="actions">{onCancel && s.status === 'SHIPPED' && <button className="link-btn small danger" onClick={() => onCancel(s)}>Cancel</button>}</td>
+                {s.expectedDate && s.expectedDate < today() && (s.status === 'SHIPPED' || s.status === 'PARTLY_RECEIVED') && <div className="warn-text small">{t('ship.overdueSince', { date: fmtDate(s.expectedDate) })}</div>}</td>
+              <td className="actions">{onCancel && s.status === 'SHIPPED' && <button className="link-btn small danger" onClick={() => onCancel(s)}>{t('common.cancel')}</button>}</td>
             </tr>))}</tbody>
         </table></div>
       )}
@@ -70,17 +72,17 @@ export function ShipmentsCard({ shipments, onCancel, title = 'Shipment notices',
 
 export function InvoicesTable({ rows, base, showVendor, showPo = true }: { rows: InvoiceRow[]; base: string; showVendor?: boolean; showPo?: boolean }) {
   const nav = useNavigate();
-  if (!rows.length) return <Empty>No invoices.</Empty>;
+  if (!rows.length) return <Empty>{t('inv.none')}</Empty>;
   return (
     <div className="table-wrap"><table className="table">
-      <thead><tr><th>Invoice</th>{showVendor && <th>Supplier</th>}{showPo && <th>Order</th>}<th>Date</th><th className="num">Total</th><th>Status</th><th>Due</th></tr></thead>
+      <thead><tr><th>{t('inv.colInvoice')}</th>{showVendor && <th>{t('inv.colSupplier')}</th>}{showPo && <th>{t('inv.colOrder')}</th>}<th>{t('common.date')}</th><th className="num">{t('common.total')}</th><th>{t('common.status')}</th><th>{t('inv.colDue')}</th></tr></thead>
       <tbody>{rows.map((i) => (
         <tr key={i.id} className="clickable" onClick={() => nav(`${base}/${i.id}`)}>
-          <td><Link to={`${base}/${i.id}`} className="mono strong" onClick={(e) => e.stopPropagation()}>{i.invoiceNumber}</Link>{i.warnings > 0 && i.status === 'EXCEPTION' && <div className="warn-text small">{i.warnings} to check</div>}</td>
+          <td><Link to={`${base}/${i.id}`} className="mono strong" onClick={(e) => e.stopPropagation()}>{i.invoiceNumber}</Link>{i.warnings > 0 && i.status === 'EXCEPTION' && <div className="warn-text small">{t('inv.toCheck', { n: i.warnings })}</div>}</td>
           {showVendor && <td>{i.vendorName}<div className="muted small">{i.vendorCode}</div></td>}
           {showPo && <td className="mono small">{i.poNumber}</td>}
           <td className="small nowrap">{fmtDate(i.invoiceDate)}</td>
-          <td className="num nowrap">{money(i.total, i.currency)}{i.paidAmount > 0 && i.status !== 'PAID' && <div className="muted small">paid {money(i.paidAmount, i.currency)}</div>}</td>
+          <td className="num nowrap">{money(i.total, i.currency)}{i.paidAmount > 0 && i.status !== 'PAID' && <div className="muted small">{t('inv.paid', { amount: money(i.paidAmount, i.currency) })}</div>}</td>
           <td><InvoiceBadge s={i.status} /></td>
           <td className="small nowrap">{i.dueDate && ['APPROVED', 'PARTLY_PAID'].includes(i.status) ? <span className={i.dueDate < today() ? 'err-text' : ''}>{fmtDate(i.dueDate)}</span> : '—'}</td>
         </tr>))}</tbody>
@@ -110,29 +112,29 @@ export function ShipModal({ poId, lines, onClose, onDone }: { poId: string; line
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
   return (
-    <Modal title="Shipment notice" wide onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || !chosen.length || !f.shipDate} onClick={save}>{busy ? 'Sending…' : 'Send shipment notice'}</button></>}>
-      <p className="muted small">Tell the buyer what is on the way. You can ship part of a line now and the rest later.</p>
+    <Modal title={t('ship.modalTitle')} wide onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>{t('common.cancel')}</button><button className="btn btn-primary" disabled={busy || !chosen.length || !f.shipDate} onClick={save}>{busy ? t('common.sending') : t('ship.send')}</button></>}>
+      <p className="muted small">{t('ship.intro')}</p>
       {err && <Alert kind="error">{err}</Alert>}
       <div className="table-wrap"><table className="table static compact">
-        <thead><tr><th>Line</th><th>Item</th><th className="num">Ordered</th><th className="num">Shipped so far</th><th className="num">Ship now</th><th>Batch / lot</th></tr></thead>
+        <thead><tr><th>{t('common.line')}</th><th>{t('common.item')}</th><th className="num">{t('ship.colOrdered')}</th><th className="num">{t('ship.colShippedSoFar')}</th><th className="num">{t('ship.colShipNow')}</th><th>{t('ship.colBatch')}</th></tr></thead>
         <tbody>{open.map((l) => (
-          <tr key={l.lineId}><td className="mono-num">{l.lineNo}</td><td><div className="strong">{l.description}</div><div className="muted small">{l.itemCode}{l.needByDate && ` · need by ${fmtDate(l.needByDate)}`}</div></td>
+          <tr key={l.lineId}><td className="mono-num">{l.lineNo}</td><td><div className="strong">{l.description}</div><div className="muted small">{l.itemCode}{l.needByDate && ` · ${t('ship.needBy', { date: fmtDate(l.needByDate) })}`}</div></td>
             <td className="num nowrap">{qty(l.ordered)} {l.uom}</td><td className="num">{qty(Math.max(l.shipped, l.received))}</td>
-            <td className="num"><input className="qty-input" type="number" min={0} max={l.available} step="any" aria-label={`Quantity for line ${l.lineNo}`} value={q[l.lineId] ?? ''} onChange={(e) => setQ({ ...q, [l.lineId]: e.target.value })} />
-              <div className="muted small">up to {qty(l.available)}{l.tolerancePct ? ` (incl. ${l.tolerancePct}% over)` : ''}</div></td>
-            <td><input aria-label={`Batch for line ${l.lineNo}`} value={batch[l.lineId] ?? ''} maxLength={60} onChange={(e) => setBatch({ ...batch, [l.lineId]: e.target.value })} /></td></tr>))}</tbody>
+            <td className="num"><input className="qty-input" type="number" min={0} max={l.available} step="any" aria-label={t('ship.qtyFor', { n: l.lineNo })} value={q[l.lineId] ?? ''} onChange={(e) => setQ({ ...q, [l.lineId]: e.target.value })} />
+              <div className="muted small">{t('ship.upTo', { qty: qty(l.available) })}{l.tolerancePct ? t('ship.inclOver', { pct: l.tolerancePct }) : ''}</div></td>
+            <td><input aria-label={t('ship.batchFor', { n: l.lineNo })} value={batch[l.lineId] ?? ''} maxLength={60} onChange={(e) => setBatch({ ...batch, [l.lineId]: e.target.value })} /></td></tr>))}</tbody>
       </table></div>
       <div className="field-grid">
-        <div className="field"><label htmlFor="sh-date">Ship date</label><input id="sh-date" type="date" max={today()} value={f.shipDate} onChange={set('shipDate')} /></div>
-        <div className="field"><label htmlFor="sh-exp">Expected delivery</label><input id="sh-exp" type="date" min={f.shipDate} value={f.expectedDate} onChange={set('expectedDate')} /></div>
-        <div className="field"><label htmlFor="sh-ref">Your delivery note / dispatch no.</label><input id="sh-ref" maxLength={60} value={f.supplierRef} onChange={set('supplierRef')} /></div>
-        <div className="field"><label htmlFor="sh-car">Carrier</label><input id="sh-car" maxLength={100} value={f.carrier} onChange={set('carrier')} /></div>
-        <div className="field"><label htmlFor="sh-trk">Tracking / LR / AWB no.</label><input id="sh-trk" maxLength={100} value={f.trackingNo} onChange={set('trackingNo')} /></div>
-        <div className="field"><label htmlFor="sh-veh">Vehicle no.</label><input id="sh-veh" maxLength={20} value={f.vehicleNo} onChange={set('vehicleNo')} /></div>
-        <div className="field"><label htmlFor="sh-ewb">E-way bill no. (India)</label><input id="sh-ewb" inputMode="numeric" maxLength={14} value={f.ewayBill} onChange={set('ewayBill')} placeholder="12 digits" /></div>
-        <div className="field"><label htmlFor="sh-pkg">Packages</label><input id="sh-pkg" type="number" min={1} value={f.packages} onChange={set('packages')} /></div>
+        <div className="field"><label htmlFor="sh-date">{t('ship.shipDate')}</label><input id="sh-date" type="date" max={today()} value={f.shipDate} onChange={set('shipDate')} /><HijriHint date={f.shipDate} /></div>
+        <div className="field"><label htmlFor="sh-exp">{t('ship.expected')}</label><input id="sh-exp" type="date" min={f.shipDate} value={f.expectedDate} onChange={set('expectedDate')} /><HijriHint date={f.expectedDate} /></div>
+        <div className="field"><label htmlFor="sh-ref">{t('ship.yourRef')}</label><input id="sh-ref" maxLength={60} value={f.supplierRef} onChange={set('supplierRef')} /></div>
+        <div className="field"><label htmlFor="sh-car">{t('ship.carrier')}</label><input id="sh-car" maxLength={100} value={f.carrier} onChange={set('carrier')} /></div>
+        <div className="field"><label htmlFor="sh-trk">{t('ship.tracking')}</label><input id="sh-trk" maxLength={100} value={f.trackingNo} onChange={set('trackingNo')} /></div>
+        <div className="field"><label htmlFor="sh-veh">{t('ship.vehicle')}</label><input id="sh-veh" maxLength={20} value={f.vehicleNo} onChange={set('vehicleNo')} /></div>
+        <div className="field"><label htmlFor="sh-ewb">{t('ship.ewayLabel')}</label><input id="sh-ewb" inputMode="numeric" maxLength={14} value={f.ewayBill} onChange={set('ewayBill')} placeholder={t('ship.ewayPh')} /></div>
+        <div className="field"><label htmlFor="sh-pkg">{t('ship.packagesLabel')}</label><input id="sh-pkg" type="number" min={1} value={f.packages} onChange={set('packages')} /></div>
       </div>
-      <div className="field"><label htmlFor="sh-notes">Notes for the buyer</label><textarea id="sh-notes" rows={2} maxLength={1000} value={f.notes} onChange={set('notes')} /></div>
+      <div className="field"><label htmlFor="sh-notes">{t('ship.notesForBuyer')}</label><textarea id="sh-notes" rows={2} maxLength={1000} value={f.notes} onChange={set('notes')} /></div>
     </Modal>
   );
 }
@@ -184,36 +186,36 @@ export function InvoiceModal({ poId, currency, lines, shipments, einvoice, toler
   }
   const ready = f.invoiceNumber.trim() && f.invoiceDate && body().lines.length;
   return (
-    <Modal title="Raise an invoice" wide onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-secondary" disabled={busy || !ready} onClick={check}>Check</button><button className="btn btn-primary" disabled={busy || !ready} onClick={submit}>{busy ? 'Working…' : 'Submit invoice'}</button></>}>
-      <p className="muted small">Enter the invoice as it appears on your document. It is matched with the order and what has been received; prices more than {tolerance}% above the order price are flagged.</p>
+    <Modal title={t('inv.raiseTitle')} wide onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>{t('common.cancel')}</button><button className="btn btn-secondary" disabled={busy || !ready} onClick={check}>{t('inv.check')}</button><button className="btn btn-primary" disabled={busy || !ready} onClick={submit}>{busy ? t('inv.working') : t('inv.submit')}</button></>}>
+      <p className="muted small">{t('inv.intro', { pct: tolerance })}</p>
       {err && <Alert kind="error">{err}</Alert>}
       <div className="field-grid">
-        <div className="field"><label htmlFor="iv-no">Invoice number</label><input id="iv-no" maxLength={40} value={f.invoiceNumber} onChange={set('invoiceNumber')} /></div>
-        <div className="field"><label htmlFor="iv-date">Invoice date</label><input id="iv-date" type="date" max={today()} value={f.invoiceDate} onChange={set('invoiceDate')} /></div>
-        {usable.length > 0 && <div className="field"><label htmlFor="iv-ship">For shipment</label><select id="iv-ship" value={shipmentId} onChange={(e) => setShipmentId(e.target.value)}><option value="">Not linked to a shipment</option>{usable.map((s) => <option key={s.id} value={s.id}>{s.number} · {fmtDate(s.shipDate)}</option>)}</select></div>}
-        <div className="field"><label htmlFor="iv-file">Invoice file (PDF or image)</label>{file ? <div className="small">📎 {file.fileName} <button type="button" className="link-btn small" onClick={() => setFile(undefined)}>Remove</button></div> : <input id="iv-file" type="file" accept="application/pdf,image/png,image/jpeg" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />}</div>
+        <div className="field"><label htmlFor="iv-no">{t('inv.number')}</label><input id="iv-no" maxLength={40} value={f.invoiceNumber} onChange={set('invoiceNumber')} /></div>
+        <div className="field"><label htmlFor="iv-date">{t('inv.date')}</label><input id="iv-date" type="date" max={today()} value={f.invoiceDate} onChange={set('invoiceDate')} /><HijriHint date={f.invoiceDate} /></div>
+        {usable.length > 0 && <div className="field"><label htmlFor="iv-ship">{t('inv.forShipment')}</label><select id="iv-ship" value={shipmentId} onChange={(e) => setShipmentId(e.target.value)}><option value="">{t('inv.notLinked')}</option>{usable.map((s) => <option key={s.id} value={s.id}>{s.number} · {fmtDate(s.shipDate)}</option>)}</select></div>}
+        <div className="field"><label htmlFor="iv-file">{t('inv.file')}</label>{file ? <div className="small">📎 {file.fileName} <button type="button" className="link-btn small" onClick={() => setFile(undefined)}>{t('common.remove')}</button></div> : <input id="iv-file" type="file" accept="application/pdf,image/png,image/jpeg" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />}</div>
       </div>
       <div className="table-wrap"><table className="table static compact">
-        <thead><tr><th>Line</th><th>Item</th><th className="num">Can invoice</th><th className="num">Quantity</th><th className="num">Unit price</th><th className="num">Tax %</th><th className="num">Amount</th></tr></thead>
+        <thead><tr><th>{t('common.line')}</th><th>{t('common.item')}</th><th className="num">{t('inv.colCanInvoice')}</th><th className="num">{t('common.quantity')}</th><th className="num">{t('common.unitPrice')}</th><th className="num">{t('inv.colTaxPct')}</th><th className="num">{t('common.amount')}</th></tr></thead>
         <tbody>{open.map((l) => { const r = rows[l.lineId] ?? { q: '', p: '', t: '' }; const up = (k: 'q' | 'p' | 't') => (e: React.ChangeEvent<HTMLInputElement>) => { setRows({ ...rows, [l.lineId]: { ...r, [k]: e.target.value } }); setChecks(undefined); };
           return (
-            <tr key={l.lineId}><td className="mono-num">{l.lineNo}</td><td><div className="strong">{l.description}</div><div className="muted small">{[l.itemCode, l.hsn && `HSN ${l.hsn}`, l.lineType === 'SERVICE' && 'Service'].filter(Boolean).join(' · ')}</div></td>
-              <td className="num small nowrap">{qty(l.available)} {l.uom}{l.lineType === 'GOODS' && <div className="muted">{qty(l.availableReceived)} received</div>}</td>
-              <td className="num"><input className="qty-input" type="number" min={0} step="any" aria-label={`Quantity for line ${l.lineNo}`} value={r.q} onChange={up('q')} /></td>
-              <td className="num"><input className="qty-input" type="number" min={0} step="any" aria-label={`Unit price for line ${l.lineNo}`} value={r.p} onChange={up('p')} /><div className="muted small">PO {money(l.unitPrice, currency)}</div></td>
-              <td className="num"><input className="qty-input sm" type="number" min={0} max={100} step="any" aria-label={`Tax rate for line ${l.lineNo}`} value={r.t} onChange={up('t')} /></td>
+            <tr key={l.lineId}><td className="mono-num">{l.lineNo}</td><td><div className="strong">{l.description}</div><div className="muted small">{[l.itemCode, l.hsn && `HSN ${l.hsn}`, l.lineType === 'SERVICE' && t('lines.service')].filter(Boolean).join(' · ')}</div></td>
+              <td className="num small nowrap">{qty(l.available)} {l.uom}{l.lineType === 'GOODS' && <div className="muted">{t('inv.receivedQty', { qty: qty(l.availableReceived) })}</div>}</td>
+              <td className="num"><input className="qty-input" type="number" min={0} step="any" aria-label={t('inv.qtyFor', { n: l.lineNo })} value={r.q} onChange={up('q')} /></td>
+              <td className="num"><input className="qty-input" type="number" min={0} step="any" aria-label={t('inv.priceFor', { n: l.lineNo })} value={r.p} onChange={up('p')} /><div className="muted small">{t('inv.poPrice', { price: money(l.unitPrice, currency) })}</div></td>
+              <td className="num"><input className="qty-input sm" type="number" min={0} max={100} step="any" aria-label={t('inv.taxFor', { n: l.lineNo })} value={r.t} onChange={up('t')} /></td>
               <td className="num nowrap">{money(r2(Number(r.q || 0) * Number(r.p || 0)), currency)}</td></tr>);
         })}</tbody>
-        <tfoot><tr><td colSpan={6} className="num">Subtotal {money(calc.sub, currency)} · tax {money(calc.tax, currency)}</td><td className="num strong">{money(calc.total, currency)}</td></tr></tfoot>
+        <tfoot><tr><td colSpan={6} className="num">{t('inv.totals', { sub: money(calc.sub, currency), tax: money(calc.tax, currency) })}</td><td className="num strong">{money(calc.total, currency)}</td></tr></tfoot>
       </table></div>
       <div className="field-grid">
-        <div className="field"><label htmlFor="iv-total">Invoice total as printed</label><input id="iv-total" type="number" step="any" min={0} value={f.total} placeholder={String(calc.total)} onChange={set('total')} /><div className="field-help">Leave blank to use the calculated total.</div></div>
-        {einvoice && <div className="field"><label htmlFor="iv-irn">E-invoice IRN</label><input id="iv-irn" maxLength={64} className="mono" value={f.irn} onChange={set('irn')} placeholder="64 characters, if you e-invoice" /></div>}
-        {einvoice && <div className="field"><label htmlFor="iv-ack">Ack no. / date</label><div className="inline-fields"><input id="iv-ack" maxLength={30} value={f.ackNo} onChange={set('ackNo')} /><input aria-label="Ack date" maxLength={30} value={f.ackDate} onChange={set('ackDate')} placeholder="date" /></div></div>}
+        <div className="field"><label htmlFor="iv-total">{t('inv.totalPrinted')}</label><input id="iv-total" type="number" step="any" min={0} value={f.total} placeholder={String(calc.total)} onChange={set('total')} /><div className="field-help">{t('inv.totalHelp')}</div></div>
+        {einvoice && <div className="field"><label htmlFor="iv-irn">{t('inv.irn')}</label><input id="iv-irn" maxLength={64} className="mono" value={f.irn} onChange={set('irn')} placeholder={t('inv.irnPh')} /></div>}
+        {einvoice && <div className="field"><label htmlFor="iv-ack">{t('inv.ack')}</label><div className="inline-fields"><input id="iv-ack" maxLength={30} value={f.ackNo} onChange={set('ackNo')} /><input aria-label={t('inv.ackDate')} maxLength={30} value={f.ackDate} onChange={set('ackDate')} placeholder={t('inv.datePh')} /></div></div>}
       </div>
-      {einvoice && <div className="field"><label htmlFor="iv-qr">Signed QR code text (optional)</label><textarea id="iv-qr" rows={2} className="mono small" value={f.signedQr} onChange={set('signedQr')} placeholder="Paste the text read from the e-invoice QR code" /><div className="field-help">We check its GSTIN, invoice number, IRN and value against what you entered.</div></div>}
-      <div className="field"><label htmlFor="iv-notes">Notes for the buyer</label><textarea id="iv-notes" rows={2} maxLength={1000} value={f.notes} onChange={set('notes')} /></div>
-      {checks && <><h4>Match result</h4><ChecksList checks={checks} />{!checks.some((c) => c.level !== 'ok') && <p className="small muted">Everything matches.</p>}</>}
+      {einvoice && <div className="field"><label htmlFor="iv-qr">{t('inv.qr')}</label><textarea id="iv-qr" rows={2} className="mono small" value={f.signedQr} onChange={set('signedQr')} placeholder={t('inv.qrPh')} /><div className="field-help">{t('inv.qrHelp')}</div></div>}
+      <div className="field"><label htmlFor="iv-notes">{t('inv.notes')}</label><textarea id="iv-notes" rows={2} maxLength={1000} value={f.notes} onChange={set('notes')} /></div>
+      {checks && <><h4>{t('inv.matchResult')}</h4><ChecksList checks={checks} />{!checks.some((c) => c.level !== 'ok') && <p className="small muted">{t('inv.allMatch')}</p>}</>}
     </Modal>
   );
 }
@@ -225,46 +227,46 @@ export function InvoiceView({ d, staff, children }: { d: InvoiceDetailData; staf
   return (
     <>
       <header className="page-head">
-        <div><h1><span className="mono-num">Invoice {i.invoiceNumber}</span> <InvoiceBadge s={i.status} /></h1>
-          <p className="muted">{staff ? <><Link to={`/staff/vendors/${d.vendor.id}`}>{d.vendor.name}</Link> · </> : null}Order <Link to={`${staff ? '/staff' : '/vendor'}/orders/${d.po.id}`} className="mono">{d.po.poNumber}</Link> · {money(i.total, i.currency)} · dated {fmtDate(i.invoiceDate)}</p></div>
+        <div><h1><span className="mono-num">{t('inv.title', { n: i.invoiceNumber })}</span> <InvoiceBadge s={i.status} /></h1>
+          <p className="muted">{staff ? <><Link to={`/staff/vendors/${d.vendor.id}`}>{d.vendor.name}</Link> · </> : null}{t('inv.orderLink')} <Link to={`${staff ? '/staff' : '/vendor'}/orders/${d.po.id}`} className="mono">{d.po.poNumber}</Link> · {money(i.total, i.currency)} · {t('inv.dated', { date: fmtDate(i.invoiceDate) })}</p></div>
       </header>
       {children}
-      {i.decisionNote && <Alert kind={i.status === 'REJECTED' ? 'error' : 'info'}>{i.status === 'REJECTED' ? 'Rejected' : i.status === 'CANCELLED' ? 'Withdrawn' : 'Approved'}{i.decidedBy ? ` by ${i.decidedBy}` : ''}{i.decidedAt ? ` on ${fmtDate(i.decidedAt)}` : ''}: “{i.decisionNote}”</Alert>}
+      {i.decisionNote && <Alert kind={i.status === 'REJECTED' ? 'error' : 'info'}>{i.status === 'REJECTED' ? t('inv.decRejected') : i.status === 'CANCELLED' ? t('inv.decWithdrawn') : t('inv.decApproved')}{i.decidedBy ? t('inv.decBy', { name: i.decidedBy }) : ''}{i.decidedAt ? t('inv.decOn', { date: fmtDate(i.decidedAt) }) : ''}: “{i.decisionNote}”</Alert>}
       <section className="card section-card">
-        <div className="toolbar"><h3>Lines</h3></div>
+        <div className="toolbar"><h3>{t('order.lines')}</h3></div>
         <div className="table-wrap"><table className="table static compact">
-          <thead><tr><th>Line</th><th>Item</th><th className="num">Quantity</th><th className="num">Unit price</th><th className="num">Tax</th><th className="num">Amount</th>{staff && <th className="num">Ordered / received</th>}</tr></thead>
+          <thead><tr><th>{t('common.line')}</th><th>{t('common.item')}</th><th className="num">{t('common.quantity')}</th><th className="num">{t('common.unitPrice')}</th><th className="num">{t('common.tax')}</th><th className="num">{t('common.amount')}</th>{staff && <th className="num">Ordered / received</th>}</tr></thead>
           <tbody>{d.lines.map((l) => (
             <tr key={l.id}><td className="mono-num">{l.lineNo}</td><td><div className="strong">{l.description}</div><div className="muted small">{l.itemCode}</div></td>
               <td className="num nowrap">{qty(l.quantity)} {l.uom}</td>
-              <td className="num">{money(l.unitPrice, i.currency)}{l.unitPrice !== l.poPrice && <div className={`small ${l.unitPrice > l.poPrice ? 'warn-text' : 'muted'}`}>PO {money(l.poPrice, i.currency)}</div>}</td>
+              <td className="num">{money(l.unitPrice, i.currency)}{l.unitPrice !== l.poPrice && <div className={`small ${l.unitPrice > l.poPrice ? 'warn-text' : 'muted'}`}>{t('inv.poPrice', { price: money(l.poPrice, i.currency) })}</div>}</td>
               <td className="num small">{l.taxRate !== null ? `${l.taxRate}%` : ''}<div>{money(l.taxAmount, i.currency)}</div></td>
               <td className="num strong">{money(l.amount, i.currency)}</td>
               {staff && <td className="num small">{qty(l.ordered)} / {qty(l.received)}</td>}</tr>))}</tbody>
-          <tfoot><tr><td colSpan={5} className="num">Subtotal {money(i.subtotal, i.currency)} · tax {money(i.taxAmount, i.currency)}</td><td className="num strong">{money(i.total, i.currency)}</td>{staff && <td />}</tr></tfoot>
+          <tfoot><tr><td colSpan={5} className="num">{t('inv.totals', { sub: money(i.subtotal, i.currency), tax: money(i.taxAmount, i.currency) })}</td><td className="num strong">{money(i.total, i.currency)}</td>{staff && <td />}</tr></tfoot>
         </table></div>
       </section>
       <div className="detail-grid">
         <div>
           <section className="card pad">
-            <h3 className="card-title">Matching</h3>
+            <h3 className="card-title">{t('inv.matching')}</h3>
             <ChecksList checks={i.checks} />
           </section>
           {d.payments.length > 0 && (
             <section className="card section-card">
-              <div className="toolbar"><h3>Payments</h3></div>
-              <table className="table static compact"><thead><tr><th>Date</th><th>Reference</th><th className="num">Paid</th><th className="num">Tax withheld</th></tr></thead>
+              <div className="toolbar"><h3>{t('inv.payments')}</h3></div>
+              <table className="table static compact"><thead><tr><th>{t('common.date')}</th><th>{t('common.reference')}</th><th className="num">{t('inv.colPaid')}</th><th className="num">{t('inv.colWithheld')}</th></tr></thead>
                 <tbody>{d.payments.map((p) => <tr key={p.id}><td className="small">{fmtDate(p.paymentDate)}</td><td className="mono small">{p.reference}{p.method && <span className="muted"> · {p.method}</span>}</td><td className="num">{money(p.amount, p.currency)}</td><td className="num small">{p.withheld ? money(p.withheld, p.currency) : '—'}</td></tr>)}</tbody></table>
             </section>
           )}
         </div>
         <aside className="side-col">
           <section className="card pad">
-            <h3 className="card-title">Details</h3>
+            <h3 className="card-title">{t('inv.details')}</h3>
             <Facts items={[
-              ['Submitted', <>{fmtDateTime(i.createdAt)}{staff && <div className="muted small">{i.submittedBy}</div>}</>], ['Shipment', d.shipment?.number ?? null], ['Payment terms', d.po.paymentTerms], ['Due', i.dueDate ? fmtDate(i.dueDate) : null],
-              ['Paid so far', i.paidAmount ? money(i.paidAmount, i.currency) : null], ['IRN', i.einvoice?.irn ? <span className="mono small break">{i.einvoice.irn}</span> : null], ['E-invoice ack', i.einvoice?.ackNo ? `${i.einvoice.ackNo}${i.einvoice.ackDate ? ` · ${i.einvoice.ackDate}` : ''}` : null],
-              ['ERP invoice id', i.erpInvoiceId], ['File', i.documentId ? <a href={docUrl(i.documentId)} target="_blank" rel="noreferrer">📎 Open invoice</a> : null],
+              [t('inv.submitted'), <>{fmtDateTime(i.createdAt)}{staff && <div className="muted small">{i.submittedBy}</div>}</>], [t('inv.shipment'), d.shipment?.number ?? null], [t('order.paymentTerms'), d.po.paymentTerms], [t('inv.due'), i.dueDate ? fmtDate(i.dueDate) : null],
+              [t('inv.paidSoFar'), i.paidAmount ? money(i.paidAmount, i.currency) : null], [t('inv.irnShort'), i.einvoice?.irn ? <span className="mono small break">{i.einvoice.irn}</span> : null], [t('inv.ackShort'), i.einvoice?.ackNo ? `${i.einvoice.ackNo}${i.einvoice.ackDate ? ` · ${i.einvoice.ackDate}` : ''}` : null],
+              [t('inv.erpId'), i.erpInvoiceId], [t('inv.fileFact'), i.documentId ? <a href={docUrl(i.documentId)} target="_blank" rel="noreferrer">{t('inv.openFile')}</a> : null],
             ]} />
             {i.notes && <p className="small muted">“{i.notes}”</p>}
           </section>
@@ -275,10 +277,10 @@ export function InvoiceView({ d, staff, children }: { d: InvoiceDetailData; staf
 }
 
 export function PaymentsTable({ rows, showVendor, invoiceBase }: { rows: Payment[]; showVendor?: boolean; invoiceBase: string }) {
-  if (!rows.length) return <Empty>No payments recorded yet. They appear here when the ERP reports them.</Empty>;
+  if (!rows.length) return <Empty>{t('pay.none')}</Empty>;
   return (
     <div className="table-wrap"><table className="table static">
-      <thead><tr><th>Date</th>{showVendor && <th>Supplier</th>}<th>Reference</th><th>Invoices</th><th className="num">Amount</th><th className="num">Tax withheld</th></tr></thead>
+      <thead><tr><th>{t('common.date')}</th>{showVendor && <th>{t('inv.colSupplier')}</th>}<th>{t('common.reference')}</th><th>{t('pay.colInvoices')}</th><th className="num">{t('common.amount')}</th><th className="num">{t('inv.colWithheld')}</th></tr></thead>
       <tbody>{rows.map((p) => (
         <tr key={p.id}><td className="small nowrap">{fmtDate(p.paymentDate)}</td>{showVendor && <td>{p.vendorName}<div className="muted small">{p.vendorCode}</div></td>}
           <td className="mono small">{p.reference}{p.method && <div className="muted">{p.method}</div>}</td>
@@ -292,9 +294,9 @@ export function CancelShipmentModal({ s, onClose, onConfirm }: { s: Shipment; on
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   return (
-    <Modal title={`Cancel ${s.number}?`} onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Keep it</button><button className="btn btn-danger" disabled={busy || reason.trim().length < 3} onClick={async () => { setBusy(true); await onConfirm(reason.trim()); setBusy(false); }}>Cancel notice</button></>}>
-      <p>The buyer’s system is told the shipment notice is cancelled, and the quantities can be shipped again.</p>
-      <div className="field"><label htmlFor="cs-reason">Reason</label><input id="cs-reason" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+    <Modal title={t('ship.cancelTitle', { n: s.number })} onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>{t('ship.keepIt')}</button><button className="btn btn-danger" disabled={busy || reason.trim().length < 3} onClick={async () => { setBusy(true); await onConfirm(reason.trim()); setBusy(false); }}>{t('ship.cancelNotice')}</button></>}>
+      <p>{t('ship.cancelExplain')}</p>
+      <div className="field"><label htmlFor="cs-reason">{t('common.reason')}</label><input id="cs-reason" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
     </Modal>
   );
 }
@@ -317,19 +319,19 @@ export function SupplierCollab({ poId, currency, open, onFlash }: { poId: string
   return (
     <>
       {err && <Alert kind="error">{err}</Alert>}
-      {c.asnRequired && canShip && <Alert kind="info">The buyer needs a shipment notice for every delivery on this order. Send one when the goods leave.</Alert>}
-      <ShipmentsCard shipments={c.shipments} onCancel={setCancel} action={canShip ? <button className="btn btn-secondary btn-sm" onClick={() => setModal('ship')}>Create shipment notice</button> : undefined} />
+      {c.asnRequired && canShip && <Alert kind="info">{t('ship.asnRequired')}</Alert>}
+      <ShipmentsCard shipments={c.shipments} onCancel={setCancel} action={canShip ? <button className="btn btn-secondary btn-sm" onClick={() => setModal('ship')}>{t('ship.create')}</button> : undefined} />
       {(canInvoice || c.invoices.length > 0) && (
         <section className="card section-card">
-          <div className="toolbar"><h3>Invoices</h3>{canInvoice && <button className="btn btn-secondary btn-sm" onClick={() => setModal('invoice')}>Raise invoice</button>}</div>
-          {c.invoices.length ? <InvoicesTable rows={c.invoices} base="/vendor/invoices" showPo={false} /> : <p className="muted small pad">No invoices yet.</p>}
+          <div className="toolbar"><h3>{t('inv.sectionTitle')}</h3>{canInvoice && <button className="btn btn-secondary btn-sm" onClick={() => setModal('invoice')}>{t('inv.raise')}</button>}</div>
+          {c.invoices.length ? <InvoicesTable rows={c.invoices} base="/vendor/invoices" showPo={false} /> : <p className="muted small pad">{t('inv.noneYet')}</p>}
         </section>
       )}
-      {modal === 'ship' && <ShipModal poId={poId} lines={c.shippable} onClose={() => setModal(undefined)} onDone={(n) => { setModal(undefined); onFlash(`Shipment notice ${n} sent to the buyer.`); load(); }} />}
+      {modal === 'ship' && <ShipModal poId={poId} lines={c.shippable} onClose={() => setModal(undefined)} onDone={(n) => { setModal(undefined); onFlash(t('ship.sentFlash', { n })); load(); }} />}
       {modal === 'invoice' && <InvoiceModal poId={poId} currency={currency} lines={c.invoiceable} shipments={c.shipments} einvoice={c.einvoice} tolerance={c.priceTolerancePct} onClose={() => setModal(undefined)}
-        onDone={(st) => { setModal(undefined); onFlash(st === 'EXCEPTION' ? 'Invoice submitted. It doesn’t match the order exactly, so the buyer will review it.' : 'Invoice submitted. It matches the order and is with the buyer for approval.'); load(); }} />}
+        onDone={(st) => { setModal(undefined); onFlash(st === 'EXCEPTION' ? t('inv.submittedException') : t('inv.submittedClean')); load(); }} />}
       {cancel && <CancelShipmentModal s={cancel} onClose={() => setCancel(undefined)} onConfirm={async (reason) => {
-        try { await api(`/vendor/collab/shipments/${cancel.id}/cancel`, { body: { reason } }); setCancel(undefined); onFlash(`Shipment notice ${cancel.number} cancelled.`); load(); } catch (e: any) { setCancel(undefined); setErr(e.message); }
+        try { await api(`/vendor/collab/shipments/${cancel.id}/cancel`, { body: { reason } }); setCancel(undefined); onFlash(t('ship.cancelledFlash', { n: cancel.number })); load(); } catch (e: any) { setCancel(undefined); setErr(e.message); }
       }} />}
     </>
   );

@@ -2,6 +2,8 @@
  * VendorGate brand pieces, matching the Integrata identity: the "VendorGate" wordmark (Philosopher Bold,
  * Integrata navy with the red dot from the Integrata "i") and the "Powered by Integratatech.ai Pvt Ltd" line.
  */
+import { t } from '../i18n';
+
 export const PRODUCT = 'VendorGate';
 export const COMPANY = 'Integratatech.ai Pvt Ltd';
 export const COMPANY_URL = 'https://integratatech.ai';
@@ -20,9 +22,9 @@ export function ProductName({ name, light }: { name?: string | null; light?: boo
 export function PoweredBy({ light, compact, className = '' }: { light?: boolean; compact?: boolean; className?: string }) {
   return (
     <a className={`powered-by${light ? ' light' : ''}${compact ? ' compact' : ''} ${className}`} href={COMPANY_URL} target="_blank" rel="noopener noreferrer"
-      title={`${PRODUCT} is a product of ${COMPANY}`}>
+      title={t('brand.productOf', { product: PRODUCT, company: COMPANY })}>
       <img src="/brand/integrata-mark.png" alt="" className="pb-mark" />
-      {!compact && <span>Powered by <Wordmark light={light} /> · {COMPANY}</span>}
+      {!compact && <span>{t('brand.poweredBy')} <Wordmark light={light} /> · <span className="ltr">{COMPANY}</span></span>}
     </a>
   );
 }

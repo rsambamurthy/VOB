@@ -15,6 +15,7 @@ import { hasFeature } from '../limits.js';
 import type { PurchaseOrder, Tenant } from '../../db/schema.js';
 import { notifySupplierOfPo, rollUp, supplierRecipients, supplierLink } from './importer.js';
 import { queueAcknowledgement } from './outbound.js';
+import { langForVendorId, mailSupplier, snippet } from '../../i18n/emails.js';
 
 const { purchaseOrders, poLines, tenants } = schema;
 const DAY = 86_400_000;
@@ -53,7 +54,9 @@ export async function acceptPurchaseOrder(tenant: Tenant, po: PurchaseOrder, lin
       link: `${env.appBaseUrl}/staff/orders/${po.id}` }).catch(() => {});
   }
   if (auto && po.vendorId) {
-    for (const r of await supplierRecipients(po.vendorId)) await sendMail({ tenantId: tenant.id, to: r.email, subject: `Purchase order ${po.poNumber} was accepted automatically`, body: `Hello ${r.name},\n\nYou didn't respond to ${what}, so it has been accepted on your behalf as agreed with ${tenant.name}.`, link: supplierLink(tenant, `/vendor/orders/${po.id}`) }).catch(() => {});
+    const lang = await langForVendorId(po.vendorId);
+    const whatL = result.po.acceptance === 'PARTIAL' ? snippet(lang, 'poWhatLines', { n: result.lines.length, po: po.poNumber }) : snippet(lang, 'poWhatWhole', { po: po.poNumber });
+    for (const r of await supplierRecipients(po.vendorId)) await mailSupplier(lang, { tenantId: tenant.id, to: r.email, link: supplierLink(tenant, `/vendor/orders/${po.id}`) }, 'poAutoAccepted', { name: r.name, po: po.poNumber, what: lang === 'en' ? what : whatL, buyer: tenant.name }).catch(() => {});
   }
   return result.po;
 }

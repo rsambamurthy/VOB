@@ -1,3 +1,4 @@
+import { gulfNoticeAr } from '../gcc/shared.js';
 /**
  * Bahrain pack (extends the Gulf pack).
  *  - Friday–Saturday weekend, Arabia Standard Time, BHD (3 decimals), +973 mobiles (8 digits, 3xxx xxxx / 6xxx xxxx).
@@ -164,7 +165,7 @@ export const bahrainPack: CountryPack = {
   documents: bhDocuments,
 
   template: bahrainTemplate,
-  privacy: { law: 'Personal Data Protection Law (Law No. 30 of 2018)', lawShort: 'PDPL', defaultNotice: bahrainNotice },
+  privacy: { law: 'Personal Data Protection Law (Law No. 30 of 2018)', lawShort: 'PDPL', defaultNotice: bahrainNotice, defaultNoticeAr: gulfNoticeAr({ lawSentence: 'ويُقدَّم هذا الإشعار وفقاً لقانون حماية البيانات الشخصية رقم 30 لسنة 2018.', abroad: 'وإذا عولجت البيانات خارج مملكة البحرين، فلا يتم ذلك إلا وفق ما يسمح به القانون.', complaint: 'كما يحق لكم تقديم شكوى إلى هيئة حماية البيانات الشخصية.' }) },
   erp: {
     domesticTaxId: (p: Profile) => s(p.tax?.vatNumber),
     domesticBlock: (p: Profile) => ({

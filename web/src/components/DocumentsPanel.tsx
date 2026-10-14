@@ -3,6 +3,8 @@ import type { DocRequirement, DocumentRow } from '../lib/types';
 import { docUrl } from '../lib/api';
 import { fmtSize, fmtDate } from '../lib/format';
 import { ExpiryBadge } from './Lifecycle';
+import { t } from '../i18n';
+import { HijriHint } from '../i18n/dates';
 
 interface Props {
   requirements: DocRequirement[];
@@ -41,7 +43,7 @@ function DocRow({ req, files, editable, onUpload, onDelete, canDelete, uploadLab
 
   async function handle(file?: File | null) {
     if (!file || !onUpload) return;
-    if (req.hasExpiry && !expiresOn) { setErr('Enter the “valid until” date first.'); if (input.current) input.current.value = ''; return; }
+    if (req.hasExpiry && !expiresOn) { setErr(t('docs.enterValidUntil')); if (input.current) input.current.value = ''; return; }
     setErr(''); setBusy(true);
     try { await onUpload(req.type, file, req.hasExpiry ? expiresOn : undefined); setExpiresOn(''); }
     finally { setBusy(false); if (input.current) input.current.value = ''; }
@@ -50,7 +52,7 @@ function DocRow({ req, files, editable, onUpload, onDelete, canDelete, uploadLab
   return (
     <div className={`doc-row ${missing ? 'doc-missing' : ''}`}>
       <div className="doc-info">
-        <div className="doc-title">{req.label}{req.isRequired ? <span className="req"> *</span> : <span className="muted small"> (optional)</span>}</div>
+        <div className="doc-title">{req.label}{req.isRequired ? <span className="req"> *</span> : <span className="muted small"> {t('docs.optional')}</span>}</div>
         {req.help && <div className="field-help">{req.help}</div>}
         {files.map((f) => {
           const old = f.status === 'SUPERSEDED' || f.status === 'REJECTED';
@@ -59,15 +61,15 @@ function DocRow({ req, files, editable, onUpload, onDelete, canDelete, uploadLab
               <span className="file-icon" aria-hidden>{f.mimeType === 'application/pdf' ? 'PDF' : 'IMG'}</span>
               <a href={docUrl(f.id)} target="_blank" rel="noreferrer">{f.fileName}</a>
               <span className="muted small">{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</span>
-              {f.status === 'PENDING' && <span className="badge step-pending" title="Takes effect once the change is approved">{f.changeRequestId ? 'Awaiting approval' : 'New — not yet submitted'}</span>}
-              {f.status === 'SUPERSEDED' && <span className="badge">Replaced</span>}
-              {f.status === 'REJECTED' && <span className="badge step-rejected">Not accepted</span>}
+              {f.status === 'PENDING' && <span className="badge step-pending" title={t('docs.takesEffect')}>{f.changeRequestId ? t('docs.awaitingApproval') : t('docs.notSubmitted')}</span>}
+              {f.status === 'SUPERSEDED' && <span className="badge">{t('docs.replaced')}</span>}
+              {f.status === 'REJECTED' && <span className="badge step-rejected">{t('docs.notAccepted')}</span>}
               {!old && <ExpiryBadge on={f.expiresOn} />}
-              {(canDelete ? canDelete(f) : editable) && onDelete && <button type="button" className="link-btn danger small" onClick={() => onDelete(f.id)}>Remove</button>}
+              {(canDelete ? canDelete(f) : editable) && onDelete && <button type="button" className="link-btn danger small" onClick={() => onDelete(f.id)}>{t('common.remove')}</button>}
             </div>
           );
         })}
-        {!files.length && !editable && <div className="muted small">Not uploaded</div>}
+        {!files.length && !editable && <div className="muted small">{t('docs.notUploaded')}</div>}
       </div>
       {editable && (
         <div
@@ -77,15 +79,16 @@ function DocRow({ req, files, editable, onUpload, onDelete, canDelete, uploadLab
           onDrop={(e) => { e.preventDefault(); setDrag(false); handle(e.dataTransfer.files[0]); }}
         >
           {req.hasExpiry && (
-            <label className="expiry-input small">Valid until <span className="req">*</span>
-              <input type="date" className="input input-sm" min={today()} value={expiresOn} onChange={(e) => { setExpiresOn(e.target.value); setErr(''); }} aria-label={`${req.label} valid until`} />
+            <label className="expiry-input small">{t('docs.validUntil')} <span className="req">*</span>
+              <input type="date" className="input input-sm" min={today()} value={expiresOn} onChange={(e) => { setExpiresOn(e.target.value); setErr(''); }} aria-label={t('docs.validUntilFor', { doc: req.label })} />
+              <HijriHint date={expiresOn} />
             </label>
           )}
-          <input ref={input} type="file" accept=".pdf,.png,.jpg,.jpeg" hidden onChange={(e) => handle(e.target.files?.[0])} aria-label={`Upload ${req.label}`} />
-          <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => (req.hasExpiry && !expiresOn ? setErr('Enter the “valid until” date first.') : input.current?.click())}>
-            {busy ? 'Uploading…' : uploadLabel ?? (files.length ? 'Add another' : 'Upload')}
+          <input ref={input} type="file" accept=".pdf,.png,.jpg,.jpeg" hidden onChange={(e) => handle(e.target.files?.[0])} aria-label={t('docs.uploadFor', { doc: req.label })} />
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => (req.hasExpiry && !expiresOn ? setErr(t('docs.enterValidUntil')) : input.current?.click())}>
+            {busy ? t('docs.uploading') : uploadLabel ?? (files.length ? t('docs.addAnother') : t('docs.upload'))}
           </button>
-          {err ? <span className="small err-text">{err}</span> : <span className="muted small">or drop file · PDF/JPG/PNG · max 5 MB</span>}
+          {err ? <span className="small err-text">{err}</span> : <span className="muted small">{t('docs.dropHint')}</span>}
         </div>
       )}
     </div>

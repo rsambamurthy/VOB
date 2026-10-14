@@ -1,12 +1,13 @@
 import { useEffect, type ReactNode } from 'react';
 import type { StepStatus, VendorStatus } from '../lib/types';
 import { statusLabel, stepLabel } from '../lib/format';
+import { getLang, t } from '../i18n';
 
 export function StatusBadge({ status }: { status: VendorStatus }) {
-  return <span className={`badge badge-${status.toLowerCase()}`}>{statusLabel[status]}</span>;
+  return <span className={`badge badge-${status.toLowerCase()}`}>{getLang() === 'en' ? statusLabel[status] : t(`status.${status}`)}</span>;
 }
 export function StepBadge({ status }: { status: StepStatus }) {
-  return <span className={`badge step-${status.toLowerCase()}`}>{stepLabel[status]}</span>;
+  return <span className={`badge step-${status.toLowerCase()}`}>{getLang() === 'en' ? stepLabel[status] : t(`step.${status}`)}</span>;
 }
 
 export function Modal({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {

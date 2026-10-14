@@ -1,4 +1,6 @@
 import type { StepStatus, VendorStatus } from './types';
+import { getLang } from '../i18n';
+import { arabicDate } from '../i18n/dates';
 
 export const statusLabel: Record<VendorStatus, string> = {
   INVITED: 'Invited', IN_PROGRESS: 'In progress', UNDER_REVIEW: 'Under review', SENT_BACK: 'Sent back', APPROVED: 'Approved', REJECTED: 'Rejected',
@@ -29,8 +31,8 @@ export const num = (n: number, opts?: Intl.NumberFormatOptions) => n.toLocaleStr
 export const money = (v: string | number | null | undefined, cur = current.currency) =>
   v === null || v === undefined ? '—' : new Intl.NumberFormat(current.locale, { style: 'currency', currency: cur }).format(Number(v));
 
-export const fmtDate = (s?: string | null) => (s ? new Date(s).toLocaleDateString(loc(), { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
-export const fmtDateTime = (s?: string | null) => (s ? new Date(s).toLocaleString(loc(), { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+export const fmtDate = (s?: string | null) => (!s ? '—' : getLang() === 'ar' ? arabicDate(s) : new Date(s).toLocaleDateString(loc(), { day: '2-digit', month: 'short', year: 'numeric' }));
+export const fmtDateTime = (s?: string | null) => (!s ? '—' : getLang() === 'ar' ? arabicDate(s, true) : new Date(s).toLocaleString(loc(), { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }));
 export const fmtSize = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 export const humanize = (s: string) => s.toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 

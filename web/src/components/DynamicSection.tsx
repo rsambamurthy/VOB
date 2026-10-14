@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { FieldDef, Profile, SectionDef } from '../lib/types';
 import { conditionHolds, isRequired } from '../lib/conditions';
+import { t } from '../i18n';
 
 interface Props {
   section: SectionDef;
@@ -34,7 +35,7 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
                   <div key={f.key} className={`field ${wide ? 'field-wide' : ''} ${err ? 'has-error' : ''}`}>
                     <label htmlFor={f.type === 'radio' ? undefined : id} id={`${id}-label`}>{f.label}{req && <span className="req" aria-hidden> *</span>}</label>
                     {readOnly ? (
-                      <div className="ro-value"><span dir={f.dir}>{value || <span className="muted">—</span>}</span> {extra?.(f)}</div>
+                      <div className="ro-value"><span dir={f.dir ?? 'auto'}>{value ? optionLabel(f, value) : <span className="muted">—</span>}</span> {extra?.(f)}</div>
                     ) : (
                       <div className="control-row">
                         <Control f={f} id={id} value={value} onChange={(v) => onChange?.(f.key, v)} invalid={!!err} />
@@ -54,21 +55,22 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
 }
 
 function Control({ f, id, value, onChange, invalid }: { f: FieldDef; id: string; value: string; onChange: (v: string) => void; invalid: boolean }) {
-  const common = { id, name: id, 'aria-invalid': invalid || undefined, dir: f.dir } as const;
+  // Typed values follow their own direction (an English address stays left-to-right in the Arabic form).
+  const common = { id, name: id, 'aria-invalid': invalid || undefined, dir: f.dir ?? (f.type === 'text' || f.type === 'textarea' ? 'auto' : undefined) } as const;
   if (f.type === 'select') {
     return (
       <select {...common} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Select…</option>
-        {f.options?.map((o) => <option key={o} value={o}>{o}</option>)}
+        <option value="">{t('form.select')}</option>
+        {f.options?.map((o, i) => <option key={o} value={o}>{f.optionLabels?.[i] || o}</option>)}
       </select>
     );
   }
   if (f.type === 'radio') {
     return (
       <div className="radio-row" role="radiogroup" aria-labelledby={`${id}-label`} id={id}>
-        {f.options?.map((o) => (
+        {f.options?.map((o, i) => (
           <label key={o} className="radio">
-            <input type="radio" name={id} value={o} checked={value === o} onChange={() => onChange(o)} /> {o}
+            <input type="radio" name={id} value={o} checked={value === o} onChange={() => onChange(o)} /> {f.optionLabels?.[i] || o}
           </label>
         ))}
       </div>
@@ -81,3 +83,6 @@ function Control({ f, id, value, onChange, invalid }: { f: FieldDef; id: string;
       onChange={(e) => onChange(e.target.value)} autoComplete="off" />
   );
 }
+
+/** The shown text for a stored choice (the buyer's Arabic wording when the form is in Arabic). */
+const optionLabel = (f: FieldDef, value: string) => { const i = f.options?.indexOf(value) ?? -1; return (i >= 0 && f.optionLabels?.[i]) || value; };

@@ -39,6 +39,21 @@ How long we keep it: while you are an active supplier and afterwards for as long
 Your rights: you can ask for access to your data, correct it (request a change in this portal), object to processing, and ask us to delete it where it is no longer needed. Some records of approved suppliers must be kept by law even after a deletion request.${o.complaint ? ` ${o.complaint}` : ''}${contactEmail ? `\n\nContact for data protection questions: ${contactEmail}` : ''}`;
 }
 
+/** The same notice in Arabic. */
+export function gulfNoticeAr(o: { lawSentence: string; abroad: string; complaint?: string }) {
+  return (company: string, contactEmail?: string) => `تجمع ${company} («نحن») المعلومات الواردة في هذا التسجيل لتقييمكم كمورد، وتسجيلكم في أنظمة المشتريات والمدفوعات لدينا، والسداد لكم، والوفاء بالتزاماتنا النظامية والضريبية.${o.lawSentence ? ` ${o.lawSentence}` : ''}
+
+ما نجمعه: بيانات الشركة وجهات الاتصال، والسجل التجاري، وبيانات الرخص والضرائب، وأسماء الملاك وجنسياتهم ونسب ملكيتهم، والبيانات المصرفية، والمعلومات المالية ومعلومات المخاطر، والمستندات التي ترفعونها.
+
+الغرض: تقييمكم وتسجيلكم كمورد والسداد لكم (تنفيذاً لعقد معكم)، والوفاء بالتزاماتنا النظامية، بما في ذلك فحص قوائم العقوبات ومكافحة غسل الأموال.
+
+التحقق والمشاركة: قد يتم التحقق من التسجيلات لدى الجهات الحكومية ومقدمي خدمات التحقق، وتُفحص الأسماء مقابل قوائم العقوبات. وقد تُقرأ المستندات المرفوعة آلياً لتعبئة النموذج مسبقاً. وتُرسل بيانات الموردين المعتمدين إلى نظام تخطيط الموارد / النظام المحاسبي لدينا. ${o.abroad} ولا نبيع بياناتكم.
+
+مدة الاحتفاظ: طوال فترة كونكم مورداً نشطاً، وبعدها للمدة التي تتطلبها أنظمة الضرائب وحفظ السجلات التجارية. وتُحذف التسجيلات المرفوضة أو غير المكتملة بعد مدة محددة.
+
+حقوقكم: يحق لكم طلب الاطلاع على بياناتكم، وتصحيحها (بتقديم طلب تعديل في هذه البوابة)، والاعتراض على معالجتها، وطلب حذفها متى انتفت الحاجة إليها. ويلزم النظام الاحتفاظ ببعض سجلات الموردين المعتمدين حتى بعد طلب الحذف.${o.complaint ? ` ${o.complaint}` : ''}${contactEmail ? `\n\nللاستفسارات المتعلقة بحماية البيانات: ${contactEmail}` : ''}`;
+}
+
 /** Test-mode provider for registry lookups: numbers whose last digit is 0 come back "not found". */
 export function registryMock(kinds: Record<string, { source: string; field: string }>) {
   return {

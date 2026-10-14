@@ -57,6 +57,7 @@ export const gccPack: CountryPack = {
   code: 'GCC',
   name: 'Gulf',
   locale: 'en-GB',
+  languages: ['en', 'ar'],
   weekend: [5, 6],
   skipWeekendsByDefault: true,
   checks: [sanctionsCheck, ibanCheck],

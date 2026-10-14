@@ -51,7 +51,7 @@ export const isHomeCountry = (code: string) => homeCountries().some((c) => c.cod
 /** What the web app needs to format numbers and dates for a workspace. */
 export function localeFor(code?: string | null) {
   const p = packFor(code ?? DEFAULT_HOME);
-  return { country: p.code, countryName: p.name, currency: p.currency ?? 'USD', locale: p.locale ?? 'en-GB', weekend: p.weekend ?? [0, 6], privacyLaw: p.privacy?.lawShort || null, mobileExample: p.mobile?.example ?? '+44 7700 900123', vendorTypes: vendorTypesFor(code) };
+  return { country: p.code, countryName: p.name, currency: p.currency ?? 'USD', locale: p.locale ?? 'en-GB', weekend: p.weekend ?? [0, 6], privacyLaw: p.privacy?.lawShort || null, mobileExample: p.mobile?.example ?? '+44 7700 900123', vendorTypes: vendorTypesFor(code), supplierLanguages: p.languages ?? ['en'] };
 }
 
 /** The three vendor types, named for the workspace's market. */

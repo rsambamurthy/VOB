@@ -128,7 +128,7 @@ export function ConfigEditor() {
         {tab === 'form' && <FormTab config={working} update={update} meta={state.meta} publishedIds={publishedIds} issues={issues} sectionKey={sectionKey} setSectionKey={setSectionKey} />}
         {tab === 'documents' && <DocumentsTab config={working} update={update} meta={state.meta} issues={issues} />}
         {tab === 'workflow' && <WorkflowTab config={working} update={update} meta={state.meta} roles={state.roles} issues={issues} />}
-        {tab === 'guide' && <GuideTab config={working} update={update} />}
+        {tab === 'guide' && <GuideTab config={working} update={update} meta={state.meta} />}
         {tab === 'history' && <HistoryTab versions={state.versions} onRestore={restore} onPreview={previewVersion} />}
       </div>
 

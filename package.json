@@ -20,6 +20,9 @@
     "test": "npm run -w server test",
     "tenant:create": "npm run -w server tenant:create --",
     "platform:admin": "npm run -w server platform:admin --",
+    "i18n:export": "npm run -w server i18n:export --",
+    "i18n:import": "npm run -w server i18n:import --",
+    "i18n:check": "npm run -w server i18n:check",
     "test:e2e": "npm run build && playwright test",
     "typecheck": "tsc --noEmit -p server && tsc --noEmit -p web"
   },

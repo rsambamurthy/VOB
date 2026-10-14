@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../../../components/ui';
 import type { ConfigIssue, DocRequirement, OnboardingConfig } from '../../../lib/types';
-import { RulePicker, fieldCatalog, move, ruleSummary, toKey, type EditorMeta, type Update } from './shared';
+import { ArInput, type EditorMeta, RulePicker, type Update, fieldCatalog, move, ruleSummary, setAr, toKey } from './shared';
 
 export function DocumentsTab({ config, update, meta, issues }: { config: OnboardingConfig; update: Update; meta: EditorMeta; issues: ConfigIssue[] }) {
   const [editing, setEditing] = useState<number | 'new'>();
@@ -36,7 +36,7 @@ export function DocumentsTab({ config, update, meta, issues }: { config: Onboard
         <div className="pad-sm"><button className="btn btn-secondary btn-sm" onClick={() => setEditing('new')}>+ Add document</button></div>
       </div>
       {editing !== undefined && (
-        <DocModal doc={editing === 'new' ? undefined : config.documents[editing]} taken={config.documents.map((d) => d.type)} catalog={catalog}
+        <DocModal doc={editing === 'new' ? undefined : config.documents[editing]} taken={config.documents.map((d) => d.type)} catalog={catalog} meta={meta}
           onClose={() => setEditing(undefined)}
           onSave={(d) => { update((c) => { if (editing === 'new') c.documents.push(d); else c.documents[editing] = d; }); setEditing(undefined); }} />
       )}
@@ -44,7 +44,7 @@ export function DocumentsTab({ config, update, meta, issues }: { config: Onboard
   );
 }
 
-function DocModal({ doc, taken, catalog, onClose, onSave }: { doc?: DocRequirement; taken: string[]; catalog: ReturnType<typeof fieldCatalog>; onClose: () => void; onSave: (d: DocRequirement) => void }) {
+function DocModal({ doc, taken, catalog, meta, onClose, onSave }: { doc?: DocRequirement; taken: string[]; catalog: ReturnType<typeof fieldCatalog>; meta: EditorMeta; onClose: () => void; onSave: (d: DocRequirement) => void }) {
   const [d, setD] = useState<DocRequirement>(doc ? structuredClone(doc) : { type: '', label: '' });
   const [error, setError] = useState<string>();
   const others = taken.filter((t) => t !== doc?.type);
@@ -70,6 +70,14 @@ function DocModal({ doc, taken, catalog, onClose, onSave }: { doc?: DocRequireme
         <label className="check-item field-wide"><input type="checkbox" checked={!!d.hasExpiry} onChange={(e) => setD({ ...d, hasExpiry: e.target.checked })} /><span><strong>Track expiry date</strong><span className="muted small block">Vendors enter a valid-until date; reminders arrive before it lapses.</span></span></label>
         {d.hasExpiry && <label className="check-item field-wide"><input type="checkbox" checked={!!d.holdOnExpiry} onChange={(e) => setD({ ...d, holdOnExpiry: e.target.checked })} /><span><strong>Put the vendor on hold when it lapses</strong><span className="muted small block">Payments are held (the ERP is told) until a renewed document is approved; the hold then lifts by itself.</span></span></label>}
       </div>
+      {meta.arabic && (
+        <fieldset className="group ar-group"><legend>Arabic (supplier portal)</legend>
+          <div className="field-grid">
+            <ArInput id="de-ar-label" label="Document name" meta={meta} english={d.label} value={d.tr?.ar?.label} onChange={(v) => setD(setAr({ ...d }, 'label', v))} />
+            <ArInput id="de-ar-help" label="Help text" meta={meta} english={d.help} value={d.tr?.ar?.help} onChange={(v) => setD(setAr({ ...d }, 'help', v))} />
+          </div>
+        </fieldset>
+      )}
       <RulePicker label="Required" value={d.required} allowNever onChange={(v) => setD({ ...d, required: v })} catalog={catalog} />
       <RulePicker label="Show this document" value={d.showIf} onChange={(v) => setD({ ...d, showIf: v && typeof v === 'object' ? v : undefined })} catalog={catalog} />
     </Modal>

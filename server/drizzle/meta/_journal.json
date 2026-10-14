@@ -113,6 +113,13 @@
       "when": 1791964992109,
       "tag": "0015_shipment_overdue",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791967000912,
+      "tag": "0016_supplier_language",
+      "breakpoints": true
     }
   ]
 }

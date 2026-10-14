@@ -22,7 +22,10 @@
     "test:watch": "vitest",
     "smoke": "tsx scripts/smoke.ts",
     "db:setup": "tsx src/db/setup.ts",
-    "e2e:start": "tsx src/db/e2eStart.ts"
+    "e2e:start": "tsx src/db/e2eStart.ts",
+    "i18n:export": "tsx scripts/i18n.ts export",
+    "i18n:import": "tsx scripts/i18n.ts import",
+    "i18n:check": "tsx scripts/i18n.ts check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

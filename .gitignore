@@ -8,3 +8,4 @@ backups/
 server/uploads-e2e/
 playwright-report/
 test-results/
+translations-ar*.csv

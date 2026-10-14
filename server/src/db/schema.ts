@@ -90,13 +90,15 @@ export interface TenantSettings {
   /** Where vendor sign-in codes go. */
   vendorOtpChannel?: 'email' | 'sms' | 'both';
   /** DPDP privacy notice shown to vendors; changing the text bumps the version and asks vendors to accept again. */
-  privacy?: { version: number; text: string; contactEmail?: string; updatedAt?: string };
+  privacy?: { version: number; text: string; textAr?: string; contactEmail?: string; updatedAt?: string };
   /** Days after which vendor data is anonymised: rejected registrations, and ones abandoned before submitting (0 = keep). */
   retention?: { rejectedDays: number; abandonedDays: number };
   /** Answer F1 help questions with AI (from the help articles only). Default on. */
   helpAi?: boolean;
   /** Invoice matching: allowed difference in unit price (%) before an invoice is flagged. Default 2. */
   priceTolerancePct?: number;
+  /** Language new suppliers get in the portal and emails, where the country offers more than one. */
+  supplierLanguage?: 'en' | 'ar';
   /** India: suppliers registered for GST must give the e-invoice IRN (flagged when missing). */
   einvoiceRequired?: boolean;
   /** Set once the workspace admin has confirmed (or changed) the home country; after that it is fixed. */
@@ -239,6 +241,8 @@ export const vendors = pgTable('vendors', {
   /** Set when email to the contact bounces or is marked as spam (Resend webhook); cleared when the address changes. */
   emailBouncedAt: timestamp('email_bounced_at', { withTimezone: true }),
   emailBounceReason: text('email_bounce_reason'),
+  /** Supplier portal and email language (en · ar); null = the workspace default. */
+  language: text('language'),
   /** Next periodic re-verification (set on approval from the workspace's re-check interval). */
   nextReviewAt: timestamp('next_review_at', { withTimezone: true }),
   lastReviewAt: timestamp('last_review_at', { withTimezone: true }),

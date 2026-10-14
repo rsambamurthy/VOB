@@ -20,6 +20,8 @@ import { checkInputs, checksForVendor, inputsComplete, isKeyChange } from '../co
 import { pushLater } from '../integrations/erp/index.js';
 import { addWorkingHours, calendarFor } from '../lib/calendar.js';
 import type { OnboardingConfig } from '../config/types.js';
+import { langForVendor, mailDate, mailSupplier, snippet } from '../i18n/emails.js';
+import { arLabel } from '../i18n/index.js';
 
 const { vendors, documents, changeRequests, changeRequestSteps, roles, tenants, users, userRoles } = schema;
 const DAY = 86_400_000;
@@ -113,8 +115,9 @@ export async function submitChangeRequest(vendor: Vendor, input: { changes: Reco
   await audit({ tenantId: vendor.tenantId, vendorId: vendor.id, actor: by?.name ?? vendor.contactEmail, action: by ? 'CHANGE_PROPOSED' : 'CHANGE_REQUESTED', detail: { fields: diff.map((d) => d.fieldId).join(', '), documents: pendingDocs.length, ...(by ? { reason: input.note } : {}) }, ip });
   if (by) {
     const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, vendor.tenantId) });
-    await sendMail({ tenantId: vendor.tenantId, to: vendor.contactEmail, subject: `${tenant?.name ?? 'Your buyer'} is updating your registered details`,
-      body: `Dear ${vendor.contactFirstName},\n\n${tenant?.name ?? 'Your buyer'} has proposed an update to ${vendor.name}'s registered details:\n\n${diff.map((d) => `- ${d.label}`).join('\n') || '- New / renewed documents'}\n\nReason: ${input.note}\n\nIt will take effect after internal approval. If this is not expected, reply to this email or contact the buyer.`, link: portalUrl(vendor) });
+    const lang = await langForVendor(vendor, tenant);
+    await mailSupplier(lang, { tenantId: vendor.tenantId, to: vendor.contactEmail, link: portalUrl(vendor) }, 'buyerUpdating', { first: vendor.contactFirstName, buyer: tenant?.name ?? (lang === 'ar' ? 'المشتري' : 'Your buyer'), vendor: vendor.name, reason: input.note,
+      changes: diff.map((d) => `- ${lang === 'ar' ? arLabel(d.label) : d.label}`).join('\n') || snippet(lang, 'newDocuments') });
   }
 
   // Fraud controls for bank changes: run a penny-drop on the new account and alert the registered contact.
@@ -125,8 +128,7 @@ export async function submitChangeRequest(vendor: Vendor, input: { changes: Reco
       if (!inputsComplete(def, input)) continue;
       await runKyc({ ...vendor, profile: proposed }, def.kind, input, 'system (bank change)').catch((e) => logger.warn({ err: e }, 'bank check on change failed'));
     }
-    await sendMail({ tenantId: vendor.tenantId, to: vendor.contactEmail, subject: 'Security notice: bank details change requested',
-      body: `Dear ${vendor.contactFirstName},\n\nA request to change the bank account registered for ${vendor.name} was submitted on the supplier portal. It will only take effect after review.\n\nIf you did not make this request, reply to this email or contact the buyer immediately.`, link: portalUrl(vendor) });
+    await mailSupplier(await langForVendor(vendor), { tenantId: vendor.tenantId, to: vendor.contactEmail, link: portalUrl(vendor) }, 'bankChange', { first: vendor.contactFirstName, vendor: vendor.name });
   }
   await activate(steps[0], vendor);
   return cr;
@@ -157,8 +159,7 @@ export async function decideChange(tenantId: string, crId: string, actor: { id: 
     await db.update(changeRequestSteps).set({ status: 'CANCELLED' }).where(and(eq(changeRequestSteps.changeRequestId, cr.id), eq(changeRequestSteps.status, 'WAITING')));
     await db.update(changeRequests).set({ status: 'REJECTED', remarks, decidedAt: now }).where(eq(changeRequests.id, cr.id));
     await db.update(documents).set({ status: 'REJECTED' }).where(eq(documents.changeRequestId, cr.id));
-    if (!cr.raisedById) await sendMail({ tenantId, to: vendor.contactEmail, subject: 'Your change request was not approved',
-      body: `Dear ${vendor.contactFirstName},\n\nYour requested change to ${vendor.name}'s details was not approved.\n\nReason: ${remarks}\n\nYour existing details remain in effect.`, link: portalUrl(vendor) });
+    if (!cr.raisedById) await mailSupplier(await langForVendor(vendor), { tenantId, to: vendor.contactEmail, link: portalUrl(vendor) }, 'crRejected', { first: vendor.contactFirstName, vendor: vendor.name, remarks });
     return { status: 'REJECTED' as const };
   }
   const next = steps.find((s) => s.level === current.level + 1);
@@ -166,10 +167,9 @@ export async function decideChange(tenantId: string, crId: string, actor: { id: 
   await applyChange(cr, vendor);
   await db.update(changeRequests).set({ status: 'APPROVED', remarks: remarks || null, decidedAt: now }).where(eq(changeRequests.id, cr.id));
   await audit({ tenantId, vendorId: vendor.id, actor: 'system', action: 'CHANGE_APPLIED', detail: { fields: cr.changes.map((c) => c.fieldId).join(', ') } });
-  await sendMail({ tenantId, to: vendor.contactEmail, subject: cr.raisedById ? 'Your registered details have been updated' : 'Your change request was approved',
-    body: cr.raisedById
-      ? `Dear ${vendor.contactFirstName},\n\nThe update to ${vendor.name}'s registered details is now in effect:\n\n${cr.changes.map((c) => `- ${c.label}`).join('\n') || '- New / renewed documents'}\n\nIf anything looks wrong, contact the buyer.`
-      : `Dear ${vendor.contactFirstName},\n\nThe changes you requested to ${vendor.name}'s details have been approved and are now in effect.` });
+  const crLang = await langForVendor(vendor);
+  await mailSupplier(crLang, { tenantId, to: vendor.contactEmail }, cr.raisedById ? 'crAppliedByBuyer' : 'crApproved', { first: vendor.contactFirstName, vendor: vendor.name,
+    changes: cr.changes.map((c) => `- ${crLang === 'ar' ? arLabel(c.label) : c.label}`).join('\n') || snippet(crLang, 'newDocuments') });
   return { status: 'APPROVED' as const };
 }
 
@@ -265,9 +265,7 @@ export async function setBlocked(tenantId: string, vendorId: string, block: bool
   await audit({ tenantId, vendorId, actor: actor.name, action: block ? 'VENDOR_BLOCKED' : 'VENDOR_UNBLOCKED', detail: { reason }, ip });
   await pushLater(tenantId, vendorId, block ? 'BLOCK' : 'UNBLOCK', actor.name);
   if (notifyVendor) {
-    await sendMail({ tenantId, to: v.contactEmail, subject: block ? 'Your vendor account has been put on hold' : 'Your vendor account is active again',
-      body: block ? `Dear ${v.contactFirstName},\n\n${v.name}'s vendor account has been put on hold. New orders and payments may be paused.\n\nReason: ${reason}\n\nPlease contact us if you have questions.`
-        : `Dear ${v.contactFirstName},\n\n${v.name}'s vendor account is active again.` });
+    await mailSupplier(await langForVendor(v), { tenantId, to: v.contactEmail }, block ? 'blocked' : 'unblocked', { first: v.contactFirstName, vendor: v.name, reason });
   }
 }
 
@@ -286,8 +284,8 @@ export async function holdForExpiry(v: Vendor, label: string, expiredOn: string)
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'system (document expiry)', action: 'VENDOR_HELD_EXPIRY', detail: { document: label, expiredOn } });
   if (fresh.blockedAt) return;
   await pushLater(v.tenantId, v.id, 'BLOCK', 'system (document expiry)');
-  await sendMail({ tenantId: v.tenantId, to: v.contactEmail, subject: `Your vendor account is on hold: ${label} expired`,
-    body: `Dear ${v.contactFirstName},\n\nThe ${label} for ${v.name} expired on ${expiredOn}, so the account has been put on hold and payments may be paused.\n\nSign in, upload the renewed document and send it for review. The hold is lifted as soon as it is approved.`, link: portalUrl(v) });
+  const holdLang = await langForVendor(v);
+  await mailSupplier(holdLang, { tenantId: v.tenantId, to: v.contactEmail, link: portalUrl(v) }, 'holdExpiry', { first: v.contactFirstName, vendor: v.name, doc: holdLang === 'ar' ? arLabel(label) : label, date: holdLang === 'ar' ? mailDate(expiredOn, holdLang) : expiredOn });
   for (const a of await usersWithPermission(v.tenantId, 'vendors.block')) {
     await sendMail({ tenantId: v.tenantId, to: a.email, subject: `${v.name} put on hold: ${label} expired`, body: `Hello ${a.name},\n\n${v.name} (${v.code}) was put on hold automatically because its ${label} expired on ${expiredOn}. The hold is lifted when the vendor's renewed document is approved. You can also lift it yourself from the vendor page.`, link: vendorUrl(v.id) });
   }
@@ -306,7 +304,7 @@ export async function releaseExpiryHold(vendorId: string) {
   await db.update(vendors).set({ blockedAt: null, blockedReason: null, blockedById: null, blockSource: null }).where(eq(vendors.id, v.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'system (document renewed)', action: 'VENDOR_HOLD_RELEASED', detail: { reason: v.blockedReason } });
   await pushLater(v.tenantId, v.id, 'UNBLOCK', 'system (document renewed)');
-  await sendMail({ tenantId: v.tenantId, to: v.contactEmail, subject: 'Your vendor account is active again', body: `Dear ${v.contactFirstName},\n\nThanks for sending the renewed document. ${v.name}'s vendor account is active again.` });
+  await mailSupplier(await langForVendor(v), { tenantId: v.tenantId, to: v.contactEmail }, 'holdReleased', { first: v.contactFirstName, vendor: v.name });
   return true;
 }
 
@@ -327,8 +325,9 @@ export async function runExpiryReminders(now = new Date()) {
     const { config } = await getPublished(v.tenantId);
     const label = config.documents.find((x) => x.type === d.docType)?.label ?? d.docType;
     const when = days < 0 ? `expired on ${d.expiresOn}` : `expires on ${d.expiresOn} (${days} day${days === 1 ? '' : 's'})`;
-    await sendMail({ tenantId: v.tenantId, to: v.contactEmail, subject: `${days < 0 ? 'Expired' : 'Expiring soon'}: ${label}`,
-      body: `Dear ${v.contactFirstName},\n\nThe ${label} on file for ${v.name} ${when}. Please sign in and upload the renewed document so your account stays active.`, link: portalUrl(v) });
+    const docLang = await langForVendor(v);
+    const docName = docLang === 'ar' ? (config.documents.find((x) => x.type === d.docType)?.tr?.ar?.label || arLabel(label)) : label;
+    await mailSupplier(docLang, { tenantId: v.tenantId, to: v.contactEmail, link: portalUrl(v) }, days < 0 ? 'docExpired' : 'docExpiring', { first: v.contactFirstName, vendor: v.name, doc: docName, date: docLang === 'ar' ? mailDate(d.expiresOn!, docLang) : d.expiresOn, days });
     if (flag >= 2) {
       const admins = await usersWithPermission(v.tenantId, 'vendors.create');
       for (const a of admins) await sendMail({ tenantId: v.tenantId, to: a.email, subject: `${v.name}: ${label} ${days < 0 ? 'has expired' : 'expires soon'}`, body: `Hello ${a.name},\n\nThe ${label} for ${v.name} (${v.code}) ${when}. The vendor has been reminded.`, link: vendorUrl(v.id) });
@@ -382,7 +381,7 @@ export async function reviewVendor(v: Vendor, requestedBy = 'system (periodic re
     }
   }
   if (requestedBy.startsWith('system')) {
-    await sendMail({ tenantId: v.tenantId, to: v.contactEmail, subject: 'Please confirm your registered details', body: `Dear ${v.contactFirstName},\n\nAs part of our periodic review, please sign in and confirm that ${v.name}'s registered details (address, bank account, tax registrations) are still correct, or request a change if anything is out of date.`, link: portalUrl(v) });
+    await mailSupplier(await langForVendor(v), { tenantId: v.tenantId, to: v.contactEmail, link: portalUrl(v) }, 'periodicConfirm', { first: v.contactFirstName, vendor: v.name });
   }
   return { status, problems };
 }

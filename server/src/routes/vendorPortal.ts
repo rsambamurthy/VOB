@@ -19,6 +19,7 @@ import { pendingOrderCount } from '../services/orders/queries.js';
 import { queueExtraction, extractionsFor, getExtraction } from '../integrations/ai/index.js';
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
+import { arLabel, localizeConfig, supplierLanguages, translateMessage, vendorLanguage, type Lang } from '../i18n/index.js';
 
 export const vendorRouter = Router();
 vendorRouter.use(requireVendor);
@@ -72,39 +73,58 @@ function assertEditable(status: string) {
   if (!EDITABLE.includes(status)) throw new HttpError(409, 'Your registration has been submitted and can no longer be edited');
 }
 
+/** Checklist items in the supplier's language (labels come from the localized form; messages are translated). */
+const localChecklist = <T extends { label: string; message?: string }>(items: T[], lang: Lang) =>
+  (lang === 'en' ? items : items.map((i) => ({ ...i, label: translateMessage(i.label, lang), message: i.message ? translateMessage(i.message, lang) : i.message })));
+const arLabelFor = (s: string, lang: Lang) => (lang === 'ar' ? arLabel(s) : s);
+
+/** The supplier's portal and email language (from the languages the buyer offers). */
+vendorRouter.put('/language', ah(async (req, res) => {
+  const v = await loadMine(req);
+  const { language } = z.object({ language: z.enum(['en', 'ar']) }).parse(req.body);
+  if (!supplierLanguages(vendorCtx(req).tenant).includes(language)) throw new HttpError(400, 'This language isn’t offered');
+  await db.update(vendors).set({ language }).where(eq(vendors.id, v.id));
+  res.json({ language });
+}));
+
 vendorRouter.get('/', ah(async (req, res) => {
   const v = await loadMine(req);
   const profile = v.profile as Profile;
+  const lang = vendorLanguage(vendorCtx(req).tenant, v);
   const lastSendBack = v.steps.find((s) => s.status === 'SENT_BACK' && s.cycle === v.reviewCycle);
   const { inviteToken: _t, ...rest } = v;
   // Superseded / rejected files are kept for audit but not shown to the vendor.
   const vendor = { ...rest, documents: rest.documents.filter((d) => d.status === 'ACTIVE' || (d.status === 'PENDING' && (!d.uploadedById || d.changeRequestId))).map(({ storagePath: _p, ...d }) => d) };
   const tenant = vendorCtx(req).tenant;
-  const { config } = await getPublished(tenant.id);
+  const { config: stored } = await getPublished(tenant.id);
+  // What the supplier reads is in their language; values and rules are the same.
+  const config = localizeConfig(stored, lang);
+  const tx = (s: string) => translateMessage(s, lang);
   res.json({
+    language: lang,
     // Reviewers' identities and remarks are internal; the vendor only sees level, label and status (plus send-back remarks).
-    vendor: { ...vendor, steps: v.steps.filter((s) => s.cycle === v.reviewCycle).map((s) => ({ id: s.id, cycle: s.cycle, level: s.level, label: s.label, status: s.status, actedAt: s.actedAt })) },
+    vendor: { ...vendor, steps: v.steps.filter((s) => s.cycle === v.reviewCycle).map((s) => ({ id: s.id, cycle: s.cycle, level: s.level, label: arLabelFor(s.label, lang), status: s.status, actedAt: s.actedAt })) },
     sendBackRemarks: v.status === 'SENT_BACK' ? lastSendBack?.remarks : undefined,
     config: { sections: config.sections, guide: config.guide, levels: config.workflow.levels.map((l) => l.label) },
-    checklist: buildChecklist(config, profile, activeTypes(v.documents), v.vendorType),
+    checklist: localChecklist(buildChecklist(config, profile, activeTypes(v.documents), v.vendorType), lang),
     docRequirements: visibleDocRequirements(config, profile, v.vendorType),
     editable: EDITABLE.includes(v.status),
     lifecycle: v.status === 'APPROVED' ? {
       blocked: !!v.blockedAt,
       // Held because a required document lapsed: the supplier can upload the renewal; the reason is shown.
-      hold: v.blockedAt && v.blockSource === 'EXPIRY' ? { reason: v.blockedReason } : null,
+      hold: v.blockedAt && v.blockSource === 'EXPIRY' ? { reason: v.blockedReason && lang === 'ar' ? v.blockedReason.replace(/^Expired: /, '').split('; ').map((d) => arLabelFor(d, lang)).join('؛ ') : v.blockedReason } : null,
       // Internal review outcomes stay internal; the vendor sees hold, expiry and pending-change flags.
-      flags: flagsFor(v, v.documents, !!(await openChangeRequest(v.id))).filter((f) => !f.code.startsWith('REVIEW_') && f.code !== 'EMAIL_BOUNCING'),
+      flags: flagsFor(v, v.documents, !!(await openChangeRequest(v.id))).filter((f) => !f.code.startsWith('REVIEW_') && f.code !== 'EMAIL_BOUNCING').map((f) => ({ ...f, label: tx(f.label) })),
       lastConfirmedAt: v.lastConfirmedAt, nextReviewAt: v.nextReviewAt,
-      changeRequests: (await changeRequestsForVendor(v.id)).slice(0, 5).map((cr) => ({ id: cr.id, status: cr.status, byBuyer: !!cr.raisedById, changes: cr.changes, documentIds: cr.documentIds, note: cr.note, remarks: cr.status === 'REJECTED' && !cr.raisedById ? cr.remarks : null, createdAt: cr.createdAt, decidedAt: cr.decidedAt, steps: cr.steps.map((s) => ({ id: s.id, level: s.level, label: s.label, status: s.status })) })),
+      changeRequests: (await changeRequestsForVendor(v.id)).slice(0, 5).map((cr) => ({ id: cr.id, status: cr.status, byBuyer: !!cr.raisedById, changes: cr.changes, documentIds: cr.documentIds, note: cr.note, remarks: cr.status === 'REJECTED' && !cr.raisedById ? cr.remarks : null, createdAt: cr.createdAt, decidedAt: cr.decidedAt, steps: cr.steps.map((s) => ({ id: s.id, level: s.level, label: arLabelFor(s.label, lang), status: s.status })) })),
     } : null,
-    buyer: { name: tenant.name, branding: tenant.branding, workspace: tenant.slug, ...localeFor(tenant.country) },
+    buyer: { name: tenant.name, branding: tenant.branding, workspace: tenant.slug, ...localeFor(tenant.country), languages: supplierLanguages(tenant) },
     // Internal compliance checks (sanctions screening) are run by the buyer, never shown to the supplier.
-    verifiable: checkList(tenant.country).filter((c) => c.scope !== 'home'),
+    verifiable: checkList(tenant.country).filter((c) => c.scope !== 'home').map((c) => (lang === 'en' ? c : { ...c, label: tx(c.label), buttonLabel: tx(c.buttonLabel), resultLabels: c.resultLabels && { ok: tx(c.resultLabels.ok), fail: tx(c.resultLabels.fail) } })),
     orders: hasFeature(tenant, 'collab') ? { enabled: true, pending: await pendingOrderCount(v.id) } : { enabled: false, pending: 0 },
     signedInAs: vendorCtx(req).contactEmail ?? v.contactEmail,
-    privacy: { ...noticeFor(tenant), needsConsent: needsConsent(tenant, v), consentAt: v.consentAt, consentVersion: v.consentVersion, erasureRequestedAt: v.erasureRequestedAt },
-    checks: (await latestChecks(v.id)).filter((c) => checkDef(c.kind)?.def.scope !== 'home').map(publicCheck),
+    privacy: { ...noticeFor(tenant, lang), needsConsent: needsConsent(tenant, v), consentAt: v.consentAt, consentVersion: v.consentVersion, erasureRequestedAt: v.erasureRequestedAt },
+    checks: (await latestChecks(v.id)).filter((c) => checkDef(c.kind)?.def.scope !== 'home').map((c) => { const p = publicCheck(c); return { ...p, message: tx(p.message) }; }),
     extractions: await extractionsFor(v.id, profile, config),
   });
 }));
@@ -116,12 +136,14 @@ vendorRouter.put('/profile/:section', ah(async (req, res) => {
   const { config } = await getPublished(v.tenantId);
   if (!config.sections.some((s) => s.key === key)) throw new HttpError(400, 'Unknown section');
   const data = sanitizeSection(config, key, z.record(z.unknown()).parse(req.body));
+  const lang = vendorLanguage(vendorCtx(req).tenant, v);
   const profile = { ...(v.profile as Profile), [key]: { ...((v.profile as Profile)[key] ?? {}), ...data } };
   await db.update(vendors).set({
     profile, status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status, name: key === 'basic' && data.vendorName ? String(data.vendorName) : v.name,
   }).where(eq(vendors.id, v.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'SECTION_SAVED', detail: { section: key }, ip: req.ip });
-  res.json({ checklist: buildChecklist(config, profile, activeTypes(v.documents), v.vendorType), docRequirements: visibleDocRequirements(config, profile, v.vendorType) });
+  const shown = localizeConfig(config, lang);
+  res.json({ checklist: localChecklist(buildChecklist(shown, profile, activeTypes(v.documents), v.vendorType), lang), docRequirements: visibleDocRequirements(shown, profile, v.vendorType) });
 }));
 
 vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
@@ -164,7 +186,8 @@ vendorRouter.post('/verify/:kind', ah(async (req, res) => {
   if (!found || found.def.scope === 'home' || !checkOffered(found.def, vendorCtx(req).tenant.country)) throw new HttpError(404, 'Unknown check');
   const result = await runKyc(v, kind, z.record(z.string().max(40)).parse(req.body), v.contactEmail);
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'VERIFICATION_RUN', detail: { kind, status: result.status, cached: 'cached' in result }, ip: req.ip });
-  res.json(publicCheck(result));
+  const shown = publicCheck(result);
+  res.json({ ...shown, message: translateMessage(shown.message, vendorLanguage(vendorCtx(req).tenant, v)) });
 }));
 
 /** Copy AI-read values into the form (only the fields the vendor picked, only fields this workspace has). */
@@ -185,7 +208,8 @@ vendorRouter.post('/extractions/:id/apply', ah(async (req, res) => {
   await db.update(vendors).set({ profile }).where(eq(vendors.id, v.id));
   await db.update(schema.documentExtractions).set({ appliedAt: new Date() }).where(eq(schema.documentExtractions.id, ex.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'AI_VALUES_APPLIED', detail: { fields: applied.join(', ') }, ip: req.ip });
-  res.json({ applied, checklist: buildChecklist(config, profile, activeTypes(v.documents), v.vendorType), profile });
+  const lang = vendorLanguage(vendorCtx(req).tenant, v);
+  res.json({ applied, checklist: localChecklist(buildChecklist(localizeConfig(config, lang), profile, activeTypes(v.documents), v.vendorType), lang), profile });
 }));
 
 vendorRouter.post('/submit', ah(async (req, res) => {
@@ -194,7 +218,8 @@ vendorRouter.post('/submit', ah(async (req, res) => {
   const { config } = await getPublished(v.tenantId);
   const checklist = buildChecklist(config, v.profile as Profile, activeTypes(v.documents), v.vendorType);
   if (!isSubmittable(checklist)) {
-    throw new HttpError(422, 'Please complete all required fields before submitting', checklist.filter((c) => !c.ok && c.severity === 'error'));
+    const lang = vendorLanguage(vendorCtx(req).tenant, v);
+    throw new HttpError(422, 'Please complete all required fields before submitting', localChecklist(buildChecklist(localizeConfig(config, lang), v.profile as Profile, activeTypes(v.documents), v.vendorType), lang).filter((c) => !c.ok && c.severity === 'error'));
   }
   const resubmission = v.status === 'SENT_BACK';
   // Automatic checks on submission (e.g. sanctions screening in Gulf workspaces), so reviewers see the result.

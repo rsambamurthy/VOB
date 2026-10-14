@@ -129,7 +129,9 @@ export interface CountryPack {
   /** HOME pack: starting onboarding template for new workspaces. */
   template?: () => OnboardingConfig;
   /** HOME pack: privacy law the notice is written for, and its default text. */
-  privacy?: { law: string; lawShort: string; defaultNotice: (company: string, contactEmail?: string) => string };
+  privacy?: { law: string; lawShort: string; defaultNotice: (company: string, contactEmail?: string) => string; defaultNoticeAr?: (company: string, contactEmail?: string) => string };
+  /** Languages the supplier portal offers for this home country (default: English only). */
+  languages?: ('en' | 'ar')[];
   /** ERP export. Domestic = the supplier is from the workspace's home country. */
   erp?: {
     /** Tax registration number sent as the domestic VAT/GST number. */

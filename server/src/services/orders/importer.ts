@@ -20,6 +20,7 @@ import type { PoLine, PurchaseOrder, Tenant } from '../../db/schema.js';
 import { canonicalPo, type CanonicalLine, type CanonicalPo } from './model.js';
 
 import { matchReceipts } from '../collab/shipments.js';
+import { langForVendorId, mailDate, mailSupplier, snippet } from '../../i18n/emails.js';
 const { purchaseOrders, poLines, poReceipts, legalEntities, sites, buyingGroups, supplierCodes, supplierContacts, vendors, poImports, tenants } = schema;
 const DAY = 86_400_000;
 const n4 = (v: number | undefined | null) => (v === undefined || v === null ? null : String(Math.round(v * 10000) / 10000));
@@ -52,13 +53,11 @@ const money = (v: string | number | null | undefined, cur: string, t?: Pick<Tena
 
 export async function notifySupplierOfPo(tenant: Tenant, po: PurchaseOrder, kind: 'NEW' | 'REVISED' | 'REMINDER') {
   if (!po.vendorId) return;
-  const due = po.acceptDueAt ? `If you don't respond, it will be accepted automatically on ${formatDay(po.acceptDueAt, tenant)}.` : 'Please accept it in the supplier portal; it is not accepted automatically.';
-  const subject = kind === 'NEW' ? `New purchase order ${po.poNumber} from ${tenant.name}` : kind === 'REVISED' ? `Purchase order ${po.poNumber} has been revised — please review` : `Reminder: purchase order ${po.poNumber} is waiting for your acceptance`;
-  const lead = kind === 'NEW' ? `${tenant.name} has sent you purchase order ${po.poNumber} for ${money(po.total, po.currency, tenant)}.`
-    : kind === 'REVISED' ? `${tenant.name} has revised purchase order ${po.poNumber} (revision ${po.revision}). Lines that changed need your acceptance again.`
-    : `Purchase order ${po.poNumber} for ${money(po.total, po.currency)} is still waiting for your acceptance.`;
+  const lang = await langForVendorId(po.vendorId);
+  const due = po.acceptDueAt ? snippet(lang, 'poDueAuto', { date: lang === 'ar' ? mailDate(po.acceptDueAt, lang) : formatDay(po.acceptDueAt, tenant) }) : snippet(lang, 'poDueManual');
+  const key = kind === 'NEW' ? 'poNew' : kind === 'REVISED' ? 'poRevised' : 'poReminder';
   for (const r of await supplierRecipients(po.vendorId)) {
-    await sendMail({ tenantId: tenant.id, to: r.email, subject, body: `Hello ${r.name},\n\n${lead}\n\n${due}`, link: supplierLink(tenant, `/vendor/orders/${po.id}`) });
+    await mailSupplier(lang, { tenantId: tenant.id, to: r.email, link: supplierLink(tenant, `/vendor/orders/${po.id}`) }, key, { name: r.name, buyer: tenant.name, po: po.poNumber, rev: po.revision, amount: money(po.total, po.currency, kind === 'REMINDER' ? undefined : tenant), due });
   }
 }
 

@@ -2,6 +2,8 @@
  * Fetch wrapper. Auth is by httpOnly session cookies set by the API; every request carries
  * X-Requested-With (the server's CSRF check).
  */
+import { getLang } from '../i18n';
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public details?: unknown, public code?: string) { super(message); }
 }
@@ -11,7 +13,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   const res = await fetch(`/api${path}`, {
     method: opts.method ?? (opts.body !== undefined ? 'POST' : 'GET'),
     credentials: 'same-origin',
-    headers: { 'X-Requested-With': 'fetch', ...(opts.body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { 'X-Requested-With': 'fetch', 'X-Lang': getLang(), ...(opts.body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}) },
     body: opts.body === undefined ? undefined : isForm ? (opts.body as FormData) : JSON.stringify(opts.body),
   });
   const json = await res.json().catch(() => ({}));

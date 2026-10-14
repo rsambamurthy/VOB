@@ -9,11 +9,14 @@ import { audit } from '../lib/audit.js';
 import { coreFieldsFor, CORE_SECTIONS, FIELD_TYPES, OPS, VENDOR_ATTRIBUTES, vendorTypes } from '../config/types.js';
 import { checkList, validatorList, keyChangeFields, SENSITIVE_FIELDS, vendorTypesFor } from '../countries/registry.js';
 import * as cfg from '../services/config.js';
+import { arabicDefaults, supplierLanguages } from '../i18n/index.js';
 
 const { roles, users, delegations } = schema;
 export const configRouter = Router();
 
-const editorMeta = (country: string) => ({ fieldTypes: FIELD_TYPES, validators: validatorList(), ops: OPS, coreFields: coreFieldsFor(country), coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes: vendorTypesFor(country) });
+const editorMeta = (country: string) => ({ fieldTypes: FIELD_TYPES, validators: validatorList(), ops: OPS, coreFields: coreFieldsFor(country), coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes: vendorTypesFor(country),
+  // Workspaces whose suppliers can use Arabic get Arabic inputs, with the built-in translations as hints.
+  arabic: supplierLanguages({ country }).includes('ar') ? { defaults: arabicDefaults() } : null });
 
 /** Published config for rendering vendor profiles (any staff member). */
 configRouter.get('/config', requireStaff(), ah(async (req, res) => {

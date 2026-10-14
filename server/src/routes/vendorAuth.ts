@@ -13,6 +13,8 @@ import { audit } from '../lib/audit.js';
 import { createSession, destroySession } from '../auth/session.js';
 import { inArray, isNull, ne, or } from 'drizzle-orm';
 import { sensitiveLimiter, loginLimiter } from '../lib/rateLimits.js';
+import { mailSupplier, snippet } from '../i18n/emails.js';
+import { defaultSupplierLanguage, supplierLanguages, vendorLanguage } from '../i18n/index.js';
 
 const { vendors, otpCodes, tenants } = schema;
 export const vendorAuthRouter = Router();
@@ -29,12 +31,13 @@ const maskMobile = (m: string) => { const d = m.replace(/\D/g, ''); return `•�
 
 vendorAuthRouter.get('/invite/:token', ah(async (req, res) => {
   const { v, tenant } = await byInvite(req.params.token);
-  res.json({ vendorName: v.name, email: maskEmail(v.contactEmail), status: v.status, buyer: { name: tenant.name, branding: tenant.branding } });
+  res.json({ vendorName: v.name, email: maskEmail(v.contactEmail), status: v.status, language: v.language ? vendorLanguage(tenant, v) : null, buyer: { name: tenant.name, branding: tenant.branding, languages: supplierLanguages(tenant), defaultLanguage: defaultSupplierLanguage(tenant) } });
 }));
 
 vendorAuthRouter.post('/request-otp', sensitiveLimiter, ah(async (req, res) => {
-  const { token } = z.object({ token: z.string() }).parse(req.body);
+  const { token, language } = z.object({ token: z.string(), language: z.enum(['en', 'ar']).optional() }).parse(req.body);
   const { v, tenant } = await byInvite(token);
+  const lang = language && supplierLanguages(tenant).includes(language) ? language : vendorLanguage(tenant, v);
   const [{ recent }] = await db.select({ recent: count() }).from(otpCodes).where(and(eq(otpCodes.vendorId, v.id), gt(otpCodes.createdAt, new Date(Date.now() - 60_000))));
   if (recent >= 3) throw new HttpError(429, 'Too many codes requested. Please wait a minute.');
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
@@ -42,17 +45,17 @@ vendorAuthRouter.post('/request-otp', sensitiveLimiter, ah(async (req, res) => {
   const channel = tenant.settings.vendorOtpChannel ?? 'email';
   const sentTo: string[] = [];
   if (channel !== 'sms') {
-    await sendMail({ tenantId: tenant.id, to: v.contactEmail, subject: `Your ${tenant.name} vendor portal sign-in code`, body: `Your one-time code is ${code}. It expires in 10 minutes. Never share this code.` });
+    await mailSupplier(lang, { tenantId: tenant.id, to: v.contactEmail }, 'otp', { buyer: tenant.name, code });
     sentTo.push(maskEmail(v.contactEmail));
   }
   if (channel !== 'email') {
     try {
-      await sendSms({ tenantId: tenant.id, to: v.contactMobile, purpose: 'otp', vars: { otp: code, var1: code }, body: `${code} is your ${tenant.name} supplier portal code. Valid 10 min. Do not share.` });
+      await sendSms({ tenantId: tenant.id, to: v.contactMobile, purpose: 'otp', vars: { otp: code, var1: code }, body: snippet(lang, 'otpSms', { code, buyer: tenant.name }) });
       sentTo.push(maskMobile(v.contactMobile));
     } catch (err) {
       logger.warn({ err }, 'OTP SMS failed');
       if (channel === 'sms') {
-        await sendMail({ tenantId: tenant.id, to: v.contactEmail, subject: `Your ${tenant.name} vendor portal sign-in code`, body: `Your one-time code is ${code}. It expires in 10 minutes.` });
+        await mailSupplier(lang, { tenantId: tenant.id, to: v.contactEmail }, 'otp', { buyer: tenant.name, code });
         sentTo.push(maskEmail(v.contactEmail));
       }
     }
@@ -61,7 +64,7 @@ vendorAuthRouter.post('/request-otp', sensitiveLimiter, ah(async (req, res) => {
 }));
 
 vendorAuthRouter.post('/verify-otp', loginLimiter, ah(async (req, res) => {
-  const { token, code } = z.object({ token: z.string(), code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') }).parse(req.body);
+  const { token, code, language } = z.object({ token: z.string(), code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code'), language: z.enum(['en', 'ar']).optional() }).parse(req.body);
   const { v, tenant } = await byInvite(token);
   const otp = await db.query.otpCodes.findFirst({ where: and(eq(otpCodes.vendorId, v.id), eq(otpCodes.used, false), gt(otpCodes.expiresAt, new Date())), orderBy: desc(otpCodes.createdAt) });
   if (!otp || otp.attempts >= 5) throw new HttpError(401, 'Code expired — request a new one');
@@ -71,6 +74,8 @@ vendorAuthRouter.post('/verify-otp', loginLimiter, ah(async (req, res) => {
   }
   await db.update(otpCodes).set({ used: true }).where(eq(otpCodes.id, otp.id));
   if (v.status === 'INVITED') await db.update(vendors).set({ status: 'IN_PROGRESS' }).where(eq(vendors.id, v.id));
+  // The language they signed in with becomes their language for the portal and emails.
+  if (language && supplierLanguages(tenant).includes(language) && language !== v.language) await db.update(vendors).set({ language }).where(eq(vendors.id, v.id));
   await createSession(req, res, { kind: 'VENDOR', tenant, vendorId: v.id });
   await audit({ tenantId: tenant.id, vendorId: v.id, actor: v.contactEmail, action: 'VENDOR_SIGNED_IN', ip: req.ip });
   res.json({ ok: true });
@@ -95,11 +100,11 @@ async function vendorsForEmail(tenantId: string, email: string) {
 
 vendorAuthRouter.get('/workspace/:slug', ah(async (req, res) => {
   const t = await activeTenant(req.params.slug);
-  res.json({ name: t.name, branding: t.branding });
+  res.json({ name: t.name, branding: t.branding, languages: supplierLanguages(t), defaultLanguage: defaultSupplierLanguage(t) });
 }));
 
 vendorAuthRouter.post('/email/request', sensitiveLimiter, ah(async (req, res) => {
-  const { workspace, email } = z.object({ workspace: z.string().min(1), email: z.string().trim().toLowerCase().email('Enter a valid email address') }).parse(req.body);
+  const { workspace, email, language } = z.object({ workspace: z.string().min(1), email: z.string().trim().toLowerCase().email('Enter a valid email address'), language: z.enum(['en', 'ar']).optional() }).parse(req.body);
   const t = await activeTenant(workspace);
   const vs = await vendorsForEmail(t.id, email);
   let devOtp: string | undefined;
@@ -109,7 +114,8 @@ vendorAuthRouter.post('/email/request', sensitiveLimiter, ah(async (req, res) =>
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const hash = await bcrypt.hash(code, 8);
     await db.insert(otpCodes).values(vs.map((v) => ({ tenantId: t.id, vendorId: v.id, email, codeHash: hash, expiresAt: new Date(Date.now() + 10 * 60_000) })));
-    await sendMail({ tenantId: t.id, to: email, subject: `Your ${t.name} supplier portal sign-in code`, body: `Your one-time code is ${code}. It expires in 10 minutes. Never share this code.` });
+    const lang = language && supplierLanguages(t).includes(language) ? language : defaultSupplierLanguage(t);
+    await mailSupplier(lang, { tenantId: t.id, to: email }, 'otp', { buyer: t.name, code });
     if (env.devShowOtp) devOtp = code;
   }
   // Same answer either way, so the form can't be used to find out who is a supplier.
@@ -117,7 +123,7 @@ vendorAuthRouter.post('/email/request', sensitiveLimiter, ah(async (req, res) =>
 }));
 
 vendorAuthRouter.post('/email/verify', loginLimiter, ah(async (req, res) => {
-  const { workspace, email, code, vendorId } = z.object({ workspace: z.string().min(1), email: z.string().trim().toLowerCase().email(), code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code'), vendorId: z.string().optional() }).parse(req.body);
+  const { workspace, email, code, vendorId, language } = z.object({ workspace: z.string().min(1), email: z.string().trim().toLowerCase().email(), code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code'), vendorId: z.string().optional(), language: z.enum(['en', 'ar']).optional() }).parse(req.body);
   const t = await activeTenant(workspace);
   const rows = await db.select().from(otpCodes).where(and(eq(otpCodes.tenantId, t.id), eq(otpCodes.email, email), eq(otpCodes.used, false), gt(otpCodes.expiresAt, new Date()))).orderBy(desc(otpCodes.createdAt));
   const latest = rows[0];
@@ -134,6 +140,7 @@ vendorAuthRouter.post('/email/verify', loginLimiter, ah(async (req, res) => {
   const v = vendorId ? choices.find((x) => x.id === vendorId) : choices[0];
   if (!v) throw new HttpError(400, 'Choose one of the listed suppliers');
   await db.update(otpCodes).set({ used: true }).where(inArray(otpCodes.id, batch.map((r) => r.id)));
+  if (language && supplierLanguages(t).includes(language)) await db.update(vendors).set({ language }).where(eq(vendors.id, v.id));
   await createSession(req, res, { kind: 'VENDOR', tenant: t, vendorId: v.id, contactEmail: email });
   await audit({ tenantId: t.id, vendorId: v.id, actor: email, action: 'VENDOR_SIGNED_IN', detail: { via: 'email' }, ip: req.ip });
   res.json({ ok: true });

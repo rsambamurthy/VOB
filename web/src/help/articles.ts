@@ -116,8 +116,32 @@ After 5 wrong passwords the account is locked for 15 minutes. An administrator c
 - **Vendor lifecycle**: how often approved vendors are re-checked (default 12 months; 0 turns it off). See [Block and re-check](#block-recheck).
 - **Email**: the sender name suppliers see, where replies go, sending from your own domain (paid plans), and addresses that bounced. See [Email delivery](#email-delivery).
 - **Privacy & data retention**: the privacy notice suppliers accept and how long old registrations are kept. See [Privacy and data protection](#privacy).
+- **Supplier portal language** (Gulf workspaces): English or Arabic for new suppliers. See [Arabic for suppliers](#supplier-language).
 
 Changes apply as soon as you click **Save**.`,
+  },
+  {
+    id: 'supplier-language', title: 'Arabic for suppliers', audience: ['staff'], perms: ['tenant.settings', 'config.manage', 'vendors.create'],
+    summary: 'Gulf workspaces: suppliers can use the portal, emails and SMS in Arabic.',
+    screens: ['^/staff/admin/workspace', '^/staff/admin/config'],
+    keywords: 'arabic language العربية rtl right to left translate translation hijri gulf saudi supplier language',
+    related: ['workspace-settings', 'invite-vendor', 'config-overview'],
+    body: `In a Gulf workspace each supplier can use the portal in **English or Arabic**. Your own screens stay in English.
+
+## What the supplier sees in Arabic
+- The portal reads right to left, with the form, documents, guide, help topics, privacy notice and error messages in Arabic.
+- Dates show the Hijri (Umm al-Qura) date beside the Gregorian one.
+- Emails and SMS (sign-in codes, approval, corrections, reminders, orders, invoices) are sent in the supplier's language.
+
+## Choosing the language
+1. Administration → **Workspace** → **Supplier portal language** sets the language for new suppliers.
+2. When you invite a vendor, **Supplier's language** sets it for that supplier.
+3. Suppliers can switch at any time with the button in the portal header; their choice is kept.
+
+## Your own fields
+Built-in Gulf wording already has Arabic. For fields, sections, documents and guide items you add, fill in the **Arabic** boxes in Configuration. Leave a box blank to use the built-in Arabic (or English when there is none).
+
+> Answers are stored in English whatever language the supplier used, so reviews, reports and the ERP export don't change.`,
   },
   {
     id: 'users', title: 'Users: invite, change roles, disable', audience: ['staff'], perms: ['users.manage'],

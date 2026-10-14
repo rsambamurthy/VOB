@@ -15,6 +15,7 @@ import { defineJob } from '../../jobs/queue.js';
 import { hasFeature } from '../limits.js';
 import { queueMessage } from '../orders/outbound.js';
 import { supplierLink, supplierRecipients } from '../orders/importer.js';
+import { langForVendorId, mailDate, mailSupplier, snippet } from '../../i18n/emails.js';
 
 const { purchaseOrders, poLines, poReceipts, shipments, shipmentLines, buyingGroups } = schema;
 const DAY = 86_400_000;
@@ -101,7 +102,10 @@ export async function cancelShipment(tenant: Tenant, s: Shipment, reason: string
   await audit({ tenantId: tenant.id, vendorId: s.vendorId, actor: by.email ?? by.name, action: 'PO_SHIPMENT_CANCELLED', detail: { po: po.poNumber, asn: s.number, reason }, ip });
   await queueMessage(po, 'ASN_CANCEL', { shipmentId: s.id }, by.name).catch((err) => logger.error({ err }, 'could not queue ASN cancel'));
   if (by.supplier && po.buyerEmail) await sendMail({ tenantId: tenant.id, to: po.buyerEmail, subject: `Shipment notice cancelled: ${s.number}`, body: `${by.name} cancelled shipment notice ${s.number} for ${po.poNumber}.\n\nReason: ${reason}`, link: `${env.appBaseUrl}/staff/orders/${po.id}` }).catch(() => {});
-  if (!by.supplier) for (const r of await supplierRecipients(s.vendorId)) await sendMail({ tenantId: tenant.id, to: r.email, subject: `Shipment notice ${s.number} was cancelled`, body: `Hello ${r.name},\n\n${tenant.name} cancelled your shipment notice ${s.number} for ${po.poNumber}.\n\nReason: ${reason}`, link: supplierLink(tenant, `/vendor/orders/${po.id}`) }).catch(() => {});
+  if (!by.supplier) {
+    const lang = await langForVendorId(s.vendorId);
+    for (const r of await supplierRecipients(s.vendorId)) await mailSupplier(lang, { tenantId: tenant.id, to: r.email, link: supplierLink(tenant, `/vendor/orders/${po.id}`) }, 'shipmentCancelled', { name: r.name, buyer: tenant.name, asn: s.number, po: po.poNumber, reason }).catch(() => {});
+  }
   return row;
 }
 
@@ -145,12 +149,11 @@ async function notifyReceived(s: Shipment, status: 'PARTLY_RECEIVED' | 'RECEIVED
   const [po, tenant] = await Promise.all([db.query.purchaseOrders.findFirst({ where: eq(purchaseOrders.id, s.poId) }), db.query.tenants.findFirst({ where: eq(schema.tenants.id, s.tenantId) })]);
   if (!po || !tenant) return;
   const poL = await db.select({ id: poLines.id, lineNo: poLines.lineNo, description: poLines.description, uom: poLines.uom }).from(poLines).where(eq(poLines.poId, po.id));
-  const detail = lines.map((x) => { const l = poL.find((p) => p.id === x.lineId); return `- Line ${l?.lineNo ?? '?'} ${l?.description ?? ''}: ${x.got} of ${Number(x.quantity)}${l?.uom ? ` ${l.uom}` : ''} received`; }).join('\n');
+  const lang = await langForVendorId(s.vendorId);
+  const detail = lines.map((x) => { const l = poL.find((p) => p.id === x.lineId); return snippet(lang, 'shipmentLine', { n: l?.lineNo ?? '?', item: l?.description ?? '', got: x.got, qty: `${Number(x.quantity)}${l?.uom ? ` ${l.uom}` : ''}` }); }).join('\n');
   const done = status === 'RECEIVED';
   for (const r of await supplierRecipients(s.vendorId)) {
-    await sendMail({ tenantId: tenant.id, to: r.email, subject: `${done ? 'Received' : 'Partly received'}: shipment ${s.number} (${po.poNumber})`,
-      body: `Hello ${r.name},\n\n${tenant.name} has ${done ? 'received the goods' : 'received part of the goods'} on your shipment notice ${s.number} for purchase order ${po.poNumber}.\n\n${detail}${done ? '\n\nYou can now invoice for these goods from the order.' : ''}`,
-      link: supplierLink(tenant, `/vendor/orders/${po.id}`) });
+    await mailSupplier(lang, { tenantId: tenant.id, to: r.email, link: supplierLink(tenant, `/vendor/orders/${po.id}`) }, done ? 'shipmentReceived' : 'shipmentPartlyReceived', { name: r.name, buyer: tenant.name, asn: s.number, po: po.poNumber, lines: detail });
   }
 }
 
@@ -173,10 +176,10 @@ export async function remindOverdueShipments(now = new Date()) {
         body: `Hello ${po.buyerName ?? ''},\n\nShipment ${s.number} from ${vendor?.name ?? 'the supplier'} for ${po.poNumber} was expected on ${s.expectedDate} (${late} day${late === 1 ? '' : 's'} ago). ${part}\n\nIf the goods have arrived, record the receipt in your ERP so it reaches VendorGate. Otherwise check with the supplier.${s.carrier ? `\n\nCarrier: ${s.carrier}${s.trackingNo ? ` (${s.trackingNo})` : ''}` : ''}`,
         link: `${env.appBaseUrl}/staff/orders/${po.id}` }).catch(() => {});
     }
+    const sLang = await langForVendorId(s.vendorId);
     for (const r of await supplierRecipients(s.vendorId)) {
-      await sendMail({ tenantId: tenant.id, to: r.email, subject: `Delivery overdue: shipment ${s.number} (${po.poNumber})`,
-        body: `Hello ${r.name},\n\nYour shipment ${s.number} for ${tenant.name}'s purchase order ${po.poNumber} was expected on ${s.expectedDate}. ${part}\n\nPlease check where it is and let the buyer${po.buyerEmail ? ` (${po.buyerEmail})` : ''} know. If it won't arrive, cancel the notice and send a new one.`,
-        link: supplierLink(tenant, `/vendor/orders/${po.id}`) }).catch(() => {});
+      await mailSupplier(sLang, { tenantId: tenant.id, to: r.email, link: supplierLink(tenant, `/vendor/orders/${po.id}`) }, 'shipmentOverdue', { name: r.name, asn: s.number, buyer: tenant.name, po: po.poNumber,
+        date: sLang === 'ar' ? mailDate(s.expectedDate!, sLang) : s.expectedDate, state: snippet(sLang, s.status === 'PARTLY_RECEIVED' ? 'shipmentStatePartly' : 'shipmentStateNone'), buyerEmail: po.buyerEmail ? ` (${po.buyerEmail})` : '' }).catch(() => {});
     }
     await db.update(shipments).set({ overdueNotifiedAt: now }).where(eq(shipments.id, s.id));
     await audit({ tenantId: tenant.id, vendorId: s.vendorId, actor: 'system', action: 'PO_SHIPMENT_OVERDUE', detail: { po: po.poNumber, asn: s.number, expected: s.expectedDate } });

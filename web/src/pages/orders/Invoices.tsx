@@ -4,9 +4,10 @@ import { api } from '../../lib/api';
 import { Alert, Modal } from '../../components/ui';
 import { useHelpContext } from '../../help/HelpPanel';
 import { InvoiceView, InvoicesTable, PaymentsTable, type InvoiceDetailData, type InvoiceRow, type Payment } from '../../orders/collab';
+import { backArrow, t } from '../../i18n';
 
 interface ListData { rows: InvoiceRow[]; hasMore: boolean; page: number; counts: { review: number; exceptions: number; unpaid: number; paid: number; rejected: number; all: number }; canDecide?: boolean }
-const TILES: [string, string, keyof ListData['counts'], string?][] = [['REVIEW', 'To review', 'review', 'stat-under_review'], ['EXCEPTION', 'Exceptions', 'exceptions', 'stat-sent_back'], ['UNPAID', 'Approved, unpaid', 'unpaid', 'stat-approved'], ['PAID', 'Paid', 'paid', 'stat-in_progress'], ['REJECTED', 'Rejected', 'rejected', 'stat-invited'], ['ALL', 'All', 'all']];
+const TILES = (): [string, string, keyof ListData['counts'], string?][] => [['REVIEW', t('invl.review'), 'review', 'stat-under_review'], ['EXCEPTION', t('invl.exceptions'), 'exceptions', 'stat-sent_back'], ['UNPAID', t('invl.unpaid'), 'unpaid', 'stat-approved'], ['PAID', t('invl.paid'), 'paid', 'stat-in_progress'], ['REJECTED', t('invl.rejected'), 'rejected', 'stat-invited'], ['ALL', t('invl.all'), 'all']];
 
 function InvoiceList({ base, prefix, staff }: { base: string; prefix: string; staff?: boolean }) {
   const [params, setParams] = useSearchParams();
@@ -28,10 +29,10 @@ function InvoiceList({ base, prefix, staff }: { base: string; prefix: string; st
     <>
       {error && <Alert kind="error">{error}</Alert>}
       <div className="stat-row stat-row-6">
-        {TILES.map(([k, label, c, cls]) => <button key={k} className={`stat ${cls ?? ''} ${filter === k ? 'active' : ''}`} onClick={() => setParams({ f: k }, { replace: true })}><span className="stat-n">{d?.counts[c] ?? '…'}</span><span className="stat-l">{label}</span></button>)}
+        {TILES().map(([k, label, c, cls]) => <button key={k} className={`stat ${cls ?? ''} ${filter === k ? 'active' : ''}`} onClick={() => setParams({ f: k }, { replace: true })}><span className="stat-n">{d?.counts[c] ?? '…'}</span><span className="stat-l">{label}</span></button>)}
       </div>
       <div className="card">
-        <div className="toolbar"><input className="search" placeholder={staff ? 'Search invoice, PO or supplier…' : 'Search invoice or PO number…'} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search invoices" /></div>
+        <div className="toolbar"><input className="search" placeholder={staff ? 'Search invoice, PO or supplier…' : t('invl.searchSupplier')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('invl.search')} /></div>
         {!d ? <div className="pad"><div className="spinner" /></div> : <InvoicesTable rows={d.rows} base={base} showVendor={staff} />}
       </div>
     </>
@@ -115,7 +116,7 @@ export function StaffPayments() {
 export function SupplierInvoices() {
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Invoices</h1><p className="muted">Invoices you raised and where each one stands. Raise a new one from the purchase order.</p></div></header>
+      <header className="page-head"><div><h1>{t('invl.title')}</h1><p className="muted">{t('invl.intro')}</p></div></header>
       <InvoiceList base="/vendor/invoices" prefix="/vendor/collab" />
     </div>
   );
@@ -132,12 +133,12 @@ export function SupplierInvoiceDetail() {
   const open = d.invoice.status === 'SUBMITTED' || d.invoice.status === 'EXCEPTION';
   return (
     <div className="page">
-      <Link to="/vendor/invoices" className="back">← Invoices</Link>
+      <Link to="/vendor/invoices" className="back">{backArrow()} {t('invl.back')}</Link>
       <InvoiceView d={d}>
         {flash && <Alert kind="success">{flash}</Alert>}
         {error && <Alert kind="error">{error}</Alert>}
-        {open && <div className="action-bar"><div><strong>With the buyer for review.</strong><div className="muted small">{d.invoice.status === 'EXCEPTION' ? 'It doesn’t match the order exactly, so the buyer will look at it more closely.' : 'It matches the order.'} You can withdraw it while it is in review.</div></div>
-          <button className="btn btn-secondary" onClick={async () => { try { await api(`/vendor/collab/invoices/${id}/cancel`, { method: 'POST' }); setFlash('Invoice withdrawn.'); load(); } catch (e: any) { setError(e.message); } }}>Withdraw</button></div>}
+        {open && <div className="action-bar"><div><strong>{t('invl.withBuyer')}</strong><div className="muted small">{d.invoice.status === 'EXCEPTION' ? t('invl.notExact') : t('invl.matches')} {t('invl.canWithdraw')}</div></div>
+          <button className="btn btn-secondary" onClick={async () => { try { await api(`/vendor/collab/invoices/${id}/cancel`, { method: 'POST' }); setFlash(t('invl.withdrawn')); load(); } catch (e: any) { setError(e.message); } }}>{t('invl.withdraw')}</button></div>}
       </InvoiceView>
     </div>
   );
@@ -149,7 +150,7 @@ export function SupplierPayments() {
   useEffect(() => { api('/vendor/collab/payments').then(setD).catch((e) => setError(e.message)); }, []);
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Payments</h1><p className="muted">Payments the buyer has made to you, and the invoices they cover.</p></div></header>
+      <header className="page-head"><div><h1>{t('payl.title')}</h1><p className="muted">{t('payl.intro')}</p></div></header>
       {error && <Alert kind="error">{error}</Alert>}
       <div className="card">{!d ? <div className="pad"><div className="spinner" /></div> : <PaymentsTable rows={d.rows} invoiceBase="/vendor/invoices" />}</div>
     </div>

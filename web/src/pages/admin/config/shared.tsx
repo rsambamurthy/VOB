@@ -1,10 +1,12 @@
-import type { Condition, ConfigIssue, FieldDef, OnboardingConfig, Op } from '../../../lib/types';
+import type { ArabicText, Condition, ConfigIssue, FieldDef, OnboardingConfig, Op } from '../../../lib/types';
 import { OP_LABELS } from '../../../lib/conditions';
 
 export interface EditorMeta {
   fieldTypes: string[]; validators: { key: string; label: string; country: string | null }[]; ops: Op[]; coreFields: string[]; coreSections: string[];
   vendorAttributes: { key: string; label: string; options: string[] }[];
   vendorTypes: { value: string; label: string }[];
+  /** Set when the workspace's suppliers can use the portal in Arabic. */
+  arabic?: { defaults: Record<string, string> } | null;
 }
 export interface CatalogEntry { id: string; label: string; type: string; options?: string[] }
 export type Update = (fn: (c: OnboardingConfig) => void) => void;
@@ -119,3 +121,24 @@ export function IssueList({ issues, onPick }: { issues: ConfigIssue[]; onPick?: 
 }
 
 export type { FieldDef };
+
+/** An Arabic version of a piece of form text. Left empty, suppliers see the built-in translation (the hint) or the English. */
+export function ArInput({ id, value, english, meta, onChange, multiline, label }: { id: string; value?: string; english?: string; meta: EditorMeta; onChange: (v: string | undefined) => void; multiline?: boolean; label?: string }) {
+  if (!meta.arabic) return null;
+  const hint = (english && meta.arabic.defaults[english]) || '';
+  const props = { id, dir: 'rtl' as const, lang: 'ar', value: value ?? '', placeholder: hint || (english ? 'English is shown when empty' : ''), onChange: (e: { target: { value: string } }) => onChange(e.target.value.trim() ? e.target.value : undefined) };
+  return (
+    <div className="field ar-field">
+      {label && <label htmlFor={id}>{label} <span className="muted small">عربي</span></label>}
+      {multiline ? <textarea rows={3} {...props} /> : <input {...props} />}
+    </div>
+  );
+}
+
+/** Set (or clear) one piece of Arabic text on a config object. */
+export function setAr<T extends { tr?: { ar?: ArabicText } }>(o: T, k: keyof ArabicText, v: unknown): T {
+  const ar = { ...(o.tr?.ar ?? {}) } as Record<string, unknown>;
+  if (v === undefined || (Array.isArray(v) && !v.some(Boolean))) delete ar[k]; else ar[k] = v;
+  if (Object.keys(ar).length) o.tr = { ...(o.tr ?? {}), ar: ar as ArabicText }; else if (o.tr) { delete o.tr.ar; if (!Object.keys(o.tr).length) delete o.tr; }
+  return o;
+}

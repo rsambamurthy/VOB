@@ -14,10 +14,12 @@ import { fmtDate, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
-import { rememberWorkspace, SupplierTopbar, supplierSignOut } from '../orders/SupplierShell';
+import { rememberWorkspace, saveLanguage, SupplierTopbar, supplierSignOut } from '../orders/SupplierShell';
 import { PoweredBy } from '../components/Brand';
+import { setLang, t, useLang, type Lang } from '../i18n';
+import { Rich } from '../i18n/Rich';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string } & Partial<LocaleInfo>; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; hold: { reason: string | null } | null; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
@@ -29,6 +31,7 @@ const inputsFrom = (c: Verifiable, p: Profile) => Object.fromEntries(Object.entr
 
 export function VendorPortal() {
   const nav = useNavigate();
+  const lang = useLang();
   const [me, setMe] = useState<Me>();
   const [profile, setProfile] = useState<Profile>({});
   const [tab, setTab] = useState('basic');
@@ -40,7 +43,7 @@ export function VendorPortal() {
   const [saving, setSaving] = useState(false);
   const { openHelp } = useHelp();
   // The buyer's own "How onboarding works" steps become the first help topic for suppliers.
-  useHelpExtra(me ? [{ id: 'buyer-guide', title: `How onboarding works at ${me.buyer.name}`, summary: 'The steps your buyer has set out for registering as a supplier.', audience: ['supplier'], screens: ['^/vendor'],
+  useHelpExtra(me ? [{ id: 'buyer-guide', title: t('portal.guideTopicTitle', { buyer: me.buyer.name }), summary: t('portal.guideTopicSummary'), audience: ['supplier'], screens: ['^/vendor'],
     keywords: 'guide steps how onboarding works instructions', body: me.config.guide.map((g) => `## ${g.title}\n${g.body.replace(/\s*\n\s*/g, ' ')}`).join('\n\n') }] : null);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   // Approved vendors: edits are collected locally and sent as one change request.
@@ -55,12 +58,12 @@ export function VendorPortal() {
   const load = useCallback(async (reset = false) => {
     try {
       const r = await api<Me>('/vendor');
-      setMe(r); setLocaleInfo(r.buyer); rememberWorkspace(r.buyer.workspace); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
+      setMe(r); setLocaleInfo(r.buyer); setLang(r.language ?? 'en'); rememberWorkspace(r.buyer.workspace); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, lang]);
   const pending = me?.extractions.some((e) => e.status === 'PENDING');
-  useEffect(() => { if (!pending) return; const t = setInterval(load, 3000); return () => clearInterval(t); }, [pending, load]);
+  useEffect(() => { if (!pending) return; const iv = setInterval(load, 3000); return () => clearInterval(iv); }, [pending, load]);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
@@ -90,7 +93,7 @@ export function VendorPortal() {
   // Asked to confirm after each periodic re-check, until they do.
   const reviewRequested = approved && !!v.lastReviewAt && (!v.lastConfirmedAt || v.lastConfirmedAt < v.lastReviewAt);
   const docFlags = lc?.flags.filter((f) => f.code === 'DOC_EXPIRED' || f.code === 'DOC_EXPIRING') ?? [];
-  const tabs = [...cfg.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' }];
+  const tabs = [...cfg.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: t('portal.documentsTab') }];
   const sectionErrors = (k: string) => me.checklist.filter((c) => c.section === k && !c.ok && c.severity === 'error').length;
 
   function change(section: string, field: string, value: string) {
@@ -106,7 +109,7 @@ export function VendorPortal() {
       setMe((m) => m && { ...m, checklist: r.checklist, docRequirements: r.docRequirements, vendor: { ...m.vendor, profile, status: m.vendor.status === 'INVITED' ? 'IN_PROGRESS' : m.vendor.status } });
       setDirty((d) => { const n = new Set(d); n.delete(section); return n; });
       setRevealed((rv) => new Set(rv).add(section));
-      if (!quiet) setFlash({ kind: 'success', text: 'Saved.' });
+      if (!quiet) setFlash({ kind: 'success', text: t('portal.saved') });
       return true;
     } catch (e: any) { setFlash({ kind: 'error', text: e.message }); return false; } finally { setSaving(false); }
   }
@@ -122,7 +125,7 @@ export function VendorPortal() {
     const fd = new FormData(); fd.append('docType', docType); if (expiresOn) fd.append('expiresOn', expiresOn); fd.append('file', file);
     try {
       await api('/vendor/documents', { body: fd }); await load(); setRevealed((r) => new Set(r).add('documents'));
-      if (approved) setFlash({ kind: 'info', text: 'Uploaded. New documents take effect once you submit a change request and it is approved.' });
+      if (approved) setFlash({ kind: 'info', text: t('portal.uploadedPendingCr') });
     }
     catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
@@ -134,7 +137,7 @@ export function VendorPortal() {
     try {
       const r = await api<{ applied: string[]; profile: Profile; checklist: ChecklistItem[] }>(`/vendor/extractions/${id}/apply`, { body: { fieldIds } });
       setProfile(r.profile);
-      setFlash({ kind: 'success', text: `${r.applied.length} value${r.applied.length === 1 ? '' : 's'} copied into your form. Please check them before submitting.` });
+      setFlash({ kind: 'success', text: t('portal.valuesCopied', { count: r.applied.length }) });
       await load();
     } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
@@ -156,7 +159,7 @@ export function VendorPortal() {
     for (const s of [...dirty]) if (!(await save(s, true))) return;
     try {
       await api('/vendor/submit', { method: 'POST' });
-      setFlash({ kind: 'success', text: 'Submitted for review. We’ll email you when there’s an update.' });
+      setFlash({ kind: 'success', text: t('portal.submitted') });
       await load();
     } catch (e: any) {
       setRevealed(new Set([...cfg.sections.map((s) => s.key), 'documents']));
@@ -174,7 +177,7 @@ export function VendorPortal() {
       const changes = Object.fromEntries([...new Set(fieldChanges.map((c) => c.fieldId.split('.')[0]))].map((sec) => [sec, profile[sec] ?? {}]));
       await api('/vendor/change-requests', { body: { changes, note: crNote || undefined } });
       setCrOpen(false); setCrNote(''); setChangeMode(false); setDirty(new Set()); setCrErrors({});
-      setFlash({ kind: 'success', text: 'Change request submitted. Your current details stay in effect until it is approved — we’ll email you the outcome.' });
+      setFlash({ kind: 'success', text: t('portal.crSubmitted') });
       await load(true);
     } catch (e: any) {
       if (e instanceof ApiError && Array.isArray(e.details)) {
@@ -185,11 +188,11 @@ export function VendorPortal() {
     } finally { setCrBusy(false); }
   }
   async function cancelCr(id: string) {
-    try { await api(`/vendor/change-requests/${id}/cancel`, { method: 'POST' }); setFlash({ kind: 'info', text: 'Change request withdrawn.' }); await load(true); }
+    try { await api(`/vendor/change-requests/${id}/cancel`, { method: 'POST' }); setFlash({ kind: 'info', text: t('portal.crWithdrawn') }); await load(true); }
     catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
   async function confirmDetails() {
-    try { await api('/vendor/confirm-details', { method: 'POST' }); setFlash({ kind: 'success', text: 'Thanks — your details are confirmed as current.' }); await load(); }
+    try { await api('/vendor/confirm-details', { method: 'POST' }); setFlash({ kind: 'success', text: t('portal.detailsConfirmed') }); await load(); }
     catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
   }
 
@@ -208,45 +211,45 @@ export function VendorPortal() {
 
   return (
     <div className="vendor-app">
-      <SupplierTopbar info={me} />
+      <SupplierTopbar info={me} onLanguage={saveLanguage} />
 
       <div className="page">
         <header className="page-head">
-          <div><h1>{approved ? 'Registered details' : 'Business profile'}</h1>
-            <p className="muted">Vendor code <span className="mono">{v.code}</span>. {approved ? 'To update anything, request a change — it takes effect once approved.' : 'Complete each tab, upload documents, then submit for review.'}</p></div>
-          {approved && !changeMode && <div className="head-actions"><button className="btn btn-secondary" disabled={!canChange} title={!canChange ? (lc!.blocked ? 'Your account is on hold' : 'A change request is already under review') : undefined} onClick={() => { setChangeMode(true); setFlash(undefined); }}>Request changes</button></div>}
+          <div><h1>{approved ? t('portal.titleApproved') : t('portal.title')}</h1>
+            <p className="muted"><Rich text={t('portal.vendorCode')} values={{ code: <span className="mono">{v.code}</span> }} /> {approved ? t('portal.introApproved') : t('portal.intro')}</p></div>
+          {approved && !changeMode && <div className="head-actions"><button className="btn btn-secondary" disabled={!canChange} title={!canChange ? (lc!.blocked ? t('portal.onHoldTitle') : t('portal.crUnderReviewTitle')) : undefined} onClick={() => { setChangeMode(true); setFlash(undefined); }}>{t('portal.requestChanges')}</button></div>}
         </header>
 
-        {v.status === 'SENT_BACK' && <Alert kind="warning"><strong>Changes requested:</strong> “{me.sendBackRemarks}”. Update the form and submit again.</Alert>}
-        {v.status === 'UNDER_REVIEW' && <Alert kind="info">Submitted — your registration is being reviewed. Editing is locked until a decision is made.</Alert>}
+        {v.status === 'SENT_BACK' && <Alert kind="warning"><strong>{t('portal.changesRequested')}</strong> “{me.sendBackRemarks}”. {t('portal.changesRequestedTail')}</Alert>}
+        {v.status === 'UNDER_REVIEW' && <Alert kind="info">{t('portal.underReview')}</Alert>}
         {approved && lc!.blocked && (lc!.hold
-          ? <Alert kind="error"><strong>Your vendor account is on hold — {lc!.hold.reason?.replace(/^Expired: /, '').toLowerCase()} has expired.</strong> Upload the renewed document in the Documents tab and submit it as a change request. The hold is lifted as soon as it is approved.</Alert>
-          : <Alert kind="error"><strong>Your vendor account is on hold.</strong> Please contact {me.buyer.name} for details. Changes can’t be requested while on hold.</Alert>)}
+          ? <Alert kind="error"><strong>{t('portal.holdExpiry', { document: lang === 'ar' ? lc!.hold.reason?.replace(/^Expired: /, '') : lc!.hold.reason?.replace(/^Expired: /, '').toLowerCase() })}</strong> {t('portal.holdExpiryTail')}</Alert>
+          : <Alert kind="error"><strong>{t('portal.hold')}</strong> {t('portal.holdTail', { buyer: me.buyer.name })}</Alert>)}
         {approved && openCr && (
-          <Alert kind="info"><strong>{openCr.byBuyer ? `${me.buyer.name} is updating your details` : 'Change request under review'}</strong> ({openCr.steps.filter((s) => s.status === 'PENDING' || s.status === 'WAITING').map((s) => s.label).join(' → ') || 'review'}). Your current details stay in effect until it’s approved.{' '}
-            {!openCr.byBuyer && <button className="link-btn" onClick={() => cancelCr(openCr.id)}>Withdraw request</button>}</Alert>
+          <Alert kind="info"><strong>{openCr.byBuyer ? t('portal.buyerUpdating', { buyer: me.buyer.name }) : t('portal.crUnderReview')}</strong> ({openCr.steps.filter((s) => s.status === 'PENDING' || s.status === 'WAITING').map((s) => s.label).join(lang === 'ar' ? ' ← ' : ' → ') || t('portal.review')}). {t('portal.crInEffect')}{' '}
+            {!openCr.byBuyer && <button className="link-btn" onClick={() => cancelCr(openCr.id)}>{t('portal.withdrawRequest')}</button>}</Alert>
         )}
         {approved && reviewRequested && !changeMode && (
-          <Alert kind="warning"><strong>Periodic review:</strong> please check that your registered details are still correct.{' '}
-            <button className="btn btn-primary btn-sm" onClick={confirmDetails}>Yes, they’re correct</button>{' '}
-            {canChange && <button className="btn btn-ghost btn-sm" onClick={() => setChangeMode(true)}>Something changed</button>}</Alert>
+          <Alert kind="warning"><strong>{t('portal.periodicReview')}</strong> {t('portal.periodicReviewText')}{' '}
+            <button className="btn btn-primary btn-sm" onClick={confirmDetails}>{t('portal.theyAreCorrect')}</button>{' '}
+            {canChange && <button className="btn btn-ghost btn-sm" onClick={() => setChangeMode(true)}>{t('portal.somethingChanged')}</button>}</Alert>
         )}
-        {approved && docFlags.length > 0 && <Alert kind="warning"><strong>{docFlags.map((f) => f.label).join(' · ')}.</strong> Upload renewed documents on the <button className="link-btn" onClick={() => goTo('documents')}>Documents</button> tab and submit them as a change request.</Alert>}
-        {approved && changeMode && <Alert kind="info"><strong>Editing</strong> — change the values you need to update, then submit the request for review. Bank details changes are verified and we’ll email your registered contact as a precaution.</Alert>}
-        {approved && !changeMode && !lc!.flags.length && !reviewRequested && <Alert kind="success">You’re approved and active as a vendor. 🎉</Alert>}
-        {v.status === 'REJECTED' && <Alert kind="error">This registration was not approved. Check your email for the reason.</Alert>}
+        {approved && docFlags.length > 0 && <Alert kind="warning"><strong>{docFlags.map((f) => f.label).join(' · ')}.</strong> {t('portal.uploadRenewedA')} <button className="link-btn" onClick={() => goTo('documents')}>{t('portal.documentsTab')}</button> {t('portal.uploadRenewedB')}</Alert>}
+        {approved && changeMode && <Alert kind="info"><strong>{t('portal.editing')}</strong> {t('portal.editingText')}</Alert>}
+        {approved && !changeMode && !lc!.flags.length && !reviewRequested && <Alert kind="success">{t('portal.approvedActive')}</Alert>}
+        {v.status === 'REJECTED' && <Alert kind="error">{t('portal.rejected')}</Alert>}
         {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
         {editable && tab !== 'documents' && me.extractions.some((e) => e.status === 'DONE' && !e.appliedAt && e.suggestions.some((x) => x.state !== 'match')) && (
-          <Alert kind="info">✦ We read details from your uploaded documents. <button className="link-btn" onClick={() => goTo('documents')}>Review suggested values →</button></Alert>
+          <Alert kind="info">{t('portal.extractionsReady')} <button className="link-btn" onClick={() => goTo('documents')}>{t('portal.reviewSuggested')} {lang === 'ar' ? '←' : '→'}</button></Alert>
         )}
 
         <div className="detail-grid">
           <div className="card">
             <div className="tabs" role="tablist">
-              {tabs.map((t) => {
-                const n = sectionErrors(t.key);
-                return <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'active' : ''} onClick={() => goTo(t.key)}>
-                  {t.label}{editable && revealed.has(t.key) && n > 0 && <span className="tab-count">{n}</span>}{dirty.has(t.key) && <span className="dirty" title="Unsaved changes">•</span>}
+              {tabs.map((tb) => {
+                const n = sectionErrors(tb.key);
+                return <button key={tb.key} role="tab" aria-selected={tab === tb.key} className={tab === tb.key ? 'active' : ''} onClick={() => goTo(tb.key)}>
+                  {tb.label}{editable && revealed.has(tb.key) && n > 0 && <span className="tab-count">{n}</span>}{dirty.has(tb.key) && <span className="dirty" title={t('portal.unsaved')}>•</span>}
                 </button>;
               })}
             </div>
@@ -255,7 +258,7 @@ export function VendorPortal() {
                 <DynamicSection key={s.key} section={s} profile={profile} vendorType={v.vendorType} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} />
               ))}
               {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={docsEditable} onUpload={upload} onDelete={remove}
-                canDelete={approved ? (d) => d.status === 'PENDING' && !d.changeRequestId : undefined} uploadLabel={approved ? 'Upload renewal' : undefined} />}
+                canDelete={approved ? (d) => d.status === 'PENDING' && !d.changeRequestId : undefined} uploadLabel={approved ? t('portal.uploadRenewal') : undefined} />}
               {tab === 'documents' && me.editable && me.extractions.filter((e) => e.status !== 'SKIPPED' && v.documents.some((d) => d.id === e.documentId)).map((e) => {
                 const doc = v.documents.find((d) => d.id === e.documentId)!;
                 const label = me.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType;
@@ -264,17 +267,17 @@ export function VendorPortal() {
             </div>
             {approved && (changeMode || newDocs.length > 0) && (
               <div className="form-foot">
-                {changeMode && <button className="btn btn-ghost" onClick={discardChanges}>Discard changes</button>}
-                <span className="muted small grow">{fieldChanges.length} field{fieldChanges.length === 1 ? '' : 's'} changed{newDocs.length ? ` · ${newDocs.length} new document${newDocs.length === 1 ? '' : 's'}` : ''}</span>
-                <button className="btn btn-primary" disabled={!fieldChanges.length && !newDocs.length} onClick={() => setCrOpen(true)}>Review & submit change</button>
+                {changeMode && <button className="btn btn-ghost" onClick={discardChanges}>{t('portal.discardChanges')}</button>}
+                <span className="muted small grow">{t('portal.fieldsChanged', { count: fieldChanges.length })}{newDocs.length ? ` · ${t('portal.newDocs', { count: newDocs.length })}` : ''}</span>
+                <button className="btn btn-primary" disabled={!fieldChanges.length && !newDocs.length} onClick={() => setCrOpen(true)}>{t('portal.reviewSubmitChange')}</button>
               </div>
             )}
             {me.editable && (
               <div className="form-foot">
-                <button className="btn btn-ghost" disabled={saving || !dirty.has(tab)} onClick={() => save()}>{saving ? 'Saving…' : 'Save'}</button>
-                {tabs.findIndex((t) => t.key === tab) < tabs.length - 1
-                  ? <button className="btn btn-primary" onClick={() => goTo(tabs[tabs.findIndex((t) => t.key === tab) + 1].key)}>Save & next →</button>
-                  : <button className="btn btn-primary" onClick={() => setConfirmSubmit(true)}>Review & submit</button>}
+                <button className="btn btn-ghost" disabled={saving || !dirty.has(tab)} onClick={() => save()}>{saving ? t('common.saving') : t('common.save')}</button>
+                {tabs.findIndex((tb) => tb.key === tab) < tabs.length - 1
+                  ? <button className="btn btn-primary" onClick={() => goTo(tabs[tabs.findIndex((tb) => tb.key === tab) + 1].key)}>{t('portal.saveNext')} {lang === 'ar' ? '←' : '→'}</button>
+                  : <button className="btn btn-primary" onClick={() => setConfirmSubmit(true)}>{t('portal.reviewSubmit')}</button>}
               </div>
             )}
           </div>
@@ -282,41 +285,41 @@ export function VendorPortal() {
             {approved ? (
               <>
                 <div className="card pad">
-                  <h3 className="card-title">Your account</h3>
+                  <h3 className="card-title">{t('portal.yourAccount')}</h3>
                   <dl className="kv small">
-                    <dt>Status</dt><dd>{lc!.blocked ? <span className="badge flag-high">On hold</span> : <span className="badge badge-approved">Active</span>}</dd>
-                    <dt>Last confirmed</dt><dd>{fmtDate(v.lastConfirmedAt ?? v.decidedAt)}</dd>
-                    <dt>Next review</dt><dd>{fmtDate(lc!.nextReviewAt)}</dd>
+                    <dt>{t('common.status')}</dt><dd>{lc!.blocked ? <span className="badge flag-high">{t('portal.onHold')}</span> : <span className="badge badge-approved">{t('portal.active')}</span>}</dd>
+                    <dt>{t('portal.lastConfirmed')}</dt><dd>{fmtDate(v.lastConfirmedAt ?? v.decidedAt)}</dd>
+                    <dt>{t('portal.nextReview')}</dt><dd>{fmtDate(lc!.nextReviewAt)}</dd>
                   </dl>
                   <FlagBadges flags={lc!.flags.filter((f) => f.code !== 'BLOCKED')} />
-                  {!reviewRequested && <button className="link-btn small" onClick={confirmDetails}>Confirm my details are current</button>}
+                  {!reviewRequested && <button className="link-btn small" onClick={confirmDetails}>{t('portal.confirmCurrent')}</button>}
                 </div>
-                <div className="card pad"><h3 className="card-title">Change requests</h3><CrHistory items={lc!.changeRequests} onCancel={cancelCr} /></div>
+                <div className="card pad"><h3 className="card-title">{t('portal.changeRequests')}</h3><CrHistory items={lc!.changeRequests} onCancel={cancelCr} /></div>
               </>
             ) : me.editable ? (
               <div className="card pad">
                 <Checklist items={me.checklist} sections={cfg.sections} onJump={(s) => { setRevealed((r) => new Set(r).add(s)); goTo(s); }} />
-                <button className="btn btn-primary btn-block" onClick={() => setConfirmSubmit(true)} disabled={saving}>Submit for review</button>
-                {blocking > 0 && <p className="small muted center">You can submit once all required items are done.</p>}
+                <button className="btn btn-primary btn-block" onClick={() => setConfirmSubmit(true)} disabled={saving}>{t('portal.submitForReview')}</button>
+                {blocking > 0 && <p className="small muted center">{t('portal.submitWhenDone')}</p>}
               </div>
             ) : (
-              <div className="card pad"><h3 className="card-title">Approval progress</h3><ApprovalTimeline steps={v.steps} levels={cfg.levels} /></div>
+              <div className="card pad"><h3 className="card-title">{t('portal.approvalProgress')}</h3><ApprovalTimeline steps={v.steps} levels={cfg.levels} /></div>
             )}
             <div className="card pad">
-              <h3 className="card-title">Your data</h3>
-              <p className="small muted">{me.privacy.consentAt ? <>You accepted the privacy notice on {fmtDate(me.privacy.consentAt)}.</> : 'Privacy notice not yet accepted.'}</p>
+              <h3 className="card-title">{t('portal.yourData')}</h3>
+              <p className="small muted">{me.privacy.consentAt ? t('portal.acceptedNoticeOn', { date: fmtDate(me.privacy.consentAt) }) : t('portal.noticeNotAccepted')}</p>
               <div className="link-list">
-                <button className="link-btn small" onClick={() => setShowNotice(true)}>Read the privacy notice</button>
-                <a className="link-btn small" href="/api/vendor/my-data" download>Download my data</a>
+                <button className="link-btn small" onClick={() => setShowNotice(true)}>{t('portal.readNotice')}</button>
+                <a className="link-btn small" href="/api/vendor/my-data" download>{t('portal.downloadData')}</a>
                 {me.privacy.erasureRequestedAt
-                  ? <span className="small muted">Deletion requested on {fmtDate(me.privacy.erasureRequestedAt)} — we’ll email you.</span>
-                  : <button className="link-btn small danger" onClick={() => setErasureOpen(true)}>Withdraw consent & request deletion</button>}
+                  ? <span className="small muted">{t('portal.deletionRequested', { date: fmtDate(me.privacy.erasureRequestedAt) })}</span>
+                  : <button className="link-btn small danger" onClick={() => setErasureOpen(true)}>{t('portal.requestDeletion')}</button>}
               </div>
             </div>
             <div className="card pad">
-              <h3 className="card-title">How onboarding works</h3>
-              <ol className="guide-mini">{cfg.guide.map((g) => <li key={g.title}>{g.title.replace(/^Step \d+: /, '')}</li>)}</ol>
-              <button className="link-btn small" onClick={() => openHelp('buyer-guide')}>Read the full guide</button>
+              <h3 className="card-title">{t('portal.howItWorks')}</h3>
+              <ol className="guide-mini">{cfg.guide.map((g) => <li key={g.title}>{g.title.replace(/^(Step \d+|الخطوة \d+): /, '')}</li>)}</ol>
+              <button className="link-btn small" onClick={() => openHelp('buyer-guide')}>{t('portal.readGuide')}</button>
             </div>
           </aside>
         </div>
@@ -324,23 +327,23 @@ export function VendorPortal() {
       <footer className="page-foot"><PoweredBy /></footer>
 
       {me.privacy.needsConsent && <ConsentModal buyer={me.buyer.name} privacy={me.privacy} onDone={() => load()} />}
-      {showNotice && <Modal title={`Privacy notice — ${me.buyer.name}`} wide onClose={() => setShowNotice(false)}><div className="notice-text">{me.privacy.text}</div></Modal>}
-      {erasureOpen && <ErasureModal onClose={() => setErasureOpen(false)} onDone={() => { setErasureOpen(false); setFlash({ kind: 'info', text: 'Your deletion request has been sent. We’ll email you when it has been handled.' }); load(); }} />}
+      {showNotice && <Modal title={t('portal.noticeTitle', { buyer: me.buyer.name })} wide onClose={() => setShowNotice(false)}><div className="notice-text">{me.privacy.text}</div></Modal>}
+      {erasureOpen && <ErasureModal onClose={() => setErasureOpen(false)} onDone={() => { setErasureOpen(false); setFlash({ kind: 'info', text: t('portal.deletionSent') }); load(); }} />}
       {crOpen && (
-        <Modal title="Submit change request?" wide onClose={() => setCrOpen(false)}
-          footer={<><button className="btn btn-ghost" onClick={() => setCrOpen(false)}>Keep editing</button><button className="btn btn-primary" disabled={crBusy} onClick={submitChange}>{crBusy ? 'Submitting…' : 'Submit for review'}</button></>}>
+        <Modal title={t('portal.crConfirmTitle')} wide onClose={() => setCrOpen(false)}
+          footer={<><button className="btn btn-ghost" onClick={() => setCrOpen(false)}>{t('portal.keepEditing')}</button><button className="btn btn-primary" disabled={crBusy} onClick={submitChange}>{crBusy ? t('portal.submitting') : t('portal.submitForReview')}</button></>}>
           <ChangeDiff changes={fieldChanges} docCount={newDocs.length} />
-          <label className="field"><span>Reason for the change (optional)</span>
-            <textarea className="input" rows={2} maxLength={1000} value={crNote} onChange={(e) => setCrNote(e.target.value)} placeholder="e.g. We moved our account to a new bank" /></label>
-          <p className="small muted">Your current details stay in effect until the change is approved.</p>
+          <label className="field"><span>{t('portal.crReason')}</span>
+            <textarea className="input" rows={2} maxLength={1000} value={crNote} onChange={(e) => setCrNote(e.target.value)} placeholder={t('portal.crReasonPlaceholder')} /></label>
+          <p className="small muted">{t('portal.crInEffect')}</p>
         </Modal>
       )}
       {confirmSubmit && (
-        <Modal title="Submit for review?" onClose={() => setConfirmSubmit(false)}
-          footer={<><button className="btn btn-ghost" onClick={() => setConfirmSubmit(false)}>Keep editing</button><button className="btn btn-primary" disabled={blocking > 0 && dirty.size === 0} onClick={submit}>Submit</button></>}>
+        <Modal title={t('portal.submitConfirmTitle')} onClose={() => setConfirmSubmit(false)}
+          footer={<><button className="btn btn-ghost" onClick={() => setConfirmSubmit(false)}>{t('portal.keepEditing')}</button><button className="btn btn-primary" disabled={blocking > 0 && dirty.size === 0} onClick={submit}>{t('portal.submit')}</button></>}>
           {blocking > 0
-            ? <Alert kind="warning">{blocking} required item(s) still need attention — see the checklist. {dirty.size > 0 && 'You have unsaved changes; submitting will save them and re-check.'}</Alert>
-            : <p>Your details will be reviewed by: <strong>{cfg.levels.join(' → ')}</strong>. You won’t be able to edit while it’s under review.</p>}
+            ? <Alert kind="warning">{t('portal.itemsNeedAttention', { count: blocking })} {dirty.size > 0 && t('portal.unsavedWillSave')}</Alert>
+            : <p>{t('portal.reviewedBy')} <strong>{cfg.levels.join(lang === 'ar' ? ' ← ' : ' → ')}</strong>. {t('portal.lockedWhileReview')}</p>}
         </Modal>
       )}
     </div>
@@ -355,9 +358,9 @@ export function VendorSignedOut() {
   useEffect(() => { try { setWs(localStorage.getItem('vg.supplierWorkspace') ?? undefined); } catch { /* ignore */ } }, []);
   return (
     <div className="center-page login-bg"><div className="card pad login-card">
-      <h2>You’re signed out</h2>
-      <p className="muted">Open the invitation link from your email again, or sign in with your email address. You’ll get a new one-time code.</p>
-      {ws && <a className="btn btn-primary btn-block" href={`/s/${ws}${next ? `?next=${encodeURIComponent(next)}` : ''}`}>Sign in with your email</a>}
+      <h2>{t('portal.signedOutTitle')}</h2>
+      <p className="muted">{t('portal.signedOutText')}</p>
+      {ws && <a className="btn btn-primary btn-block" href={`/s/${ws}${next ? `?next=${encodeURIComponent(next)}` : ''}`}>{t('portal.signInWithEmail')}</a>}
       <div className="auth-foot"><PoweredBy /></div>
     </div></div>
   );
@@ -375,17 +378,17 @@ function ConsentModal({ buyer, privacy, onDone }: { buyer: string; privacy: Priv
   }
   return (
     <div className="modal-backdrop">
-      <div className="modal modal-wide" role="dialog" aria-modal="true" aria-label="Privacy notice">
-        <div className="modal-head"><h3>{privacy.consentVersion ? 'Our privacy notice has changed' : `Before you start: how ${buyer} uses your data`}</h3></div>
+      <div className="modal modal-wide" role="dialog" aria-modal="true" aria-label={t('portal.privacyNotice')}>
+        <div className="modal-head"><h3>{privacy.consentVersion ? t('portal.noticeChanged') : t('portal.beforeYouStart', { buyer })}</h3></div>
         <div className="modal-body">
           {error && <Alert kind="error">{error}</Alert>}
           <div className="notice-text notice-scroll">{privacy.text}</div>
           <label className="check-item"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-            <span>I have read the privacy notice and agree to {buyer} processing this information for supplier registration, payments and legal compliance.</span></label>
+            <span>{t('portal.consentAgree', { buyer })}</span></label>
         </div>
         <div className="modal-foot">
-          <a className="btn btn-ghost" href="/api/vendor-auth/logout" onClick={(e) => { e.preventDefault(); supplierSignOut(); }}>Not now</a>
-          <button className="btn btn-primary" disabled={!agree || busy} onClick={accept}>{busy ? 'Saving…' : 'Accept and continue'}</button>
+          <a className="btn btn-ghost" href="/api/vendor-auth/logout" onClick={(e) => { e.preventDefault(); supplierSignOut(); }}>{t('portal.notNow')}</a>
+          <button className="btn btn-primary" disabled={!agree || busy} onClick={accept}>{busy ? t('common.saving') : t('portal.acceptContinue')}</button>
         </div>
       </div>
     </div>
@@ -399,12 +402,12 @@ function ErasureModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
     try { await api('/vendor/erasure-request', { body: { reason } }); onDone(); } catch (e: any) { setError(e.message); }
   }
   return (
-    <Modal title="Withdraw consent and request deletion" onClose={onClose}
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-danger" onClick={send}>Send request</button></>}>
+    <Modal title={t('portal.erasureTitle')} onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>{t('common.cancel')}</button><button className="btn btn-danger" onClick={send}>{t('portal.sendRequest')}</button></>}>
       {error && <Alert kind="error">{error}</Alert>}
-      <p>We will delete the personal data held for your registration. If you are an active supplier, some records (for example, those needed for tax and payments) may have to be kept for the period the law requires; we will tell you if so.</p>
-      <p className="small muted">Tip: download your data first if you want a copy.</p>
-      <div className="field"><label htmlFor="er-reason">Reason (optional)</label><textarea id="er-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+      <p>{t('portal.erasureText')}</p>
+      <p className="small muted">{t('portal.erasureTip')}</p>
+      <div className="field"><label htmlFor="er-reason">{t('portal.reasonOptional')}</label><textarea id="er-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
     </Modal>
   );
 }

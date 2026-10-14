@@ -97,7 +97,8 @@ export function VendorList({ mine = false }: { mine?: boolean }) {
 
 function CreateVendor({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const { me } = useSession();
-  const [f, setF] = useState({ name: '', vendorType: 'DOMESTIC', contactFirstName: '', contactLastName: '', contactEmail: '', contactMobile: '', notify: true });
+  const arabic = !!me?.tenant.supplierLanguages?.includes('ar');
+  const [f, setF] = useState({ name: '', vendorType: 'DOMESTIC', contactFirstName: '', contactLastName: '', contactEmail: '', contactMobile: '', notify: true, language: me?.tenant.settings.supplierLanguage ?? 'en' });
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -107,7 +108,8 @@ function CreateVendor({ onClose, onCreated }: { onClose: () => void; onCreated: 
     e.preventDefault();
     setBusy(true); setError(undefined);
     try {
-      const r = await api('/staff/vendors', { body: f });
+      const { language, ...rest } = f;
+      const r = await api('/staff/vendors', { body: arabic ? { ...rest, language } : rest });
       onCreated(r.vendor.id);
     } catch (err: any) { setError(err.message); } finally { setBusy(false); }
   }
@@ -123,6 +125,7 @@ function CreateVendor({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <div className="field"><label htmlFor="cv-ln">Contact last name<span className="req"> *</span></label><input id="cv-ln" required value={f.contactLastName} onChange={set('contactLastName')} /></div>
         <div className="field"><label htmlFor="cv-em">Contact email<span className="req"> *</span></label><input id="cv-em" type="email" required value={f.contactEmail} onChange={set('contactEmail')} /></div>
         <div className="field"><label htmlFor="cv-mo">Mobile number<span className="req"> *</span></label><input id="cv-mo" type="tel" required value={f.contactMobile} onChange={set('contactMobile')} placeholder={f.vendorType === 'IMPORT' ? '+44 7700 900123' : me?.tenant.mobileExample} /><div className="field-help">{f.vendorType === 'IMPORT' ? 'Include the country code, e.g. +44 or +91.' : `A ${me?.tenant.countryName ?? 'local'} number, or include the country code.`}</div></div>
+        {arabic && <div className="field"><label htmlFor="cv-lang">Supplier’s language</label><select id="cv-lang" value={f.language} onChange={set('language')}><option value="en">English</option><option value="ar">Arabic (العربية)</option></select><div className="field-help">For the invitation and the portal. The supplier can switch at any time.</div></div>}
         <label className="checkbox field-wide"><input type="checkbox" checked={f.notify} onChange={set('notify')} /> Email the invite link to the contact now</label>
       </form>
     </Modal>

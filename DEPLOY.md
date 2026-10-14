@@ -104,6 +104,15 @@ Included in every plan. After this release deploys, admins see **Purchase orders
 
 Hourly jobs send acceptance reminders and run auto-accept; the nightly job pulls from Oracle.
 
+## 3c. Arabic supplier portal (Gulf workspaces)
+
+Nothing to set up: the release adds a `language` column to vendors (applied on start). In a Gulf workspace:
+1. **Settings → Workspace → Supplier portal language:** English or Arabic for new suppliers. Suppliers can switch at any time from the portal header; their choice is used for their emails and SMS too.
+2. **New vendor:** choose the supplier's language when inviting.
+3. **Your own fields:** Configuration → each field, section, document and guide item has an *Arabic* box. Built-in Gulf wording already has Arabic; leave the box blank to use it.
+4. **Privacy notice:** Settings → Privacy has an Arabic notice; the built-in one is used until you change the English notice.
+5. **Changing the built-in Arabic:** `npm run i18n:export`, edit the Arabic column, `npm run i18n:import -- file.csv`, commit and push — see docs/TRANSLATIONS.md.
+
 ## 4. Day to day
 
 - **Deploys:** every push to `main` builds and deploys. Database changes are applied automatically on start.

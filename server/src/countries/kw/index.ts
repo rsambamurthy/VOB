@@ -9,7 +9,7 @@
  *  - Local content: Kuwaitization (national labour) quotas.
  */
 import type { CheckDef, CountryPack, ExtractKey, Profile, ReadableDocument, ValidatorDef } from '../types.js';
-import { gulfNotice, ibanCountryCheck, registryMock } from '../gcc/shared.js';
+import { gulfNoticeAr, gulfNotice, ibanCountryCheck, registryMock } from '../gcc/shared.js';
 import { gulfTemplate, isCountry, notCountry, YES_NO } from '../gcc/template.js';
 
 const s = (v: unknown) => (v === undefined || v === null ? '' : String(v));
@@ -115,6 +115,7 @@ export const kuwaitPack: CountryPack = {
       lawSentence: 'We handle it in line with Kuwaiti law and good data-protection practice.',
       abroad: 'Where data is processed outside Kuwait, we protect it to the same standard.',
     }),
+    defaultNoticeAr: gulfNoticeAr({ lawSentence: 'ونتعامل معها وفقاً للقوانين الكويتية والممارسات السليمة لحماية البيانات.', abroad: 'وإذا عولجت البيانات خارج دولة الكويت، فإننا نحميها بالمستوى نفسه.' }),
   },
   erp: {
     domesticTaxId: () => '',

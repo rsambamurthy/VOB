@@ -6,17 +6,22 @@ export type Op = 'eq' | 'neq' | 'in' | 'notIn' | 'gt' | 'gte' | 'lt' | 'lte' | '
 export interface Condition { field: string; op: Op; value?: string | number | string[] }
 export interface Rule { match: 'all' | 'any'; conditions: Condition[] }
 export type FieldType = 'text' | 'textarea' | 'select' | 'radio' | 'number' | 'email' | 'tel' | 'date' | 'url';
+/** Arabic wording a workspace gives its own form (shown to suppliers who use the portal in Arabic). */
+export interface ArabicText { label?: string; help?: string; placeholder?: string; options?: string[]; title?: string; body?: string }
 export interface FieldDef {
   key: string; label: string; type: FieldType;
   required?: boolean | Condition; showIf?: Condition; options?: string[]; validator?: string; placeholder?: string; help?: string; dir?: 'rtl' | 'ltr' | 'auto';
+  tr?: { ar?: ArabicText };
+  /** Supplier portal only: the text shown for each option (the stored value stays `options[i]`). */
+  optionLabels?: string[];
 }
-export interface GroupDef { key: string; label: string; fields: FieldDef[] }
-export interface SectionDef { key: string; label: string; groups: GroupDef[] }
-export interface DocRequirement { type: string; label: string; help?: string; required?: boolean | Condition; showIf?: Condition; hasExpiry?: boolean; holdOnExpiry?: boolean; isRequired?: boolean }
+export interface GroupDef { key: string; label: string; fields: FieldDef[]; tr?: { ar?: ArabicText } }
+export interface SectionDef { key: string; label: string; groups: GroupDef[]; tr?: { ar?: ArabicText } }
+export interface DocRequirement { type: string; label: string; help?: string; required?: boolean | Condition; showIf?: Condition; hasExpiry?: boolean; holdOnExpiry?: boolean; isRequired?: boolean; tr?: { ar?: ArabicText } }
 export interface WorkflowLevel { id: string; label: string; roleKey: string; rule?: Rule; slaHours?: number }
 export interface ChangeRule { match: string[]; levelIds: string[] }
 export interface ChangeApproval { rules: ChangeRule[]; defaultLevelIds: string[] }
-export interface OnboardingConfig { sections: SectionDef[]; documents: DocRequirement[]; workflow: { levels: WorkflowLevel[]; changes?: ChangeApproval }; guide: { title: string; body: string }[] }
+export interface OnboardingConfig { sections: SectionDef[]; documents: DocRequirement[]; workflow: { levels: WorkflowLevel[]; changes?: ChangeApproval }; guide: { title: string; body: string; tr?: { ar?: ArabicText } }[] }
 export interface ConfigIssue { path: string; message: string }
 
 
@@ -24,7 +29,7 @@ export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
-  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; mobileExample?: string; settings: { requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number; skipWeekends?: boolean; mfaEnforcedByPlatform?: boolean } };
+  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; mobileExample?: string; supplierLanguages?: ('en' | 'ar')[]; settings: { supplierLanguage?: 'en' | 'ar'; requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number; skipWeekends?: boolean; mfaEnforcedByPlatform?: boolean } };
   roles: { id: string; key: string; name: string }[];
   permissions: Permission[];
   mfaSetupRequired: boolean;

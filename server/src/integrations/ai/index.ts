@@ -15,6 +15,7 @@ import { deriveExtracted, readableDocuments } from '../../countries/registry.js'
 const EXTRACTABLE = readableDocuments();
 import { anthropicExtractor, mockExtractor, type Extractor } from './extractors.js';
 import type { OnboardingConfig } from '../../config/types.js';
+import { normaliseExtracted } from '../../i18n/digits.js';
 
 const i = env.int;
 let extractor: Extractor = i.AI_PROVIDER === 'anthropic' ? anthropicExtractor({ apiKey: i.ANTHROPIC_API_KEY!, model: i.AI_MODEL }) : mockExtractor;
@@ -47,6 +48,7 @@ defineJob<{ id: string }>('document.extract', async ({ id }) => {
     for (const k of spec.keys) {
       let v = raw.values[k.key]?.trim();
       if (!v) continue;
+      v = normaliseExtracted(v);
       if (k.transform) v = k.transform(v);
       if (k.validate && !k.validate(v)) continue; // the AI misread a formatted identifier — drop it rather than suggest junk
       fields.push({ fieldId: k.target, label: k.description, value: v.slice(0, 300), confidence: Math.max(0, Math.min(1, Number(raw.confidence[k.key] ?? 0.5))) });
