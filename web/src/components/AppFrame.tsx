@@ -55,6 +55,13 @@ export function AppFrame({ prefsKey, logoUrl, product, workspace, entries, actio
     if (open.has(g.key)) open.delete(g.key); else open.add(g.key);
     update({ ...prefs, open: [...open] });
   };
+  // Breadcrumb: the group and the page the current location belongs to.
+  const under = (l: FrameLink) => location.pathname === l.to || location.pathname.startsWith(l.to + '/');
+  const crumbs: string[] = [];
+  for (const e of entries) {
+    if (isGroup(e)) { const l = e.items.find(active) ?? e.items.find(under); if (l) { crumbs.push(e.label, l.label); break; } }
+    else if (under(e)) { crumbs.push(e.label); break; }
+  }
   const toggleMenu = () => { if (window.matchMedia('(max-width: 900px)').matches) setMenuOpen(!menuOpen); else update({ ...prefs, rail: !rail }); };
 
   const UserChip = () => {
@@ -109,7 +116,10 @@ export function AppFrame({ prefsKey, logoUrl, product, workspace, entries, actio
           {sideFoot && <div className="af-side-foot">{sideFoot}</div>}
         </aside>
         {menuOpen && <button className="af-scrim" aria-label={menuLabels.close} onClick={() => setMenuOpen(false)} />}
-        <main className="af-main" id="main">{children}</main>
+        <main className="af-main" id="main">
+          {crumbs.length > 0 && <div className="af-crumbs">{crumbs.map((c) => <span key={c}>{c}</span>)}</div>}
+          {children}
+        </main>
       </div>
     </div>
   );

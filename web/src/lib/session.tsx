@@ -49,5 +49,7 @@ export function applyBranding(b?: Branding) {
   const own = color.toLowerCase() !== DEFAULT_BRAND;
   root.setProperty('--af-head', own ? `color-mix(in srgb, ${color} 82%, black)` : '#312e81');
   root.setProperty('--af-accent', own ? color : '#7a210b');
+  root.setProperty('--btn', own ? color : '#2563eb');
+  root.setProperty('--focus', own ? color : '#3b82f6');
   document.title = b?.productName ?? 'VendorGate';
 }

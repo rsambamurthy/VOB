@@ -718,3 +718,45 @@ a.af-user-chip:hover, a.af-user-chip.active { background: rgba(255,255,255,.2); 
   .af-user-chip { padding: 3px; }
 }
 @media (max-width: 520px) { .af-chip { display: none; } .af-header { gap: 6px; padding: 0 10px; } }
+
+/* ---------- Forms and cards in the SmartAppt style ---------- */
+:root { --ink: #1e293b; --ink-2: #475569; --muted: #64748b; --line: #e2e8f0; --line-2: #f1f5f9; --bg: #f1f5f9; --radius: 12px; --btn: #2563eb; --focus: #3b82f6; --shadow: none; }
+.card { border-color: var(--line); box-shadow: none; }
+.page-head h1 { color: #0f172a; font-weight: 700; }
+
+/* Section cards (form groups): the title sits inside the card, with an optional subtitle */
+.group { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px; }
+.group > legend { float: inline-start; width: 100%; padding: 0; margin: 0 0 16px; font-size: 15px; font-weight: 700; color: var(--ink); }
+.group > legend + * { clear: both; }
+
+/* Labels, inputs, help */
+.field label, fieldset.field legend { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.field .radio, .field .checkbox, .field label.radio, .field label.checkbox { font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); }
+input, select, textarea { color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]), select { min-height: 40px; }
+input:focus, select:focus, textarea:focus { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 15%, transparent); }
+input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color: var(--muted); }
+.field-help { color: #94a3b8; font-size: 11.5px; }
+.field-error { font-size: 11.5px; }
+
+/* Read-only values look like a locked input */
+.ro-value { padding: 10px 14px; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; color: var(--ink); font-size: 14px; }
+
+/* Buttons */
+.btn { border-radius: 8px; padding: 10px 22px; font-size: 14px; font-weight: 600; }
+.btn-sm { padding: 6px 12px; font-size: 12.5px; }
+.btn-primary { background: var(--btn); } .btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--btn) 85%, black); }
+.btn-secondary { background: #fff; color: var(--ink-2); border-color: var(--line); } .btn-secondary:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
+.form-foot { background: #fff; border-top-color: var(--line); padding: 16px 24px; }
+
+/* Tabs: segmented, the current one filled with the accent colour */
+.tabs { flex-wrap: wrap; overflow: visible; gap: 4px; padding: 4px; margin: 12px 12px 4px; border: 1px solid var(--line); border-radius: 10px; background: #fff; width: fit-content; max-width: calc(100% - 24px); }
+.tabs button { border-bottom: 0; border-radius: 7px; padding: 8px 16px; font-size: 13.5px; color: var(--ink-2); }
+.tabs button:hover { background: #f8fafc; color: var(--ink); }
+.tabs button.active { background: var(--af-accent); color: #fff; }
+.tabs button.active .tab-count { background: #fff; color: var(--af-accent); }
+
+/* Breadcrumb strip under the top bar */
+.af-crumbs { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 20px; background: #fff; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--ink); }
+.af-crumbs span + span::before { content: '›'; color: #94a3b8; margin-inline-end: 10px; }
+[dir=rtl] .af-crumbs span + span::before { content: '‹'; }
