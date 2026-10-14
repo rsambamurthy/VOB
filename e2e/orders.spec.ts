@@ -33,7 +33,7 @@ test('purchase orders: buyer loads orders, supplier signs in by email and accept
   const consent = sup.getByRole('dialog', { name: 'Privacy notice' });
   await expect(sup.locator('.page-head h1')).toBeVisible();
   if (await consent.waitFor({ timeout: 3000 }).then(() => true, () => false)) { await consent.getByRole('checkbox').check(); await consent.getByRole('button', { name: 'Accept and continue' }).click(); await expect(consent).toBeHidden(); }
-  await sup.locator('.topnav').getByRole('link', { name: /Purchase orders/ }).click();
+  await sup.locator('.af-nav').getByRole('link', { name: /Purchase orders/ }).click();
   await expect(sup.getByRole('heading', { name: 'Purchase orders' })).toBeVisible();
   await sup.locator('table.table tbody tr a').first().click();
   await expect(sup.locator('.action-bar')).toBeVisible();
@@ -78,7 +78,7 @@ test('purchase orders: buyer loads orders, supplier signs in by email and accept
   await expect(inv.locator('.checks-list')).toContainText('received');
   await inv.getByRole('button', { name: 'Submit invoice' }).click();
   await expect(sup.locator('.alert-success')).toContainText('Invoice submitted');
-  await sup.locator('.topnav').getByRole('link', { name: 'Invoices' }).click();
+  await sup.locator('.af-nav').getByRole('link', { name: 'Invoices' }).click();
   await expect(sup.locator('tbody tr', { hasText: invNo })).toContainText('Exception');
 
   // Buyer: the invoice is in the review queue; approving an exception needs a note

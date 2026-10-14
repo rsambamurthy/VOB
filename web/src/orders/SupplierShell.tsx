@@ -1,11 +1,13 @@
-/** Top bar shared by the supplier's profile and purchase order pages. */
+/** Frame shared by the supplier's profile and purchase order pages. */
 import { Fragment, createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { applyBranding } from '../lib/session';
 import { monogram, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import type { Branding, VendorStatus } from '../lib/types';
-import { StatusBadge } from '../components/ui';
+import { statusText } from '../components/ui';
+import { AppFrame, type FrameEntry } from '../components/AppFrame';
+import { NavIcon } from '../components/NavIcon';
 import { useHelp } from '../help/HelpPanel';
 import { PoweredBy, PRODUCT } from '../components/Brand';
 import { setLang, t, useLang, type Lang } from '../i18n';
@@ -30,30 +32,38 @@ export async function supplierSignOut(workspace?: string) {
   window.location.href = workspace ? `/s/${workspace}` : '/vendor/expired';
 }
 
-export function SupplierTopbar({ info, onLanguage }: { info: SupplierInfo; onLanguage?: (l: Lang) => unknown }) {
+/** The supplier portal frame: top bar and sidebar (same layout as the staff portal). */
+export function SupplierFrame({ info, onLanguage, children }: { info: SupplierInfo; onLanguage?: (l: Lang) => unknown; children: ReactNode }) {
   const { openHelp } = useHelp();
   useLang();
+  const product = info.buyer.branding.productName ?? PRODUCT;
+  const entries: FrameEntry[] = [
+    { to: '/vendor', end: true, label: info.vendor.status === 'APPROVED' ? t('shell.navProfileApproved') : t('shell.navProfile'), icon: 'workspace' },
+    ...(info.orders.enabled ? [
+      { to: '/vendor/orders', label: t('shell.navOrders'), icon: 'orders', count: info.orders.pending, countLabel: t('shell.waiting', { count: info.orders.pending }) },
+      { to: '/vendor/invoices', label: t('shell.navInvoices'), icon: 'invoices' },
+      { to: '/vendor/payments', label: t('shell.navPayments'), icon: 'payments' },
+    ] : []),
+  ];
   return (
-    <header className="topbar">
-      <div className="brand">
-        {info.buyer.branding.logoUrl ? <img src={info.buyer.branding.logoUrl} alt="" className="brand-logo" /> : (info.buyer.branding.productName ?? PRODUCT) !== PRODUCT && <span className="brand-mark">{monogram(info.buyer.branding.productName)}</span>}
-        <span>{info.buyer.name}</span><span className="muted small hide-sm">· {t('shell.portal')}</span>
-      </div>
-      {info.orders.enabled && (
-        <nav className="topnav" aria-label={t('shell.portal')}>
-          <NavLink to="/vendor" end>{info.vendor.status === 'APPROVED' ? t('shell.navProfileApproved') : t('shell.navProfile')}</NavLink>
-          <NavLink to="/vendor/orders">{t('shell.navOrders')}{info.orders.pending > 0 && <span className="count-pill" aria-label={t('shell.waiting', { count: info.orders.pending })}>{info.orders.pending}</span>}</NavLink>
-          <NavLink to="/vendor/invoices">{t('shell.navInvoices')}</NavLink>
-          <NavLink to="/vendor/payments">{t('shell.navPayments')}</NavLink>
-        </nav>
-      )}
-      <div className="topbar-right">
-        <span className="hide-sm" title={info.signedInAs}>{info.vendor.name}</span><StatusBadge status={info.vendor.status} />
+    <AppFrame
+      prefsKey="vg.supplierNav"
+      logoUrl={info.buyer.branding.logoUrl}
+      product={product}
+      workspace={info.buyer.name}
+      entries={entries}
+      navLabel={t('shell.nav')}
+      menuLabels={{ open: t('shell.openMenu'), close: t('shell.closeMenu'), collapse: t('shell.collapse'), expand: t('shell.expand') }}
+      actions={<>
         <LangSwitch available={info.buyer.languages} onChange={onLanguage} />
-        <button className="btn btn-ghost btn-sm" onClick={() => openHelp()} title={t('shell.helpTitle')}>{t('common.help')}</button>
-        <button className="btn btn-ghost btn-sm" onClick={() => supplierSignOut(info.buyer.workspace)}>{t('common.signOut')}</button>
-      </div>
-    </header>
+        <button className="af-hbtn" onClick={() => openHelp()} title={t('shell.helpTitle')} aria-label={t('common.help')}><NavIcon name="help" size={18} /></button>
+        <button className="af-hbtn" onClick={() => supplierSignOut(info.buyer.workspace)} title={t('common.signOut')} aria-label={t('common.signOut')}><NavIcon name="logout" size={18} /></button>
+      </>}
+      user={{ initials: monogram(info.vendor.name), name: info.vendor.name, role: statusText(info.vendor.status), title: info.signedInAs }}
+      sideFoot={<PoweredBy />}
+    >
+      {children}
+    </AppFrame>
   );
 }
 
@@ -77,12 +87,10 @@ export function SupplierShell({ children }: { children: ReactNode }) {
   if (!info) return <div className="center-page"><div className="spinner" /></div>;
   return (
     <Ctx.Provider value={{ info, reload }}>
-      <div className="vendor-app">
-        <SupplierTopbar info={info} onLanguage={saveLanguage} />
+      <SupplierFrame info={info} onLanguage={saveLanguage}>
         {/* Pages reload in the new language (server text such as form labels comes back translated). */}
         <Fragment key={lang}>{children}</Fragment>
-        <footer className="page-foot"><PoweredBy /></footer>
-      </div>
+      </SupplierFrame>
     </Ctx.Provider>
   );
 }

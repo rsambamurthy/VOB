@@ -42,6 +42,12 @@ export function RequireStaff({ children }: { children: ReactNode }) {
 const DEFAULT_BRAND = '#1f2758';
 export function applyBranding(b?: Branding) {
   const color = b?.primaryColor && /^#[0-9a-f]{6}$/i.test(b.primaryColor) ? b.primaryColor : DEFAULT_BRAND;
-  document.documentElement.style.setProperty('--brand', color);
+  const root = document.documentElement.style;
+  root.setProperty('--brand', color);
+  // App frame: VendorGate's default brand gets Integrata's SmartAppt colours (indigo bar, maroon accent);
+  // a workspace with its own colour gets a darker shade of it for the bar and the colour itself as accent.
+  const own = color.toLowerCase() !== DEFAULT_BRAND;
+  root.setProperty('--af-head', own ? `color-mix(in srgb, ${color} 82%, black)` : '#312e81');
+  root.setProperty('--af-accent', own ? color : '#7a210b');
   document.title = b?.productName ?? 'VendorGate';
 }

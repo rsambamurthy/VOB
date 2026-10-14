@@ -3,8 +3,9 @@ import type { StepStatus, VendorStatus } from '../lib/types';
 import { statusLabel, stepLabel } from '../lib/format';
 import { getLang, t } from '../i18n';
 
+export const statusText = (status: VendorStatus) => (getLang() === 'en' ? statusLabel[status] : t(`status.${status}`));
 export function StatusBadge({ status }: { status: VendorStatus }) {
-  return <span className={`badge badge-${status.toLowerCase()}`}>{getLang() === 'en' ? statusLabel[status] : t(`status.${status}`)}</span>;
+  return <span className={`badge badge-${status.toLowerCase()}`}>{statusText(status)}</span>;
 }
 export function StepBadge({ status }: { status: StepStatus }) {
   return <span className={`badge step-${status.toLowerCase()}`}>{getLang() === 'en' ? stepLabel[status] : t(`step.${status}`)}</span>;

@@ -14,7 +14,7 @@ import { fmtDate, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
-import { rememberWorkspace, saveLanguage, SupplierTopbar, supplierSignOut } from '../orders/SupplierShell';
+import { rememberWorkspace, saveLanguage, SupplierFrame, supplierSignOut } from '../orders/SupplierShell';
 import { PoweredBy } from '../components/Brand';
 import { setLang, t, useLang, type Lang } from '../i18n';
 import { Rich } from '../i18n/Rich';
@@ -210,8 +210,7 @@ export function VendorPortal() {
   };
 
   return (
-    <div className="vendor-app">
-      <SupplierTopbar info={me} onLanguage={saveLanguage} />
+    <SupplierFrame info={me} onLanguage={saveLanguage}>
 
       <div className="page">
         <header className="page-head">
@@ -324,7 +323,6 @@ export function VendorPortal() {
           </aside>
         </div>
       </div>
-      <footer className="page-foot"><PoweredBy /></footer>
 
       {me.privacy.needsConsent && <ConsentModal buyer={me.buyer.name} privacy={me.privacy} onDone={() => load()} />}
       {showNotice && <Modal title={t('portal.noticeTitle', { buyer: me.buyer.name })} wide onClose={() => setShowNotice(false)}><div className="notice-text">{me.privacy.text}</div></Modal>}
@@ -346,7 +344,7 @@ export function VendorPortal() {
             : <p>{t('portal.reviewedBy')} <strong>{cfg.levels.join(lang === 'ar' ? ' ← ' : ' → ')}</strong>. {t('portal.lockedWhileReview')}</p>}
         </Modal>
       )}
-    </div>
+    </SupplierFrame>
   );
 }
 
