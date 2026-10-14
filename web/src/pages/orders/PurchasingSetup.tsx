@@ -4,6 +4,7 @@ import { useSession } from '../../lib/session';
 import { fmtDateTime } from '../../lib/format';
 import { Alert, Empty, Modal } from '../../components/ui';
 import { useHelpContext } from '../../help/HelpPanel';
+import { TabStrip } from '../../components/TabStrip';
 
 interface Entity { id: string; code: string; name: string; active: boolean }
 interface Site { id: string; code: string; name: string; entityId: string | null; active: boolean }
@@ -32,12 +33,12 @@ export function PurchasingSetup() {
       </header>
       {error && <Alert kind="error">{error}</Alert>}
       {flash && <Alert kind="success">{flash}</Alert>}
-      <div className="tabs" role="tablist">
+      <TabStrip>
         <button role="tab" aria-selected={tab === 'groups'} className={tab === 'groups' ? 'active' : ''} onClick={() => setTab('groups')}>Buying groups</button>
         <button role="tab" aria-selected={tab === 'entities'} className={tab === 'entities' ? 'active' : ''} onClick={() => setTab('entities')}>Companies &amp; sites</button>
         {can('tenant.settings') && <button role="tab" aria-selected={tab === 'invoicing'} className={tab === 'invoicing' ? 'active' : ''} onClick={() => setTab('invoicing')}>Invoice matching</button>}
         {can('tenant.settings') && <button role="tab" aria-selected={tab === 'keys'} className={tab === 'keys' ? 'active' : ''} onClick={() => setTab('keys')}>API keys</button>}
-      </div>
+      </TabStrip>
       {!d && !error && <div className="spinner" />}
       {d && tab === 'groups' && <Groups groups={d.groups} manage={manage} onDone={done} onError={setError} />}
       {d && tab === 'entities' && <Entities d={d} manage={manage} onDone={done} onError={setError} />}

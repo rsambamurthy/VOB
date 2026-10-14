@@ -760,3 +760,49 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 .af-crumbs { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 20px; background: #fff; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--ink); }
 .af-crumbs span + span::before { content: '›'; color: #94a3b8; margin-inline-end: 10px; }
 [dir=rtl] .af-crumbs span + span::before { content: '‹'; }
+
+/* ---------- Type and tabs (refined) ---------- */
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 400; font-display: swap; src: url('/brand/fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 500; font-display: swap; src: url('/brand/fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 600; font-display: swap; src: url('/brand/fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 700; font-display: swap; src: url('/brand/fonts/ibm-plex-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Rubik'; font-weight: 500; font-display: swap; src: url('/brand/fonts/rubik-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Rubik'; font-weight: 600; font-display: swap; src: url('/brand/fonts/rubik-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Rubik'; font-weight: 700; font-display: swap; src: url('/brand/fonts/rubik-latin-700-normal.woff2') format('woff2'); }
+:root { --font-ui: 'IBM Plex Sans', 'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif; --font-head: 'Rubik', 'IBM Plex Sans Arabic', 'IBM Plex Sans', system-ui, sans-serif; }
+body, input, textarea, select, button { font-family: var(--font-ui); }
+[dir='rtl'] body, [dir='rtl'] input, [dir='rtl'] textarea, [dir='rtl'] select, [dir='rtl'] button { font-family: 'IBM Plex Sans Arabic', 'IBM Plex Sans', system-ui, Tahoma, sans-serif; }
+h1, h2, .page-head h1, .group > legend, .card-title, .af-product, .stat-n { font-family: var(--font-head); letter-spacing: -.01em; }
+[dir='rtl'] h1, [dir='rtl'] h2, [dir='rtl'] .group > legend, [dir='rtl'] .card-title { font-family: 'IBM Plex Sans Arabic', var(--font-head); letter-spacing: 0; }
+.page-head h1 { font-size: 24px; font-weight: 600; }
+
+/* Tabs: one line, underline marker in the accent colour; scrolls sideways if there are many */
+.tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; gap: 0; padding: 0 12px; margin: 0; width: auto; max-width: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 12px 12px 0 0; background: #fff; }
+.tabs::-webkit-scrollbar { height: 4px; } .tabs::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.tabs button { position: relative; flex: none; padding: 15px 14px 13px; border-radius: 0; font-size: 13.5px; font-weight: 500; color: var(--muted); background: none; transition: color .15s; }
+.tabs button:hover { background: none; color: var(--ink); }
+.tabs button.active { background: none; color: var(--af-accent); font-weight: 600; }
+.tabs button::after { content: ''; position: absolute; inset-inline: 10px; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--af-accent); transform: scaleX(0); transition: transform .18s ease; }
+.tabs button.active::after { transform: scaleX(1); }
+.tabs button.active .tab-count { background: var(--af-accent); color: #fff; }
+
+/* Section cards: a small accent bar before the title */
+.group > legend { display: flex; align-items: center; gap: 10px; font-size: 15.5px; font-weight: 600; }
+.group > legend::before { content: ''; width: 4px; height: 18px; border-radius: 2px; background: var(--af-accent); flex: none; }
+
+/* Read-only values: quieter boxes, crisper text */
+.ro-value { background: #f8fafc; border-color: #edf1f6; font-weight: 500; color: #0f172a; line-height: 1.45; }
+.field label { color: #64748b; }
+
+/* Tab strip: one line; arrows and faded edges appear only when the tabs overflow */
+.tab-strip { position: relative; background: #fff; border-bottom: 1px solid var(--line); border-radius: 12px 12px 0 0; }
+.tab-strip > .tabs { border-bottom: 0; border-radius: inherit; scrollbar-width: none; scroll-behavior: smooth; }
+.tab-strip > .tabs::-webkit-scrollbar { display: none; }
+.tab-arrow { position: absolute; top: 0; bottom: 0; z-index: 2; width: 40px; display: none; align-items: center; border: 0; cursor: pointer; font: 600 22px/1 var(--font-ui); color: var(--ink-2); padding: 0 8px; }
+.tab-arrow:hover { color: var(--af-accent); }
+.tab-back { inset-inline-start: 0; justify-content: flex-start; background: linear-gradient(to right, #fff 55%, rgba(255,255,255,0)); border-start-start-radius: 12px; }
+.tab-fwd { inset-inline-end: 0; justify-content: flex-end; background: linear-gradient(to left, #fff 55%, rgba(255,255,255,0)); border-start-end-radius: 12px; }
+[dir=rtl] .tab-arrow { transform: scaleX(-1); }
+.can-back > .tab-back, .can-fwd > .tab-fwd { display: flex; }
+.tab-strip:has(> .page-tabs) { border: 1px solid var(--line); }
+.tab-strip > .page-tabs { border: 0; }

@@ -12,6 +12,7 @@ import { WorkflowTab } from './WorkflowTab';
 import { GuideTab } from './GuideTab';
 import { HistoryTab, type VersionRow } from './HistoryTab';
 import { PreviewModal } from './PreviewModal';
+import { TabStrip } from '../../../components/TabStrip';
 
 interface State {
   published: { version: number; config: OnboardingConfig };
@@ -121,9 +122,9 @@ export function ConfigEditor() {
       {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
       <IssueList issues={issues} onPick={jump} />
 
-      <div className="tabs page-tabs" role="tablist">
+      <TabStrip className="page-tabs">
         {TABS.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{label}</button>)}
-      </div>
+      </TabStrip>
       <div className="tab-panel">
         {tab === 'form' && <FormTab config={working} update={update} meta={state.meta} publishedIds={publishedIds} issues={issues} sectionKey={sectionKey} setSectionKey={setSectionKey} />}
         {tab === 'documents' && <DocumentsTab config={working} update={update} meta={state.meta} issues={issues} />}

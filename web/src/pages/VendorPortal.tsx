@@ -18,6 +18,7 @@ import { rememberWorkspace, saveLanguage, SupplierFrame, supplierSignOut } from 
 import { PoweredBy } from '../components/Brand';
 import { setLang, t, useLang, type Lang } from '../i18n';
 import { Rich } from '../i18n/Rich';
+import { TabStrip } from '../components/TabStrip';
 
 type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
@@ -244,14 +245,14 @@ export function VendorPortal() {
 
         <div className="detail-grid">
           <div className="card">
-            <div className="tabs" role="tablist">
+            <TabStrip>
               {tabs.map((tb) => {
                 const n = sectionErrors(tb.key);
                 return <button key={tb.key} role="tab" aria-selected={tab === tb.key} className={tab === tb.key ? 'active' : ''} onClick={() => goTo(tb.key)}>
                   {tb.label}{editable && revealed.has(tb.key) && n > 0 && <span className="tab-count">{n}</span>}{dirty.has(tb.key) && <span className="dirty" title={t('portal.unsaved')}>•</span>}
                 </button>;
               })}
-            </div>
+            </TabStrip>
             <div className="pad">
               {cfg.sections.filter((s) => s.key === tab).map((s) => (
                 <DynamicSection key={s.key} section={s} profile={profile} vendorType={v.vendorType} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} />

@@ -4,6 +4,7 @@ import { DynamicSection } from '../../../components/DynamicSection';
 import { conditionHolds, isRequired } from '../../../lib/conditions';
 import type { OnboardingConfig, Profile } from '../../../lib/types';
 import type { EditorMeta } from './shared';
+import { TabStrip } from '../../../components/TabStrip';
 
 /** Interactive preview of the vendor form, exactly as the portal renders it. */
 export function PreviewModal({ config, meta, title, onClose }: { config: OnboardingConfig; meta: EditorMeta; title: string; onClose: () => void }) {
@@ -18,10 +19,10 @@ export function PreviewModal({ config, meta, title, onClose }: { config: Onboard
         <span className="muted small">Fill in answers to see conditional fields and documents appear.</span>
         <label className="small">Vendor type <select value={vendorType} onChange={(e) => setVendorType(e.target.value)}>{meta.vendorTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></label>
       </div>
-      <div className="tabs" role="tablist">
+      <TabStrip>
         {config.sections.map((s) => <button key={s.key} role="tab" aria-selected={tab === s.key} className={tab === s.key ? 'active' : ''} onClick={() => setTab(s.key)}>{s.label}</button>)}
         <button role="tab" aria-selected={tab === '__docs'} className={tab === '__docs' ? 'active' : ''} onClick={() => setTab('__docs')}>Documents</button>
-      </div>
+      </TabStrip>
       <div className="pad-y">
         {config.sections.filter((s) => s.key === tab).map((s) => (
           <DynamicSection key={s.key} section={s} profile={profile} vendorType={vendorType} onChange={(f, v) => setProfile((p) => ({ ...p, [s.key]: { ...(p[s.key] ?? {}), [f]: v } }))} />

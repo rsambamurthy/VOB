@@ -15,6 +15,7 @@ import { SupplierAccessCard } from '../components/SupplierAccess';
 import { useSession } from '../lib/session';
 import { ChecksPanel } from '../components/Checks';
 import { ExtractionCard } from '../components/ExtractionCard';
+import { TabStrip } from '../components/TabStrip';
 
 type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
   privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[] };
@@ -168,9 +169,9 @@ export function VendorDetail() {
 
       <div className="detail-grid">
         <div className="card">
-          <div className="tabs" role="tablist">
+          <TabStrip>
             {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'active' : ''} onClick={() => setTab(t.key)}>{t.label}</button>)}
-          </div>
+          </TabStrip>
           <div className="pad">
             {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={draft ?? shownProfile} vendorType={v.vendorType} readOnly={!proposing} errors={propErrors} extra={revealExtra(s.key)}
               onChange={(f, val) => setDraft((p) => p && ({ ...p, [s.key]: { ...(p[s.key] ?? {}), [f]: val } }))} />)}
