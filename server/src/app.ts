@@ -34,6 +34,7 @@ import { configRouter } from './routes/config.js';
 import { handleResendEvent, verifySvix } from './integrations/email/resend.js';
 import { handleRazorpayEvent, verifyRazorpaySignature } from './services/billing.js';
 import { billingRouter } from './routes/billing.js';
+import { askRouter } from './routes/ask.js';
 import { helpRouter } from './routes/help.js';
 import { translateMessage } from './i18n/index.js';
 
@@ -90,6 +91,7 @@ export function createApp() {
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/help', helpRouter);
+  app.use('/api/ask', askRouter);
   app.use('/api/admin/billing', billingRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/v1', erpApiRouter);

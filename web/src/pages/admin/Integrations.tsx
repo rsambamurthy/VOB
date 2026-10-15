@@ -9,7 +9,7 @@ interface Status {
   sms: { provider: string; live: boolean; counts: Record<string, number> };
   storage: { driver: string; scan: string; bucket?: string };
   kyc: { provider: string; live: boolean; packs: { code: string; country: string; title: string; provider: string; live: boolean; partlyLive?: boolean; home: boolean; checks?: { kind: string; label: string; provider: string; live: boolean }[] }[] };
-  ai: { helpAnswers?: boolean; helpLive?: boolean; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean };
+  ai: { helpAnswers?: boolean; helpLive?: boolean; ask?: boolean; askLive?: boolean; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean };
   jobs: { running: boolean };
   devMode: boolean;
 }
@@ -86,12 +86,14 @@ export function Integrations() {
           </Card>
         ))}
 
-        <Card title="AI: document reading and help answers" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-4-5-20251001 for lower cost'}>
+        <Card title="AI: document reading, help answers and Ask" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-4-5-20251001 for lower cost'}>
           <p className="small muted">Reads registration, tax and bank documents (India: GST, PAN, cheque, incorporation, Udyam; Saudi Arabia: CR, VAT certificate; UAE: trade licence, TRN certificate; Bahrain: CR, VAT certificate; Qatar: CR, tax card; Kuwait: commercial licence; Oman: CR, VAT certificate; Gulf bank letters), suggests values for the form, and shows reviewers where documents and form answers differ.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>
           <label className="check-item"><input type="checkbox" checked={s.ai.enabledForWorkspace} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, enabledForWorkspace: on } }); setting({ aiExtraction: on }, on ? 'AI document reading turned on.' : 'AI document reading turned off.'); }} />
             <span><strong>Use AI to read uploaded documents in this workspace</strong><span className="muted small block">Documents are sent to the AI provider for reading and are not used to train models. Check this fits your data-protection obligations before turning it on.{!s.ai.live && ' (In test mode no document leaves the server.)'}</span></span></label>
           <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.helpAnswers !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, helpAnswers: on } }); setting({ helpAi: on }, on ? 'AI help answers turned on.' : 'AI help answers turned off.'); }} />
             <span><strong>Answer F1 help questions with AI</strong><span className="muted small block">Staff and suppliers can ask a question in their own words; the answer comes only from the help topics they can see. Only the question and those topics are sent to the AI provider.{!s.ai.helpLive && ' (In test mode the closest topic is shown instead.)'}</span></span></label>
+          <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.ask !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, ask: on } }); setting({ askAi: on }, on ? 'Ask turned on.' : 'Ask turned off.'); }} />
+            <span><strong>Let staff ask about suppliers in their own words</strong><span className="muted small block">“Ask” in the top bar turns a question into one of VendorGate’s built-in searches and shows the matching records. Only the question is sent to the AI provider — never supplier data — and everyone sees only what their role allows.{!s.ai.askLive && ' (In test mode questions are matched by keywords instead.)'}</span></span></label>
         </Card>
       </div>
     </div>

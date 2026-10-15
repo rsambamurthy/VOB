@@ -14,6 +14,7 @@ import { VendorList } from './pages/VendorList';
 import { ChangeRequests } from './pages/ChangeRequests';
 import { Dashboard } from './pages/Dashboard';
 import { Reports } from './pages/Reports';
+import { AskPage } from './pages/Ask';
 import { ErpSettings } from './pages/admin/Erp';
 import { VendorDetail } from './pages/VendorDetail';
 import { Mailbox } from './pages/Mailbox';
@@ -65,6 +66,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="changes" element={<ChangeRequests />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="reports" element={<Reports />} />
+              <Route path="ask" element={<AskPage />} />
               <Route path="admin/erp" element={<ErpSettings />} />
               <Route path="admin/billing" element={<Billing />} />
               <Route path="admin/help-topics" element={<HelpTopics />} />

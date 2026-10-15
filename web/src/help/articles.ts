@@ -121,6 +121,30 @@ After 5 wrong passwords the account is locked for 15 minutes. An administrator c
 Changes apply as soon as you click **Save**.`,
   },
   {
+    id: 'ask', title: 'Ask about your suppliers (AI search)', audience: ['staff'], perms: ['vendors.view'],
+    summary: 'Type a question in plain words and get the matching suppliers, documents, approvals, orders or invoices.',
+    screens: ['^/staff/ask'], contexts: ['ask'],
+    keywords: 'ask ai search question natural language find query which who list show expiring stuck bank changes invoices orders',
+    related: ['reports', 'vendor-list'],
+    body: `Use the **Ask about your suppliers…** box in the top bar, or **Ask** in the menu. Type a question the way you'd ask a colleague, for example:
+
+- "Which approved suppliers in Riyadh have a CR expiring this quarter?"
+- "Show suppliers waiting in Finance review for more than 5 days"
+- "Who changed their bank details in the last 30 days?"
+- "Open purchase orders over 1m with no shipment notice yet"
+- "Invoices in exception this month, by supplier"
+
+The answer is a list of records with a heading that says exactly what was searched. Click a row to open it, or **Download Excel** for the same list.
+
+## How it works
+- The AI reads only your question and turns it into one of VendorGate's built-in searches. It never sees supplier data, and it can't change anything.
+- You see only what your role allows: purchasing questions need access to purchase orders.
+- Bank account numbers, IBANs and tax IDs are never shown in answers.
+- Every question is recorded in the audit log.
+
+> If the heading isn't what you meant, rephrase the question. For fixed lists with filters, use [Reports](#reports). An administrator can turn Ask off under Administration → Integrations.`,
+  },
+  {
     id: 'supplier-language', title: 'Arabic for suppliers', audience: ['staff'], perms: ['tenant.settings', 'config.manage', 'vendors.create'],
     summary: 'Gulf workspaces: suppliers can use the portal, emails and SMS in Arabic.',
     screens: ['^/staff/admin/workspace', '^/staff/admin/config'],

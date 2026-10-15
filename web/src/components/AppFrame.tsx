@@ -24,7 +24,7 @@ function usePrefs(key: string) {
 
 const DOTS = ['#a855f7', '#3b82f6', '#2563eb', '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
 
-export function AppFrame({ prefsKey, logoUrl, product, workspace, entries, actions, user, navLabel, menuLabels, sideFoot, children }: {
+export function AppFrame({ prefsKey, logoUrl, product, workspace, entries, actions, search, user, navLabel, menuLabels, sideFoot, children }: {
   prefsKey: string;
   logoUrl?: string | null;
   product: string;
@@ -33,6 +33,8 @@ export function AppFrame({ prefsKey, logoUrl, product, workspace, entries, actio
   entries: FrameEntry[];
   /** Icon buttons and switches on the right of the top bar. */
   actions?: ReactNode;
+  /** A search box next to the workspace chip. */
+  search?: ReactNode;
   /** The user chip (avatar, name, role); `to` makes it a link. */
   user: { initials: string; name: string; role?: ReactNode; to?: string; title?: string };
   navLabel: string;
@@ -78,6 +80,7 @@ export function AppFrame({ prefsKey, logoUrl, product, workspace, entries, actio
         <span className="af-logo">{logoUrl ? <img src={logoUrl} alt="" /> : <span className="af-mono">{monogram(product)}</span>}</span>
         <span className="af-product hide-sm">{product}</span>
         <span className="af-chip" title={workspace}><NavIcon name="workspace" size={14} /><span>{workspace}</span></span>
+        {search}
         <span className="af-spacer" />
         <div className="af-actions">{actions}</div>
         <UserChip />

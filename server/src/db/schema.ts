@@ -95,6 +95,8 @@ export interface TenantSettings {
   retention?: { rejectedDays: number; abandonedDays: number };
   /** Answer F1 help questions with AI (from the help articles only). Default on. */
   helpAi?: boolean;
+  /** "Ask VendorGate": AI search over the supplier base (default on). */
+  askAi?: boolean;
   /** Invoice matching: allowed difference in unit price (%) before an invoice is flagged. Default 2. */
   priceTolerancePct?: number;
   /** Language new suppliers get in the portal and emails, where the country offers more than one. */

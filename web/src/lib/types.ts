@@ -29,7 +29,7 @@ export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
-  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; mobileExample?: string; supplierLanguages?: ('en' | 'ar')[]; settings: { supplierLanguage?: 'en' | 'ar'; requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number; skipWeekends?: boolean; mfaEnforcedByPlatform?: boolean } };
+  tenant: { id: string; slug: string; name: string; branding: Branding; country: string; countryName: string; currency: string; locale: string; privacyLaw: string | null; mobileExample?: string; supplierLanguages?: ('en' | 'ar')[]; settings: { supplierLanguage?: 'en' | 'ar'; requireMfa?: boolean; sessionHours?: number; aiExtraction?: boolean; vendorOtpChannel?: 'email' | 'sms' | 'both'; reKycMonths?: number; skipWeekends?: boolean; mfaEnforcedByPlatform?: boolean; askAi?: boolean } };
   roles: { id: string; key: string; name: string }[];
   permissions: Permission[];
   mfaSetupRequired: boolean;

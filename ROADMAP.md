@@ -23,6 +23,10 @@ Planned work that has been discussed but not built yet.
 - Done — Phase 4, payments: `POST /api/v1/payments` with invoice allocations and tax withheld, paid / partly paid status, payment advice emails, supplier and staff payment lists. SAP S/4HANA (API_BUSINESS_PARTNER) and Dynamics 365 F&O (VendorsV2 + bank accounts) supplier connectors; their order messages go to a middleware URL (CPI / Logic Apps).
 - Next: verify the e-invoice QR signature against the IRP public keys; credit notes; SAP / Dynamics order messages directly to the ERP APIs (PO confirmation, inbound delivery, supplier invoice) instead of middleware.
 
+## AI
+- Done: **Ask VendorGate** — staff ask about their suppliers in plain words (top-bar box and an Ask page). The AI only turns the question into one of six fixed, read-only searches (suppliers, expiring documents, pending approvals, change requests, purchase orders, invoices); VendorGate runs it within the user's permissions. The AI never sees supplier data; masked fields are never returned; every question is audited; per-workspace switch and daily limit by plan; Excel download.
+- Next: conversational onboarding for suppliers (workspace switch: form or AI-guided), then AI pre-review of submissions and bank-change risk scoring.
+
 ## Country packs
 - **Phase 0 (done):** India moved into its own pack; workspaces have a home country; checks, formats, documents, template, privacy notice, ERP mapping and formatting come from packs. See docs/COUNTRY_PACKS.md.
 - **Phase 1 (done):** shared Gulf pack + Saudi Arabia: Saudi template, CR/VAT checks (test mode), UBO/PEP, sanctions screening, automatic hold on lapsed Zakat/GOSI/Nitaqat/CR, working-day deadlines, SAR/AST, PDPL notice, country on sign-up, demo workspace "najd".

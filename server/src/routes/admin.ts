@@ -18,6 +18,7 @@ import { kycStatus } from '../integrations/kyc/index.js';
 import { homeCountries, packFor } from '../countries/registry.js';
 import { countryChangeBlocker, setHomeCountry } from '../services/tenants.js';
 import { aiStatus } from '../integrations/ai/index.js';
+import { askPlanner } from '../integrations/ai/askPlanner.js';
 import { helpAnswerer } from '../integrations/ai/helpAnswer.js';
 import { queueRunning } from '../jobs/queue.js';
 import { env } from '../lib/env.js';
@@ -182,7 +183,7 @@ adminRouter.patch('/tenant', requireStaff('tenant.settings'), ah(async (req, res
       logoUrl: z.string().url().max(500).optional().or(z.literal('')),
     }).optional(),
     email: z.object({ fromName: z.string().trim().max(80).optional(), replyTo: z.string().trim().email('Enter a valid reply-to address').max(200).optional().or(z.literal('')) }).optional(),
-    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), helpAi: z.boolean().optional(), supplierLanguage: z.enum(['en', 'ar']).optional(), priceTolerancePct: z.number().min(0).max(50).optional(), einvoiceRequired: z.boolean().optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
+    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), helpAi: z.boolean().optional(), askAi: z.boolean().optional(), supplierLanguage: z.enum(['en', 'ar']).optional(), priceTolerancePct: z.number().min(0).max(50).optional(), einvoiceRequired: z.boolean().optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
   }).parse(req.body);
   if (input.settings?.requireMfa === false && s.tenant.settings.mfaEnforcedByPlatform) throw new HttpError(409, 'Two-factor authentication is required for this workspace by VendorGate and can’t be turned off here');
   const email = input.email ? { ...(s.tenant.settings.email ?? {}), fromName: input.email.fromName || undefined, replyTo: input.email.replyTo || undefined } : undefined;
@@ -285,7 +286,7 @@ adminRouter.get('/integrations', requireStaff('tenant.settings'), ah(async (req,
     sms: { ...smsStatus(), counts: Object.fromEntries(recentSms.map((r) => [r.status, r.n])) },
     storage: storageStatus(),
     kyc: kycStatus(tenant.country),
-    ai: { ...aiStatus(), enabledForWorkspace: !!tenant.settings.aiExtraction, helpAnswers: tenant.settings.helpAi !== false, helpLive: helpAnswerer().live },
+    ai: { ...aiStatus(), enabledForWorkspace: !!tenant.settings.aiExtraction, helpAnswers: tenant.settings.helpAi !== false, helpLive: helpAnswerer().live, ask: tenant.settings.askAi !== false, askLive: askPlanner().live },
     jobs: { running: queueRunning() },
     devMode: env.devShowOtp,
   });

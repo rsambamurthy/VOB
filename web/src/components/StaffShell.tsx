@@ -5,6 +5,7 @@ import { loc } from '../lib/format';
 import { PoweredBy } from './Brand';
 import { AppFrame, type FrameEntry, type FrameGroup, type FrameLink } from './AppFrame';
 import { useHelp } from '../help/HelpPanel';
+import { AskBox } from '../pages/Ask';
 
 type L = FrameLink & { show: boolean };
 
@@ -20,7 +21,10 @@ export function StaffShell() {
   const keep = (items: L[]) => items.filter((i) => i.show).map(({ show: _s, ...l }) => l);
   const group = (key: string, label: string, icon: string, items: L[]): FrameGroup | null => { const k = keep(items); return k.length ? { key, label, icon, items: k } : null; };
   const entries = [
-    ...keep([{ to: '/staff/dashboard', label: 'Dashboard', icon: 'dashboard', show: can('reports.view') }]),
+    ...keep([
+      { to: '/staff/dashboard', label: 'Dashboard', icon: 'dashboard', show: can('reports.view') },
+      { to: '/staff/ask', label: `Ask ${product}`, icon: 'ask', tag: 'AI', show: can('vendors.view') && me.tenant.settings.askAi !== false },
+    ]),
     group('vendors', 'Vendors', 'vendors', [
       { to: '/staff/vendors', label: 'All vendors', icon: 'vendors', end: true, show: can('vendors.view') },
       { to: '/staff/queue', label: 'My approvals', icon: 'approvals', show: can('vendors.view') },
@@ -54,6 +58,7 @@ export function StaffShell() {
       product={product}
       workspace={me.tenant.name}
       entries={entries}
+      search={can('vendors.view') && me.tenant.settings.askAi !== false ? <AskBox /> : undefined}
       navLabel="Navigation"
       menuLabels={{ open: 'Open menu', close: 'Close menu', collapse: 'Collapse sidebar', expand: 'Expand sidebar' }}
       actions={<>
