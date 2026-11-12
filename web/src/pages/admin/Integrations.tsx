@@ -9,7 +9,7 @@ interface Status {
   sms: { provider: string; live: boolean; counts: Record<string, number> };
   storage: { driver: string; scan: string; bucket?: string };
   kyc: { provider: string; live: boolean; packs: { code: string; country: string; title: string; provider: string; live: boolean; partlyLive?: boolean; home: boolean; checks?: { kind: string; label: string; provider: string; live: boolean }[] }[] };
-  ai: { helpAnswers?: boolean; helpLive?: boolean; ask?: boolean; askLive?: boolean; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean };
+  ai: { helpAnswers?: boolean; helpLive?: boolean; ask?: boolean; askLive?: boolean; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean; dataEntry?: 'manual' | 'assisted' | 'automatic'; aiPlan?: boolean };
   jobs: { running: boolean };
   devMode: boolean;
 }
@@ -86,10 +86,25 @@ export function Integrations() {
           </Card>
         ))}
 
-        <Card title="AI: document reading, help answers and Ask" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-4-5-20251001 for lower cost'}>
+        <Card title="AI: document reading, help answers and Ask" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-5-5 for lower cost'}>
           <p className="small muted">Reads registration, tax and bank documents (India: GST, PAN, cheque, incorporation, Udyam; Saudi Arabia: CR, VAT certificate; UAE: trade licence, TRN certificate; Bahrain: CR, VAT certificate; Qatar: CR, tax card; Kuwait: commercial licence; Oman: CR, VAT certificate; Gulf bank letters), suggests values for the form, and shows reviewers where documents and form answers differ.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>
-          <label className="check-item"><input type="checkbox" checked={s.ai.enabledForWorkspace} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, enabledForWorkspace: on } }); setting({ aiExtraction: on }, on ? 'AI document reading turned on.' : 'AI document reading turned off.'); }} />
-            <span><strong>Use AI to read uploaded documents in this workspace</strong><span className="muted small block">Documents are sent to the AI provider for reading and are not used to train models. Check this fits your data-protection obligations before turning it on.{!s.ai.live && ' (In test mode no document leaves the server.)'}</span></span></label>
+          <fieldset className="entry-modes">
+            <legend>How suppliers enter their details</legend>
+            {ENTRY_MODES.map((m) => {
+              const mode = s.ai.dataEntry ?? (s.ai.enabledForWorkspace ? 'assisted' : 'manual');
+              const locked = m.key !== 'manual' && s.ai.aiPlan === false;
+              return (
+                <label key={m.key} className={`check-item entry-mode ${mode === m.key ? 'on' : ''} ${locked ? 'locked' : ''}`}>
+                  <input type="radio" name="dataEntry" disabled={locked} checked={mode === m.key} onChange={() => {
+                    setS({ ...s, ai: { ...s.ai, dataEntry: m.key, enabledForWorkspace: m.key !== 'manual' } });
+                    setting(m.key === 'manual' ? { aiExtraction: false } : { aiExtraction: true, dataEntry: m.key }, m.saved);
+                  }} />
+                  <span><strong>{m.title}</strong>{m.key === 'automatic' && <span className="vbadge v-test entry-new">AI</span>}<span className="muted small block">{m.text}{locked && ' Not included in your plan.'}</span></span>
+                </label>
+              );
+            })}
+            <p className="muted small">Assisted and Automatic send uploaded documents to the AI provider for reading; they are not used to train models. Check this fits your data-protection obligations.{!s.ai.live && ' (In test mode no document leaves the server, and values are only echoed back from what was typed.)'}</p>
+          </fieldset>
           <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.helpAnswers !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, helpAnswers: on } }); setting({ helpAi: on }, on ? 'AI help answers turned on.' : 'AI help answers turned off.'); }} />
             <span><strong>Answer F1 help questions with AI</strong><span className="muted small block">Staff and suppliers can ask a question in their own words; the answer comes only from the help topics they can see. Only the question and those topics are sent to the AI provider.{!s.ai.helpLive && ' (In test mode the closest topic is shown instead.)'}</span></span></label>
           <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.ask !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, ask: on } }); setting({ askAi: on }, on ? 'Ask turned on.' : 'Ask turned off.'); }} />
@@ -99,6 +114,12 @@ export function Integrations() {
     </div>
   );
 }
+
+const ENTRY_MODES: { key: 'manual' | 'assisted' | 'automatic'; title: string; text: string; saved: string }[] = [
+  { key: 'manual', title: 'Manual', text: 'Suppliers type every field and upload documents. No document is read by AI.', saved: 'Suppliers now enter their details by hand.' },
+  { key: 'assisted', title: 'Assisted', text: 'Suppliers fill in the form; after each upload the AI suggests values and the supplier chooses which to use. Reviewers see where documents and answers differ.', saved: 'AI now suggests values from documents.' },
+  { key: 'automatic', title: 'Automatic — documents first', text: 'Suppliers start by uploading their documents and the form is filled in from them. Only values read with high confidence go into empty fields; bank details and other sensitive values always wait for the supplier to confirm, and nothing the supplier typed is overwritten.', saved: 'Suppliers now start with their documents; the form is filled in from them.' },
+];
 
 const CHECK_ENV: Record<string, string> = {
   GCC: 'SANCTIONS_PROVIDER=opensanctions\nOPENSANCTIONS_API_KEY=...\nOPENSANCTIONS_DATASET=sanctions     # or default (adds PEPs, debarment)\nOPENSANCTIONS_THRESHOLD=0.8\n\n# IBAN / account-holder checks through an aggregator:\nKYC_AGGREGATOR_URL=https://kyc.example.com\nKYC_AGGREGATOR_KEY=...\nKYC_AGGREGATOR_KINDS=gcc_iban',

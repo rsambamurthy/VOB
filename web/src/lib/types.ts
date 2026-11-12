@@ -67,10 +67,10 @@ export interface Check {
   message: string; inputMasked: string; nameOnRecord: string | null; nameMatch: number | null; test: boolean; checkedAt: string;
   data: Record<string, string> | null; requestedBy?: string; provider?: string;
 }
-export interface Suggestion { fieldId: string; fieldLabel: string; value: string; confidence: number; current: string; state: 'empty' | 'match' | 'differs' }
+export interface Suggestion { fieldId: string; fieldLabel: string; value: string; confidence: number; current: string; state: 'empty' | 'match' | 'differs'; autoFilled?: boolean; sensitive?: boolean }
 export interface Extraction {
-  id: string; documentId: string; status: 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED'; provider: string; test: boolean;
-  summary: string | null; error: string | null; appliedAt: string | null; docTypeDetected: string | null; suggestions: Suggestion[];
+  id: string; documentId: string; docLabel?: string; status: 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED'; provider: string; test: boolean;
+  summary: string | null; error: string | null; appliedAt: string | null; autoApplied?: string[]; docTypeDetected: string | null; suggestions: Suggestion[];
 }
 
 export interface Flag { code: 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }

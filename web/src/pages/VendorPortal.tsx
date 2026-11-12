@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { applyBranding } from '../lib/session';
 import { monogram } from '../lib/format';
-import { DynamicSection } from '../components/DynamicSection';
+import { DynamicSection, type FieldSource } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { ApprovalTimeline } from '../components/Timeline';
@@ -20,7 +20,7 @@ import { setLang, t, useLang, type Lang } from '../i18n';
 import { Rich } from '../i18n/Rich';
 import { TabStrip } from '../components/TabStrip';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: 'manual' | 'assisted' | 'automatic' };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; hold: { reason: string | null } | null; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
@@ -55,10 +55,13 @@ export function VendorPortal() {
   const [crBusy, setCrBusy] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
   const [erasureOpen, setErasureOpen] = useState(false);
+  const startedRef = useRef(false);
 
   const load = useCallback(async (reset = false) => {
     try {
       const r = await api<Me>('/vendor');
+      // Automatic data entry: a supplier who hasn't uploaded anything yet starts on the documents.
+      if (!startedRef.current) { startedRef.current = true; if (r.dataEntry === 'automatic' && r.editable && !r.vendor.documents.length) setTab('documents'); }
       setMe(r); setLocaleInfo(r.buyer); setLang(r.language ?? 'en'); rememberWorkspace(r.buyer.workspace); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
@@ -94,7 +97,26 @@ export function VendorPortal() {
   // Asked to confirm after each periodic re-check, until they do.
   const reviewRequested = approved && !!v.lastReviewAt && (!v.lastConfirmedAt || v.lastConfirmedAt < v.lastReviewAt);
   const docFlags = lc?.flags.filter((f) => f.code === 'DOC_EXPIRED' || f.code === 'DOC_EXPIRING') ?? [];
-  const tabs = [...cfg.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: t('portal.documentsTab') }];
+  // Automatic data entry: documents come first, the form is filled in from them.
+  const auto = me.dataEntry === 'automatic' && me.editable;
+  const sectionTabs = cfg.sections.map((s) => ({ key: s.key, label: s.label }));
+  const docTab = { key: 'documents', label: t('portal.documentsTab') };
+  const tabs = auto ? [docTab, ...sectionTabs] : [...sectionTabs, docTab];
+  const docLabelOf = (documentId: string) => { const d = v.documents.find((x) => x.id === documentId); return d ? (me.docRequirements.find((r) => r.type === d.docType)?.label ?? me.extractions.find((x) => x.documentId === documentId)?.docLabel ?? d.docType).replace(/ \(.*\)$/, '') : ''; };
+  const same = (a: unknown, b: string) => String(a ?? '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]/g, '') === b.toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+  // Per field: filled in from which document, or read but waiting for the supplier (bank details, low confidence, different from what they typed).
+  const sources: Record<string, FieldSource> = {};
+  if (auto) for (const e of me.extractions.filter((x) => x.status === 'DONE' && v.documents.some((d) => d.id === x.documentId))) {
+    for (const sg of e.suggestions) {
+      const [sec, key] = sg.fieldId.split('.');
+      const now = profile[sec]?.[key];
+      if (sources[sg.fieldId]?.kind === 'filled') continue;
+      if (sg.autoFilled && same(now, sg.value)) sources[sg.fieldId] = { doc: docLabelOf(e.documentId), kind: 'filled' };
+      else if (!same(now, sg.value) && !sources[sg.fieldId]) sources[sg.fieldId] = { doc: docLabelOf(e.documentId), kind: 'check', value: sg.value, onUse: () => applyExtraction(e.id, [sg.fieldId]) };
+    }
+  }
+  const filledCount = Object.values(sources).filter((x) => x.kind === 'filled').length;
+  const toConfirm = Object.values(sources).filter((x) => x.kind === 'check').length;
   const sectionErrors = (k: string) => me.checklist.filter((c) => c.section === k && !c.ok && c.severity === 'error').length;
 
   function change(section: string, field: string, value: string) {
@@ -239,7 +261,11 @@ export function VendorPortal() {
         {approved && !changeMode && !lc!.flags.length && !reviewRequested && <Alert kind="success">{t('portal.approvedActive')}</Alert>}
         {v.status === 'REJECTED' && <Alert kind="error">{t('portal.rejected')}</Alert>}
         {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
-        {editable && tab !== 'documents' && me.extractions.some((e) => e.status === 'DONE' && !e.appliedAt && e.suggestions.some((x) => x.state !== 'match')) && (
+        {auto && tab === 'documents' && <Alert kind="info">{t('portal.docsFirst')}</Alert>}
+        {auto && pending && <Alert kind="info">{t('portal.autoReading')}</Alert>}
+        {auto && tab !== 'documents' && filledCount > 0 && <Alert kind="success">{t('portal.autoFilled', { count: filledCount })}</Alert>}
+        {auto && toConfirm > 0 && <Alert kind="warning">{t('portal.autoToConfirm', { count: toConfirm })}</Alert>}
+        {!auto && editable && tab !== 'documents' && me.extractions.some((e) => e.status === 'DONE' && !e.appliedAt && e.suggestions.some((x) => x.state !== 'match')) && (
           <Alert kind="info">{t('portal.extractionsReady')} <button className="link-btn" onClick={() => goTo('documents')}>{t('portal.reviewSuggested')} {lang === 'ar' ? '←' : '→'}</button></Alert>
         )}
 
@@ -255,7 +281,7 @@ export function VendorPortal() {
             </TabStrip>
             <div className="pad">
               {cfg.sections.filter((s) => s.key === tab).map((s) => (
-                <DynamicSection key={s.key} section={s} profile={profile} vendorType={v.vendorType} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} />
+                <DynamicSection key={s.key} section={s} profile={profile} vendorType={v.vendorType} errors={errors} readOnly={!editable} onChange={(f, val) => change(s.key, f, val)} extra={extra} sources={auto ? sources : undefined} />
               ))}
               {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={docsEditable} onUpload={upload} onDelete={remove}
                 canDelete={approved ? (d) => d.status === 'PENDING' && !d.changeRequestId : undefined} uploadLabel={approved ? t('portal.uploadRenewal') : undefined} />}

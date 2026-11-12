@@ -28,7 +28,7 @@ export function ExtractionCard({ ex, docLabel, onApply, readOnly }: { ex: Extrac
                 {!readOnly && <td>{s.state !== 'match' && <input type="checkbox" aria-label={t('ai.use', { field: s.fieldLabel })} checked={picked.includes(s.fieldId)} onChange={() => setPicked((p) => (p.includes(s.fieldId) ? p.filter((x) => x !== s.fieldId) : [...p, s.fieldId]))} />}</td>}
                 <td className="small">{s.fieldLabel}</td>
                 <td><span className="mono">{s.value}</span>{s.confidence < 0.8 && <span className="muted small" title={t('ai.unsureTitle')}>{t('ai.unsure')}</span>}</td>
-                <td className="small">{s.state === 'match' ? <span className="ok-text">{t('ai.matches')}</span> : s.state === 'empty' ? <span className="muted">{t('ai.notFilled')}</span> : <span className="diff-text">{t('ai.formSays', { value: s.current })}</span>}</td>
+                <td className="small">{s.autoFilled ? <span className="ok-text">{readOnly ? '✦ filled in from document' : t('ai.filledIn')}</span> : s.state === 'match' ? <span className="ok-text">{t('ai.matches')}</span> : s.state === 'empty' ? <span className="muted">{t('ai.notFilled')}</span> : <span className="diff-text">{t('ai.formSays', { value: s.current })}</span>}</td>
               </tr>
             ))}
           </tbody>

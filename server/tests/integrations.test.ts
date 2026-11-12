@@ -242,6 +242,42 @@ describe('AI document reading', () => {
     expect((await v.get('/api/vendor')).body.extractions[0].status).toBe('SKIPPED');
   });
 
+  test('automatic data entry fills empty fields from documents, never over typed values or bank details', async () => {
+    const g = `29AABCA1234F1Z`; const gstin = g + gstinCheckChar(g);
+    const create = vi.fn(async () => ({ content: [{ type: 'tool_use', id: 't', name: 'record_document', input: {
+      documentType: 'GST_CERT', values: { gstin, legalName: 'AUTO FILL TRADERS PRIVATE LIMITED', address: '7 Residency Road' }, confidence: { gstin: 0.97, legalName: 0.95, address: 0.6 }, notes: '' } }] }));
+    setExtractor(anthropicExtractor({ apiKey: 'x', model: 'claude-sonnet-5-5' }, { messages: { create } } as any));
+    const admin = await login('admin@acme.test');
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: true, dataEntry: 'automatic' } });
+    expect((await admin.get('/api/admin/integrations')).body.ai.dataEntry).toBe('automatic');
+    const { v } = await newVendor('Auto Fill Traders', 'auto@fill.test');
+    expect((await v.get('/api/vendor')).body.dataEntry).toBe('automatic');
+    await v.upload('/api/vendor/documents', 'GST_CERT', PDF);
+    const me = (await v.get('/api/vendor')).body;
+    // GSTIN was empty and read confidently → filled; PAN derived from it is sensitive → left as a suggestion;
+    // the name was typed at invitation → not overwritten; the address was read with low confidence → not filled.
+    expect(me.vendor.profile.tax.gstin).toBe(gstin);
+    expect(me.vendor.profile.tax.pan ?? '').toBe('');
+    expect(me.vendor.profile.basic.vendorName).toBe('Auto Fill Traders');
+    expect(me.vendor.profile.basic.address ?? '').toBe('');
+    const byId = Object.fromEntries(me.extractions[0].suggestions.map((s: any) => [s.fieldId, s]));
+    expect(byId['tax.gstin']).toMatchObject({ autoFilled: true, state: 'match' });
+    expect(byId['tax.pan']).toMatchObject({ autoFilled: false, sensitive: true, state: 'empty' });
+    expect(byId['basic.vendorName']).toMatchObject({ autoFilled: false, state: 'differs' });
+    const log = (await admin.get('/api/admin/audit')).body.rows.find((r: any) => r.action === 'AI_VALUES_AUTOFILLED');
+    expect(log).toMatchObject({ actor: 'AI (from document)', detail: { fields: 'tax.gstin' } });
+
+    // Assisted mode: nothing is filled in, only suggested.
+    await admin.patch('/api/admin/tenant', { settings: { dataEntry: 'assisted' } });
+    const b = await newVendor('Assisted Traders', 'assisted@fill.test');
+    await b.v.upload('/api/vendor/documents', 'GST_CERT', PDF);
+    const me2 = (await b.v.get('/api/vendor')).body;
+    expect(me2.dataEntry).toBe('assisted');
+    expect(me2.vendor.profile.tax?.gstin ?? '').toBe('');
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
+    expect((await b.v.get('/api/vendor')).body.dataEntry).toBe('manual');
+  });
+
   test('each pack’s readable documents only target fields that exist in that pack’s template', async () => {
     const { PACKS } = await import('../src/countries/registry.js');
     for (const p of PACKS.filter((x) => x.template && x.documents)) {

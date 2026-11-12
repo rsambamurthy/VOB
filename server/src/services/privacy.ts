@@ -83,7 +83,7 @@ export async function exportVendorData(v: Vendor, opts: { forStaff: boolean }) {
     erasure: { requestedAt: v.erasureRequestedAt, reason: v.erasureReason },
     sharedWith: [
       { recipient: 'Verification provider', purpose: 'Check PAN, GSTIN, CIN and bank account', provider: kyc.provider },
-      ...((t.settings as TenantSettings).aiExtraction ? [{ recipient: 'AI document reading', purpose: 'Read uploaded documents to suggest form values', provider: ai.provider }] : []),
+      ...((t.settings as TenantSettings).aiExtraction ? [{ recipient: 'AI document reading', purpose: 'Read uploaded documents to suggest or fill in form values', provider: ai.provider }] : []),
       ...(erp && erp.kind !== 'none' ? [{ recipient: 'ERP / accounting system', purpose: 'Set you up as a supplier and pay you', provider: erp.kind }] : []),
     ],
     ...(opts.forStaff ? { auditTrail: auditRows.map((a) => ({ at: a.createdAt, actor: a.actor, action: a.action, detail: a.detail })) } : {}),

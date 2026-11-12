@@ -13,7 +13,10 @@ interface Props {
   extra?: (field: FieldDef) => ReactNode; // e.g. a "Verify" button next to GSTIN
 }
 
-export function DynamicSection({ section, profile, onChange, errors = {}, readOnly, extra, vendorType }: Props) {
+/** Where a value came from in automatic data entry: filled in from a document, or read and waiting to be confirmed. */
+export type FieldSource = { doc: string; kind: 'filled' | 'check'; value?: string; onUse?: () => void };
+
+export function DynamicSection({ section, profile, onChange, errors = {}, readOnly, extra, vendorType, sources }: Props & { sources?: Record<string, FieldSource> }) {
   const values = profile[section.key] ?? {};
   const ctx = { profile, vendor: { vendorType } };
   return (
@@ -31,9 +34,10 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
                 const req = isRequired(f.required, ctx);
                 const err = errors[id];
                 const wide = f.type === 'textarea' || f.type === 'radio' && f.label.length > 45;
+                const src = readOnly ? undefined : sources?.[id];
                 return (
-                  <div key={f.key} className={`field ${wide ? 'field-wide' : ''} ${err ? 'has-error' : ''}`}>
-                    <label htmlFor={f.type === 'radio' ? undefined : id} id={`${id}-label`}>{f.label}{req && <span className="req" aria-hidden> *</span>}</label>
+                  <div key={f.key} className={`field ${wide ? 'field-wide' : ''} ${err ? 'has-error' : ''} ${src ? `src-${src.kind}` : ''}`}>
+                    <label htmlFor={f.type === 'radio' ? undefined : id} id={`${id}-label`}>{f.label}{req && <span className="req" aria-hidden> *</span>}{src?.kind === 'filled' && <span className="src-tag">{t('ai.fromDoc', { doc: src.doc })}</span>}</label>
                     {readOnly ? (
                       <div className="ro-value"><span dir={f.dir ?? 'auto'}>{value ? optionLabel(f, value) : <span className="muted">—</span>}</span> {extra?.(f)}</div>
                     ) : (
@@ -42,6 +46,7 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
                         {extra?.(f)}
                       </div>
                     )}
+                    {src?.kind === 'check' && <div className="src-hint"><span>{t('ai.docShows', { doc: src.doc, value: src.value ?? '' })}</span>{src.onUse && <button type="button" className="btn btn-secondary btn-sm" onClick={src.onUse}>{t('ai.useThis')}</button>}</div>}
                     {err && !readOnly ? <div className="field-error">{err}</div> : f.help && !readOnly ? <div className="field-help">{f.help}</div> : null}
                   </div>
                 );

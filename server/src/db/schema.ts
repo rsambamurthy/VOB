@@ -87,6 +87,8 @@ export interface TenantSettings {
   skipWeekends?: boolean;
   /** Let AI read uploaded documents and suggest form values (sends documents to the AI provider). */
   aiExtraction?: boolean;
+  /** With AI reading on: 'assisted' suggests values the supplier applies; 'automatic' fills empty fields straight from documents (documents first). */
+  dataEntry?: 'assisted' | 'automatic';
   /** Where vendor sign-in codes go. */
   vendorOtpChannel?: 'email' | 'sms' | 'both';
   /** DPDP privacy notice shown to vendors; changing the text bumps the version and asks vendors to accept again. */
@@ -343,6 +345,8 @@ export const documentExtractions = pgTable('document_extractions', {
   summary: text('summary'),
   error: text('error'),
   appliedAt: timestamp('applied_at', { withTimezone: true }),
+  /** Fields filled in automatically from this document (automatic data entry). */
+  autoApplied: jsonb('auto_applied').$type<string[]>().notNull().default([]),
   createdAt: createdAt(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (t) => [index('extractions_vendor_idx').on(t.vendorId)]);

@@ -1,0 +1,1 @@
+ALTER TABLE "document_extractions" ADD COLUMN "auto_applied" jsonb DEFAULT '[]'::jsonb NOT NULL;

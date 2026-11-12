@@ -283,15 +283,19 @@ Every published version is kept with who published it and their note. Click **Re
   },
   {
     id: 'integrations', title: 'Email, SMS and other integrations', audience: ['staff'], perms: ['tenant.settings'],
-    summary: 'Test email delivery, choose how suppliers get sign-in codes, turn AI reading on or off.',
+    summary: 'Test email delivery, choose how suppliers get sign-in codes, and how suppliers enter their details (manual, assisted or automatic from documents).',
     screens: ['^/staff/admin/integrations'],
-    keywords: 'integration integrations email mail smtp resend sendgrid sms otp code delivery storage ai document reading test email junk spam',
+    keywords: 'integration integrations email mail smtp resend sendgrid sms otp code delivery storage ai document reading data entry manual assisted automatic auto fill extraction documents first test email junk spam',
     related: ['troubleshooting', 'supplier-signin'],
     body: `Administration → **Integrations** shows each connected service and lets you test it.
 
 - **Email**: click **Send me a test email**. The card shows how many emails were sent or failed.
 - **Send vendor sign-in codes by**: Email only, or Email and SMS, or SMS (email if SMS fails).
-- **AI document reading**: tick **Use AI to read uploaded documents** to let VendorGate suggest form values from what suppliers upload. Suppliers always review suggestions before they're used.
+- **How suppliers enter their details** (AI document reading):
+  - **Manual**: suppliers type everything; no document is sent to AI.
+  - **Assisted**: after each upload, VendorGate suggests values and the supplier picks which to use.
+  - **Automatic — documents first**: suppliers start with their documents and the form is filled in from them. Only values read with high confidence go into empty fields. Bank details and tax numbers always wait for the supplier to confirm, and nothing the supplier typed is overwritten. Each automatic fill is in the audit log, and reviewers see which document every value came from.
+  Assisted and Automatic need AI on your plan.
 - **Storage** and **verification**: shows where documents are stored and whether online checks are live.
 
 > If emails land in Junk, ask recipients to mark them **Not junk** and add the sender to their contacts.`,
@@ -626,7 +630,13 @@ If the buyer updates the notice, you'll be asked to accept the new version.`,
 
 - The **Required fields** list on the right shows what's still missing; click an item to jump to it.
 - Where offered, click the check beside GSTIN, PAN or bank details to verify them on the spot.
-- If AI document reading is on, click **Review suggested values →** after uploading, and pick which values to copy into the form.`,
+- If AI document reading is on, click **Review suggested values →** after uploading, and pick which values to copy into the form.
+
+## When the form fills itself in
+Some buyers ask you to start with your documents. The **Documents** tab then comes first: upload everything, and the form is filled in from what we read.
+- Fields marked **✦ from …** were filled in from that document. Check them, and change anything that's wrong.
+- Highlighted fields show what a document says but weren't filled in for you — bank and tax numbers always wait for you, as do values we couldn't read clearly. Click **Use this** to accept the value, or type your own.
+- Anything you typed yourself is never overwritten. Add what no document shows (contacts, for example), then submit as usual.`,
   },
   {
     id: 'supplier-documents', title: 'Uploading documents', audience: ['supplier'],

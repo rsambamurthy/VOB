@@ -835,3 +835,16 @@ h1, h2, .page-head h1, .group > legend, .card-title, .af-product, .stat-n { font
 .ask-result .table td.num, .ask-result .table th.num { text-align: end; font-variant-numeric: tabular-nums; }
 .ask-result tr.no-link { cursor: default; }
 .ask-foot { margin-top: 12px; }
+
+/* Automatic data entry: values filled in from documents, and values waiting for the supplier */
+.field.src-filled input, .field.src-filled select, .field.src-filled textarea { background: #f5f3ff; border-color: #c4b5fd; }
+.src-tag { margin-inline-start: 8px; font-size: 10.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #6d28d9; }
+.field.src-check input, .field.src-check select, .field.src-check textarea { background: #fff7ed; border-color: #fdba74; }
+.src-hint { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 12.5px; color: #9a3412; }
+.src-hint span { overflow-wrap: anywhere; }
+.entry-modes { border: 0; padding: 0; margin: 4px 0 14px; display: grid; gap: 8px; }
+.entry-modes legend { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; padding: 0; }
+.entry-mode { border: 1px solid var(--border, #e2e8f0); border-radius: 10px; padding: 10px 12px; }
+.entry-mode.on { border-color: var(--brand); background: var(--brand-50); }
+.entry-mode.locked { opacity: .55; cursor: not-allowed; }
+.entry-new { margin-inline-start: 8px; }

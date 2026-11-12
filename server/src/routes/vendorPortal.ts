@@ -16,7 +16,7 @@ import { runKyc, latestChecks } from '../integrations/kyc/index.js';
 import { checkDef, checkInputs, checkList, checkOffered, checksForVendor, localeFor, inputsComplete } from '../countries/registry.js';
 import { hasFeature } from '../services/limits.js';
 import { pendingOrderCount } from '../services/orders/queries.js';
-import { queueExtraction, extractionsFor, getExtraction } from '../integrations/ai/index.js';
+import { queueExtraction, extractionsFor, getExtraction, dataEntryMode } from '../integrations/ai/index.js';
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
 import { arLabel, localizeConfig, supplierLanguages, translateMessage, vendorLanguage, type Lang } from '../i18n/index.js';
@@ -126,6 +126,8 @@ vendorRouter.get('/', ah(async (req, res) => {
     privacy: { ...noticeFor(tenant, lang), needsConsent: needsConsent(tenant, v), consentAt: v.consentAt, consentVersion: v.consentVersion, erasureRequestedAt: v.erasureRequestedAt },
     checks: (await latestChecks(v.id)).filter((c) => checkDef(c.kind)?.def.scope !== 'home').map((c) => { const p = publicCheck(c); return { ...p, message: tx(p.message) }; }),
     extractions: await extractionsFor(v.id, profile, config),
+    // 'automatic': the portal starts with the documents and fills the form from them.
+    dataEntry: dataEntryMode(tenant),
   });
 }));
 
