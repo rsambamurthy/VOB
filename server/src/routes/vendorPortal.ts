@@ -9,7 +9,7 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireVendor, vendorCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { getPublished } from '../services/config.js';
-import { buildChecklist, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
+import { answerImpliedBy, buildChecklist, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
 import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks } from '../integrations/kyc/index.js';
@@ -107,7 +107,8 @@ vendorRouter.get('/', ah(async (req, res) => {
     sendBackRemarks: v.status === 'SENT_BACK' ? lastSendBack?.remarks : undefined,
     config: { sections: config.sections, guide: config.guide, levels: config.workflow.levels.map((l) => l.label) },
     checklist: localChecklist(buildChecklist(config, profile, activeTypes(v.documents), v.vendorType), lang),
-    docRequirements: visibleDocRequirements(config, profile, v.vendorType),
+    // Documents first: documents that depend on answers not yet given are offered "if it applies".
+    docRequirements: visibleDocRequirements(config, profile, v.vendorType, { undecided: dataEntryMode(tenant) === 'automatic' && EDITABLE.includes(v.status) }),
     editable: EDITABLE.includes(v.status),
     lifecycle: v.status === 'APPROVED' ? {
       blocked: !!v.blockedAt,
@@ -145,7 +146,7 @@ vendorRouter.put('/profile/:section', ah(async (req, res) => {
   }).where(eq(vendors.id, v.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'SECTION_SAVED', detail: { section: key }, ip: req.ip });
   const shown = localizeConfig(config, lang);
-  res.json({ checklist: localChecklist(buildChecklist(shown, profile, activeTypes(v.documents), v.vendorType), lang), docRequirements: visibleDocRequirements(shown, profile, v.vendorType) });
+  res.json({ checklist: localChecklist(buildChecklist(shown, profile, activeTypes(v.documents), v.vendorType), lang), docRequirements: visibleDocRequirements(shown, profile, v.vendorType, { undecided: dataEntryMode(vendorCtx(req).tenant) === 'automatic' }) });
 }));
 
 vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
@@ -163,6 +164,15 @@ vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
   // Approved vendors' uploads wait in a change request; during onboarding they count straight away.
   const [doc] = await db.insert(documents).values({ tenantId: v.tenantId, vendorId: v.id, docType, ...stored, expiresOn, status: approved ? 'PENDING' : 'ACTIVE' }).returning();
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'DOCUMENT_UPLOADED', detail: { docType, fileName: stored.fileName, scan: stored.scanStatus }, ip: req.ip });
+  // Documents first: uploading a document offered "if it applies" answers the question it depends on.
+  if (!approved && dataEntryMode(vendorCtx(req).tenant) === 'automatic') {
+    const implied = answerImpliedBy(config, docType, v.profile as Profile, v.vendorType);
+    if (implied) {
+      const profile = { ...(v.profile as Profile), [implied.section]: { ...((v.profile as Profile)[implied.section] ?? {}), [implied.field]: implied.value } };
+      await db.update(vendors).set({ profile, status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status }).where(eq(vendors.id, v.id));
+      await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'AI (from document)', action: 'ANSWER_FROM_DOCUMENT', detail: { field: `${implied.section}.${implied.field}`, value: implied.value, docType } });
+    }
+  }
   await queueExtraction(doc, !!vendorCtx(req).tenant.settings.aiExtraction && hasFeature(vendorCtx(req).tenant, 'ai'));
   const { storagePath: _p, ...safe } = doc;
   res.status(201).json(safe);

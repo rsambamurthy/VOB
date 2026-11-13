@@ -17,7 +17,7 @@ export interface FieldDef {
 }
 export interface GroupDef { key: string; label: string; fields: FieldDef[]; tr?: { ar?: ArabicText } }
 export interface SectionDef { key: string; label: string; groups: GroupDef[]; tr?: { ar?: ArabicText } }
-export interface DocRequirement { type: string; label: string; help?: string; required?: boolean | Condition; showIf?: Condition; hasExpiry?: boolean; holdOnExpiry?: boolean; isRequired?: boolean; tr?: { ar?: ArabicText } }
+export interface DocRequirement { type: string; label: string; help?: string; required?: boolean | Condition; showIf?: Condition; hasExpiry?: boolean; holdOnExpiry?: boolean; isRequired?: boolean; appliesIf?: { field: string; values: string[]; op: string }; tr?: { ar?: ArabicText } }
 export interface WorkflowLevel { id: string; label: string; roleKey: string; rule?: Rule; slaHours?: number }
 export interface ChangeRule { match: string[]; levelIds: string[] }
 export interface ChangeApproval { rules: ChangeRule[]; defaultLevelIds: string[] }

@@ -634,6 +634,7 @@ If the buyer updates the notice, you'll be asked to accept the new version.`,
 
 ## When the form fills itself in
 Some buyers ask you to start with your documents. The **Documents** tab then comes first: upload everything, and the form is filled in from what we read.
+- Documents marked **(if it applies to you)** depend on a question you haven't answered yet — for example, a GST certificate only if you hold a GST number. Upload them if they apply; that answers the question for you.
 - Fields marked **✦ from …** were filled in from that document. Check them, and change anything that's wrong.
 - Highlighted fields show what a document says but weren't filled in for you — bank and tax numbers always wait for you, as do values we couldn't read clearly. Click **Use this** to accept the value, or type your own.
 - Anything you typed yourself is never overwritten. Add what no document shows (contacts, for example), then submit as usual.`,

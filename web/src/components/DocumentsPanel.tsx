@@ -52,7 +52,8 @@ function DocRow({ req, files, editable, onUpload, onDelete, canDelete, uploadLab
   return (
     <div className={`doc-row ${missing ? 'doc-missing' : ''}`}>
       <div className="doc-info">
-        <div className="doc-title">{req.label}{req.isRequired ? <span className="req"> *</span> : <span className="muted small"> {t('docs.optional')}</span>}</div>
+        <div className="doc-title">{req.label}{req.isRequired ? <span className="req"> *</span> : <span className="muted small"> {req.appliesIf ? t('docs.ifApplies') : t('docs.optional')}</span>}</div>
+        {req.appliesIf && <div className="field-help applies-if">{req.appliesIf.values.length === 1 ? t('docs.appliesIf', { question: req.appliesIf.field, answer: req.appliesIf.values[0] }) : t('docs.appliesIfAny', { question: req.appliesIf.field, answer: req.appliesIf.values.join('; ') })}</div>}
         {req.help && <div className="field-help">{req.help}</div>}
         {files.map((f) => {
           const old = f.status === 'SUPERSEDED' || f.status === 'REJECTED';

@@ -251,8 +251,18 @@ describe('AI document reading', () => {
     await admin.patch('/api/admin/tenant', { settings: { aiExtraction: true, dataEntry: 'automatic' } });
     expect((await admin.get('/api/admin/integrations')).body.ai.dataEntry).toBe('automatic');
     const { v } = await newVendor('Auto Fill Traders', 'auto@fill.test');
-    expect((await v.get('/api/vendor')).body.dataEntry).toBe('automatic');
+    const before = (await v.get('/api/vendor')).body;
+    expect(before.dataEntry).toBe('automatic');
+    // Documents first: documents that depend on unanswered questions are offered "if it applies"…
+    const gstReq = before.docRequirements.find((d: any) => d.type === 'GST_CERT');
+    expect(gstReq).toMatchObject({ isRequired: false, appliesIf: { values: ['Yes'] } });
+    expect(before.docRequirements.find((d: any) => d.type === 'MSME_CERT')?.appliesIf).toBeTruthy();
     await v.upload('/api/vendor/documents', 'GST_CERT', PDF);
+    // …and uploading one answers its question.
+    const after = (await v.get('/api/vendor')).body;
+    expect(after.vendor.profile.tax.hasGst).toBe('Yes');
+    expect(after.docRequirements.find((d: any) => d.type === 'GST_CERT')).toMatchObject({ isRequired: true });
+    expect(after.docRequirements.find((d: any) => d.type === 'GST_CERT').appliesIf).toBeUndefined();
     const me = (await v.get('/api/vendor')).body;
     // GSTIN was empty and read confidently → filled; PAN derived from it is sensitive → left as a suggestion;
     // the name was typed at invitation → not overwritten; the address was read with low confidence → not filled.
@@ -273,6 +283,7 @@ describe('AI document reading', () => {
     await b.v.upload('/api/vendor/documents', 'GST_CERT', PDF);
     const me2 = (await b.v.get('/api/vendor')).body;
     expect(me2.dataEntry).toBe('assisted');
+    expect(me2.docRequirements.find((d: any) => d.type === 'MSME_CERT')).toBeUndefined();
     expect(me2.vendor.profile.tax?.gstin ?? '').toBe('');
     await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
     expect((await b.v.get('/api/vendor')).body.dataEntry).toBe('manual');

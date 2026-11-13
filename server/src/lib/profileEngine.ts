@@ -3,7 +3,7 @@
  * conditional visibility, required rules, format validators, document requirements,
  * and builds the "Required Fields" checklist shown to vendors and reviewers.
  */
-import type { FieldDef, OnboardingConfig } from '../config/types.js';
+import type { Condition, FieldDef, OnboardingConfig } from '../config/types.js';
 import { validators, crossFieldChecks, UPPERCASE_VALIDATORS } from './validators.js';
 import { conditionHolds, isRequired, readValue, type EvalContext, type Profile } from './conditions.js';
 
@@ -57,11 +57,37 @@ export function sanitizeSection(cfg: OnboardingConfig, sectionKey: string, data:
   return out;
 }
 
-export function visibleDocRequirements(cfg: OnboardingConfig, profile: Profile, vendorType?: string) {
+export function visibleDocRequirements(cfg: OnboardingConfig, profile: Profile, vendorType?: string, opts: { undecided?: boolean } = {}) {
   const ctx = ctxOf(profile, vendorType);
-  return cfg.documents
-    .filter((d) => conditionHolds(d.showIf, ctx))
-    .map((d) => ({ ...d, isRequired: isRequired(d.required, ctx) }));
+  return cfg.documents.flatMap((d) => {
+    if (conditionHolds(d.showIf, ctx)) return [{ ...d, isRequired: isRequired(d.required, ctx) }];
+    // Documents first: the answer that decides this document isn't given yet, so offer it as "upload if it applies".
+    if (opts.undecided && d.showIf && (d.showIf.op === 'eq' || d.showIf.op === 'in') && !readValue(d.showIf.field, ctx)) return [{ ...d, isRequired: false, appliesIf: describeCondition(cfg, d.showIf) }];
+    return [];
+  });
+}
+
+/** "Do you hold a GST number? — Yes", for showing why a document may apply. */
+function describeCondition(cfg: OnboardingConfig, c: Condition) {
+  const [sec, key] = c.field.split('.');
+  const label = cfg.sections.find((s) => s.key === sec)?.groups.flatMap((g) => g.fields).find((f) => f.key === key)?.label ?? c.field;
+  const values = Array.isArray(c.value) ? c.value.map(String) : c.value === undefined ? [] : [String(c.value)];
+  return { field: label, values, op: c.op };
+}
+
+/**
+ * The answer implied by uploading a document that was offered "if it applies": a GST certificate means
+ * "Do you hold a GST number?" is Yes. Only for a single-value "equals" condition on an empty field.
+ */
+export function answerImpliedBy(cfg: OnboardingConfig, docType: string, profile: Profile, vendorType?: string): { section: string; field: string; value: string } | null {
+  const d = cfg.documents.find((x) => x.type === docType);
+  const c = d?.showIf;
+  if (!c || readValue(c.field, ctxOf(profile, vendorType))) return null;
+  const v = c.op === 'eq' ? c.value : c.op === 'in' && Array.isArray(c.value) && c.value.length === 1 ? c.value[0] : undefined;
+  if (v === undefined || v === '') return null;
+  const [section, field] = c.field.split('.');
+  if (!cfg.sections.some((s) => s.key === section && s.groups.some((g) => g.fields.some((f) => f.key === field)))) return null;
+  return { section, field, value: String(v) };
 }
 
 export function buildChecklist(cfg: OnboardingConfig, profile: Profile, docTypes: string[], vendorType?: string): ChecklistItem[] {
