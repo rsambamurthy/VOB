@@ -60,8 +60,8 @@ export function VendorPortal() {
   const load = useCallback(async (reset = false) => {
     try {
       const r = await api<Me>('/vendor');
-      // Automatic data entry: a supplier who hasn't uploaded anything yet starts on the documents.
-      if (!startedRef.current) { startedRef.current = true; if (r.dataEntry === 'automatic' && r.editable && !r.vendor.documents.length) setTab('documents'); }
+      // Automatic data entry: the supplier always starts on the documents (the first step), also on return visits.
+      if (!startedRef.current) { startedRef.current = true; if (r.dataEntry === 'automatic' && r.editable) setTab('documents'); }
       setMe(r); setLocaleInfo(r.buyer); setLang(r.language ?? 'en'); rememberWorkspace(r.buyer.workspace); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
