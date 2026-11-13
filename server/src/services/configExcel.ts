@@ -105,6 +105,8 @@ export async function exportConfig(cfg: OnboardingConfig, opts: { workspace: str
     for (let r = 2; r <= 600; r++) ws.getCell(r, col).dataValidation = { type: 'list', allowBlank: true, formulae: [formula], showErrorMessage: !allowOther };
   };
   for (const ws of [tabs, fields, docs]) dv(ws, 1, 'Lists!$D$1:$D$1');
+  // Tab key: the keys on the Tabs sheet (live — a tab added there appears in the list at once).
+  for (let r = 2; r <= 600; r++) fields.getCell(r, 2).dataValidation = { type: 'list', allowBlank: true, formulae: ['Tabs!$B$2:$B$100'], showErrorMessage: true, errorTitle: 'Unknown tab', error: 'Pick a tab key from the Tabs sheet (add new tabs there first).' };
   dv(fields, 7, `Lists!$A$1:$A$${types.length}`);
   dv(fields, 10, `Lists!$B$1:$B$${validators.length}`);
   dv(docs, 6, 'Lists!$C$1:$C$2'); dv(docs, 7, 'Lists!$C$1:$C$2');
