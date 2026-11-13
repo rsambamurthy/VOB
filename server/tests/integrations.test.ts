@@ -347,6 +347,22 @@ describe('AI document reading', () => {
     await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
   });
 
+  test('models that reject a forced tool_choice are asked again with tool_choice auto', async () => {
+    const rejection = Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"tool_choice: type \\"tool\\" and \\"any\\" are not supported for this model."}}'), { status: 400 });
+    const create = vi.fn(async (args: any) => {
+      if (args.tool_choice.type !== 'auto') throw rejection;
+      return { content: [{ type: 'thinking', thinking: '…' }, { type: 'tool_use', id: 't', name: 'record_document', input: { documentType: 'PAN_CARD', values: { pan: 'AAJCI1277P' }, confidence: { pan: 0.97 } } }] };
+    });
+    const ex = anthropicExtractor({ apiKey: 'x', model: 'model-without-forced-tools' }, { messages: { create } } as any);
+    const out = await ex.extract({ bytes: Buffer.from('x'), mimeType: 'application/pdf', expected: { type: 'PAN_CARD', ...EXTRACTABLE.PAN_CARD }, hints: {} });
+    expect(out).toMatchObject({ documentType: 'PAN_CARD', values: { pan: 'AAJCI1277P' } });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect((create.mock.calls[1] as any)[0].system).toMatch(/Always answer by calling the record_document tool/);
+    // Remembered for the model: the next call goes straight to tool_choice auto.
+    await ex.extract({ bytes: Buffer.from('x'), mimeType: 'application/pdf', expected: { type: 'PAN_CARD', ...EXTRACTABLE.PAN_CARD }, hints: {} });
+    expect(create).toHaveBeenCalledTimes(3);
+  });
+
   test('each pack’s readable documents only target fields that exist in that pack’s template', async () => {
     const { PACKS } = await import('../src/countries/registry.js');
     for (const p of PACKS.filter((x) => x.template && x.documents)) {

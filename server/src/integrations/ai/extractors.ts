@@ -1,5 +1,6 @@
 import type { ExtractKey } from '../../countries/types.js';
 import { readableDocuments } from '../../countries/registry.js';
+import { createWithTool } from './toolCall.js';
 
 export interface RawExtraction { documentType: string; values: Record<string, string>; confidence: Record<string, number>; notes?: string }
 export interface Extractor { name: string; live: boolean; extract(input: { bytes: Buffer; mimeType: string; expected: { type: string; label: string; keys: ExtractKey[] } ; hints: Record<string, string> }): Promise<RawExtraction> }
@@ -52,8 +53,8 @@ export function anthropicExtractor(cfg: { apiKey: string; model: string }, injec
       const docBlock = mimeType === 'application/pdf'
         ? { type: 'document' as const, source: source as { type: 'base64'; media_type: 'application/pdf'; data: string } }
         : { type: 'image' as const, source: source as { type: 'base64'; media_type: 'image/png' | 'image/jpeg'; data: string } };
-      const msg = await (await getClient()).messages.create({
-        model: cfg.model, max_tokens: 1024, system: SYSTEM(),
+      const msg = await createWithTool(await getClient(), {
+        model: cfg.model, max_tokens: 4096, system: SYSTEM(),
         tools: [tool], tool_choice: { type: 'tool', name: 'record_document' },
         messages: [{ role: 'user', content: [docBlock, { type: 'text', text: `The vendor uploaded this as their ${expected.label}. Record the values you can read.` }] }],
       });
