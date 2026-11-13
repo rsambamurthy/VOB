@@ -235,7 +235,16 @@ In a Gulf workspace each field, tab, document and guide item also has **Arabic**
 2. Click **Preview form** to see it as a supplier will.
 3. Click **Publish…**, add an optional note, and confirm.
 
-Suppliers part-way through see the new version next time they open their portal; the answers they saved are kept. Click **Discard draft** to throw your changes away.`,
+Suppliers part-way through see the new version next time they open their portal; the answers they saved are kept. Click **Discard draft** to throw your changes away.
+
+## Editing the form in Excel
+1. Click **Download as Excel**. You get the current form: a **Tabs**, **Fields** and **Documents** sheet, and **How to fill in** with the rules and examples.
+2. Add rows for new tabs, fields or documents, change any column of existing rows, or write **Remove** in the Action column. Leaving a row out never deletes anything; the row order sets the order on screen.
+3. Conditions are written like \`basic.supplierCountry = India\`, \`tax.hasGst = Yes\`, \`basic.entityType in Company (Pvt / Public Ltd); Limited Liability Partnership\` or \`risk.annualTurnover > 50000000\`.
+4. Click **Upload Excel…** and choose the file. You see every change (and any mistakes, by sheet and row) before anything is saved.
+5. **Save to the draft**, check it in the editor, then **Publish**.
+
+Keys of existing fields can't change (suppliers' answers are stored under them) — change the Label instead. Built-in fields can be relabelled, moved and made optional, but not removed.`,
   },
   {
     id: 'config-documents', title: 'Required documents', audience: ['staff'], perms: ['config.manage'],

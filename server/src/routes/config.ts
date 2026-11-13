@@ -6,12 +6,15 @@ import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
-import { coreFieldsFor, CORE_SECTIONS, FIELD_TYPES, OPS, VENDOR_ATTRIBUTES, vendorTypes } from '../config/types.js';
+import multer from 'multer';
+import { configSchema, coreFieldsFor, CORE_SECTIONS, FIELD_TYPES, findIssues, OPS, VENDOR_ATTRIBUTES, vendorTypes, type OnboardingConfig } from '../config/types.js';
+import { exportConfig, importConfig } from '../services/configExcel.js';
 import { checkList, validatorList, keyChangeFields, SENSITIVE_FIELDS, vendorTypesFor } from '../countries/registry.js';
 import * as cfg from '../services/config.js';
 import { arabicDefaults, supplierLanguages } from '../i18n/index.js';
 
 const { roles, users, delegations } = schema;
+const roleKeysOf = async (tenantId: string) => (await db.select({ key: roles.key }).from(roles).where(eq(roles.tenantId, tenantId))).map((r) => r.key);
 export const configRouter = Router();
 
 const editorMeta = (country: string) => ({ fieldTypes: FIELD_TYPES, validators: validatorList(), ops: OPS, coreFields: coreFieldsFor(country), coreSections: CORE_SECTIONS, vendorAttributes: VENDOR_ATTRIBUTES, vendorTypes: vendorTypesFor(country),
@@ -44,6 +47,41 @@ configRouter.delete('/admin/config/draft', requireStaff('config.manage'), ah(asy
   await cfg.discardDraft(s.tenant.id);
   await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'CONFIG_DRAFT_DISCARDED', ip: req.ip });
   res.json({ ok: true });
+}));
+
+/* ---------- The form as Excel: download, preview an upload, apply it to the draft ---------- */
+
+const excelUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
+async function editableConfig(tenantId: string) {
+  const draft = await cfg.getDraft(tenantId);
+  return draft ? (draft.config as OnboardingConfig) : (await cfg.getPublished(tenantId)).config;
+}
+
+configRouter.get('/admin/config/excel', requireStaff('config.manage'), ah(async (req, res) => {
+  const { tenant } = staffCtx(req);
+  const wb = await exportConfig(await editableConfig(tenant.id), { workspace: tenant.slug, builtIn: coreFieldsFor(tenant.country) });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="vendorgate-form-${tenant.slug}.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
+}));
+
+/** Reads the file and says what would change; saves the draft only with ?apply=1. */
+configRouter.post('/admin/config/excel', requireStaff('config.manage'), excelUpload.single('file'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  if (!req.file) throw new HttpError(400, 'Choose the Excel file to upload');
+  const base = await editableConfig(s.tenant.id);
+  const r = await importConfig(req.file.buffer, base, { builtIn: coreFieldsFor(s.tenant.country) });
+  if (!r.config) return res.json({ ok: false, errors: r.errors, changes: r.changes });
+  const structure = configSchema.safeParse(r.config);
+  if (!structure.success) {
+    return res.json({ ok: false, changes: r.changes, errors: structure.error.issues.slice(0, 20).map((i) => ({ sheet: 'Form', row: 0, message: `${i.path.join(' › ')}: ${i.message}` })) });
+  }
+  const nothing = Object.values(r.changes!).every((x) => !x.length);
+  if (req.query.apply !== '1' || nothing) return res.json({ ok: true, changes: r.changes, nothing, issues: findIssues(r.config, await roleKeysOf(s.tenant.id), coreFieldsFor(s.tenant.country)) });
+  const issues = await cfg.saveDraft(s.tenant.id, r.config, s.user.id);
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'CONFIG_EXCEL_IMPORTED', detail: { file: req.file.originalname, ...Object.fromEntries(Object.entries(r.changes!).map(([k, v]) => [k, v.length])) }, ip: req.ip });
+  res.json({ ok: true, applied: true, changes: r.changes, issues });
 }));
 
 configRouter.post('/admin/config/publish', requireStaff('config.manage'), ah(async (req, res) => {

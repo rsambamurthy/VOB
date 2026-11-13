@@ -39,6 +39,7 @@ export function ConfigEditor() {
   const [flash, setFlash] = useState<{ kind: 'success' | 'error' | 'info'; text: string }>();
   const [busy, setBusy] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [excel, setExcel] = useState(false);
   const [preview, setPreview] = useState<{ title: string; config: OnboardingConfig }>();
   const top = useRef<HTMLDivElement>(null);
 
@@ -113,6 +114,8 @@ export function ConfigEditor() {
             : <><span className="badge badge-approved">Live v{state.published.version}</span> <span className="small muted">Edit anything below to start a draft.</span></>}
         </div>
         <div className="btn-row">
+          <a className={`btn btn-ghost btn-sm ${dirty ? 'disabled' : ''}`} href={dirty ? undefined : '/api/admin/config/excel'} title={dirty ? 'Save the draft first' : 'Tabs, fields and documents as an Excel workbook'}>Download as Excel</a>
+          <button className="btn btn-ghost btn-sm" onClick={() => setExcel(true)} disabled={busy || dirty} title={dirty ? 'Save the draft first' : undefined}>Upload Excel…</button>
           {hasDraft && <button className="btn btn-ghost btn-sm" onClick={discard} disabled={busy}>Discard draft</button>}
           <button className="btn btn-secondary btn-sm" onClick={() => save()} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save draft'}</button>
           <button className="btn btn-primary btn-sm" onClick={startPublish} disabled={busy || !hasDraft}>Publish…</button>
@@ -134,6 +137,7 @@ export function ConfigEditor() {
       </div>
 
       {preview && <PreviewModal config={preview.config} meta={state.meta} title={preview.title} onClose={() => setPreview(undefined)} />}
+      {excel && <ExcelImportModal onClose={() => setExcel(false)} onApplied={async (n) => { setExcel(false); await load(); setFlash({ kind: 'success', text: `${n} change${n === 1 ? '' : 's'} from Excel saved to the draft. Check them here, then Publish.` }); }} />}
       {publishing && <PublishModal published={state.published.config} draft={working} onClose={() => setPublishing(false)} onDone={async (v) => {
         setPublishing(false); await load(); await reloadLive(); setFlash({ kind: 'success', text: `Version ${v} is now live. New submissions use it immediately; vendors already under review keep their current approval steps.` });
       }} />}
@@ -171,6 +175,57 @@ function PublishModal({ published, draft, onClose, onDone }: { published: Onboar
       </ul>
       <p className="small muted">Vendors filling in the form see the change immediately. Vendors already under review keep the approval steps they have.</p>
       <div className="field"><label htmlFor="pub-note">Note for the history (optional)</label><input id="pub-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Added ESG questions" /></div>
+    </Modal>
+  );
+}
+
+interface ExcelResult { ok: boolean; applied?: boolean; nothing?: boolean; errors?: { sheet: string; row: number; message: string }[]; issues?: ConfigIssue[];
+  changes: Record<'tabsAdded' | 'tabsUpdated' | 'tabsRemoved' | 'fieldsAdded' | 'fieldsUpdated' | 'fieldsRemoved' | 'documentsAdded' | 'documentsUpdated' | 'documentsRemoved', string[]> | null }
+const CHANGE_LABELS: [keyof NonNullable<ExcelResult['changes']>, string][] = [
+  ['tabsAdded', 'Tabs added'], ['tabsUpdated', 'Tabs changed'], ['tabsRemoved', 'Tabs removed'],
+  ['fieldsAdded', 'Fields added'], ['fieldsUpdated', 'Fields changed'], ['fieldsRemoved', 'Fields removed'],
+  ['documentsAdded', 'Documents added'], ['documentsUpdated', 'Documents changed'], ['documentsRemoved', 'Documents removed'],
+];
+
+/** Upload the form as Excel: preview what would change, then save it to the draft. */
+function ExcelImportModal({ onClose, onApplied }: { onClose: () => void; onApplied: (count: number) => void }) {
+  const [file, setFile] = useState<File>();
+  const [r, setR] = useState<ExcelResult>();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string>();
+  async function send(f: File, apply: boolean) {
+    setBusy(true); setErr(undefined);
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const res = await api<ExcelResult>(`/admin/config/excel${apply ? '?apply=1' : ''}`, { body: fd });
+      if (apply && res.applied) onApplied(Object.values(res.changes ?? {}).reduce((a, x) => a + x.length, 0)); else setR(res);
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+  const total = r?.changes ? Object.values(r.changes).reduce((a, x) => a + x.length, 0) : 0;
+  return (
+    <Modal wide title="Upload the form from Excel" onClose={onClose} footer={<>
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" disabled={busy || !file || !r?.ok || r.nothing} onClick={() => file && send(file, true)}>{busy && r ? 'Saving…' : r?.ok && total ? `Save ${total} change${total === 1 ? '' : 's'} to the draft` : 'Save to the draft'}</button>
+    </>}>
+      <p className="muted small">Start from <strong>Download as Excel</strong>, edit the Tabs, Fields and Documents sheets, and upload the file here. You’ll see what changes before anything is saved; suppliers see nothing until you Publish.</p>
+      <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { const f = e.target.files?.[0]; setFile(f); setR(undefined); if (f) send(f, false); }} />
+      {busy && !r && <p className="small muted">Reading the file…</p>}
+      {err && <Alert kind="error">{err}</Alert>}
+      {r && !r.ok && r.errors && (<>
+        <Alert kind="error">Nothing was changed. Fix these in the file and upload it again:</Alert>
+        <table className="table small"><thead><tr><th>Sheet</th><th>Row</th><th>Problem</th></tr></thead>
+          <tbody>{r.errors.map((e, i) => <tr key={i} style={{ cursor: 'default' }}><td>{e.sheet}</td><td>{e.row || ''}</td><td>{e.message}</td></tr>)}</tbody></table>
+      </>)}
+      {r?.ok && r.nothing && <Alert kind="info">The file matches the current form — nothing to change.</Alert>}
+      {r?.ok && !r.nothing && r.changes && (<>
+        <Alert kind="success">{total} change{total === 1 ? '' : 's'} found. Check them, then save to the draft.</Alert>
+        <div className="excel-changes">
+          {CHANGE_LABELS.filter(([k]) => r.changes![k].length).map(([k, label]) => (
+            <div key={k}><strong className="small">{label} ({r.changes![k].length})</strong><ul className="small">{r.changes![k].map((x) => <li key={x}>{x}</li>)}</ul></div>
+          ))}
+        </div>
+        {!!r.issues?.length && <Alert kind="warning">After this upload the draft would have {r.issues.length} problem(s) to fix before publishing: {r.issues.slice(0, 3).map((i) => i.message).join('; ')}{r.issues.length > 3 ? '…' : ''}</Alert>}
+      </>)}
     </Modal>
   );
 }

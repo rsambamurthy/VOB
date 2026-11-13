@@ -889,3 +889,6 @@ h1, h2, .page-head h1, .group > legend, .card-title, .af-product, .stat-n { font
 .sc-stars-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line, #eef2f7); }
 .sc-stars button { background: none; border: 0; font-size: 22px; color: #cbd5e1; cursor: pointer; padding: 0 2px; } .sc-stars button.on { color: #f59e0b; }
 .sc-weight { display: grid; grid-template-columns: 190px 1fr 36px; gap: 10px; align-items: center; }
+
+.excel-changes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px 18px; margin: 8px 0; }
+.excel-changes ul { margin: 4px 0 0; padding-left: 18px; }
