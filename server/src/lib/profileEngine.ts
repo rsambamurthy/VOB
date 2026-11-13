@@ -62,7 +62,12 @@ export function visibleDocRequirements(cfg: OnboardingConfig, profile: Profile, 
   return cfg.documents.flatMap((d) => {
     if (conditionHolds(d.showIf, ctx)) return [{ ...d, isRequired: isRequired(d.required, ctx) }];
     // Documents first: the answer that decides this document isn't given yet, so offer it as "upload if it applies".
-    if (opts.undecided && d.showIf && (d.showIf.op === 'eq' || d.showIf.op === 'in') && !readValue(d.showIf.field, ctx)) return [{ ...d, isRequired: false, appliesIf: describeCondition(cfg, d.showIf) }];
+    if (opts.undecided && d.showIf && (d.showIf.op === 'eq' || d.showIf.op === 'in')) {
+      const answer = readValue(d.showIf.field, ctx);
+      if (!answer) return [{ ...d, isRequired: false, appliesIf: describeCondition(cfg, d.showIf) }];
+      // Ruled out by an answer: still offered (tucked away), so a supplier who answered wrongly can upload it.
+      return [{ ...d, isRequired: false, notNeeded: { ...describeCondition(cfg, d.showIf), answer } }];
+    }
     return [];
   });
 }
@@ -112,15 +117,17 @@ export function fillImpliedAnswers(cfg: OnboardingConfig, profile: Profile, fill
 }
 
 /**
- * The answer implied by uploading a document that was offered "if it applies": a GST certificate means
- * "Do you hold a GST number?" is Yes. Only for a single-value "equals" condition on an empty field.
+ * The answer implied by uploading a document: a GST certificate means "Do you hold a GST number?" is Yes.
+ * Only for a single-value "equals" condition; null when the answer is already that.
  */
 export function answerImpliedBy(cfg: OnboardingConfig, docType: string, profile: Profile, vendorType?: string): { section: string; field: string; value: string } | null {
   const d = cfg.documents.find((x) => x.type === docType);
   const c = d?.showIf;
-  if (!c || readValue(c.field, ctxOf(profile, vendorType))) return null;
+  if (!c) return null;
   const v = c.op === 'eq' ? c.value : c.op === 'in' && Array.isArray(c.value) && c.value.length === 1 ? c.value[0] : undefined;
   if (v === undefined || v === '') return null;
+  // The document itself is the evidence: it answers the question, also over an earlier "No".
+  if (readValue(c.field, ctxOf(profile, vendorType)) === String(v)) return null;
   const [section, field] = c.field.split('.');
   if (!cfg.sections.some((s) => s.key === section && s.groups.some((g) => g.fields.some((f) => f.key === field)))) return null;
   return { section, field, value: String(v) };

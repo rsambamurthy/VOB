@@ -386,6 +386,24 @@ describe('AI document reading', () => {
     await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
   });
 
+  test('a document ruled out by a "No" is still offered, and uploading it changes the answer', async () => {
+    setExtractor({ name: 'anthropic', live: true, async extract() {
+      return { documentType: 'MSME_CERT', values: { udyamNumber: 'UDYAM-TN-02-0012345', msmeCategory: 'Micro' }, confidence: { udyamNumber: 0.97, msmeCategory: 0.95 } };
+    } } as any);
+    const admin = await login('admin@acme.test');
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: true, dataEntry: 'automatic' } });
+    const { v } = await newVendor('Said No Co', 'saidno@co.test');
+    const basic = (await v.get('/api/vendor')).body.vendor.profile.basic;
+    await v.put('/api/vendor/profile/basic', { ...basic, msmeRegistered: 'No' });
+    const msme = (await v.get('/api/vendor')).body.docRequirements.find((d: any) => d.type === 'MSME_CERT');
+    expect(msme).toMatchObject({ isRequired: false, notNeeded: { answer: 'No', values: ['Yes'] } });
+    await v.upload('/api/vendor/documents', 'MSME_CERT', PDF);
+    const me = (await v.get('/api/vendor')).body;
+    expect(me.vendor.profile.basic).toMatchObject({ msmeRegistered: 'Yes', udyamNumber: 'UDYAM-TN-02-0012345', msmeCategory: 'Micro' });
+    expect(me.docRequirements.find((d: any) => d.type === 'MSME_CERT')).toMatchObject({ isRequired: true });
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
+  });
+
   test('each pack’s readable documents only target fields that exist in that pack’s template', async () => {
     const { PACKS } = await import('../src/countries/registry.js');
     for (const p of PACKS.filter((x) => x.template && x.documents)) {

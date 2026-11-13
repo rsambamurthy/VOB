@@ -848,3 +848,7 @@ h1, h2, .page-head h1, .group > legend, .card-title, .af-product, .stat-n { font
 .entry-mode.on { border-color: var(--brand); background: var(--brand-50); }
 .entry-mode.locked { opacity: .55; cursor: not-allowed; }
 .entry-new { margin-inline-start: 8px; }
+
+.doc-parked { margin-top: 14px; border: 1px dashed var(--line, #e2e8f0); border-radius: 10px; padding: 10px 14px; }
+.doc-parked summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.doc-parked[open] summary { margin-bottom: 10px; }

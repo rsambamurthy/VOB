@@ -115,6 +115,8 @@
   "docs.enterValidUntil": "أدخلوا تاريخ انتهاء الصلاحية أولاً.",
   "docs.ifApplies": "(إن كان ينطبق عليكم)",
   "docs.notAccepted": "غير مقبول",
+  "docs.notNeeded": "أجبتم «{answer}» عن «{question}». إن لم يكن ذلك صحيحاً فارفعوا المستند هنا — وستتغير الإجابة إلى {value}.",
+  "docs.notNeededTitle": "غير مطلوبة بناءً على إجاباتكم ({count}) — افتحوا للرفع على أي حال",
   "docs.notSubmitted": "جديد — لم يُقدَّم بعد",
   "docs.notUploaded": "لم يُرفع",
   "docs.optional": "(اختياري)",

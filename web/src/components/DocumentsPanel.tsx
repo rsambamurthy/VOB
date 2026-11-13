@@ -23,11 +23,19 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export function DocumentsPanel({ requirements, documents, showHistory, ...rest }: Props) {
   const visible = showHistory ? documents : documents.filter((d) => !d.status || d.status === 'ACTIVE' || d.status === 'PENDING');
+  // Ruled out by an answer, and nothing uploaded: tucked away below, but still uploadable.
+  const parked = requirements.filter((r) => r.notNeeded && !visible.some((d) => d.docType === r.type));
   return (
     <div className="doc-list">
-      {requirements.map((r) => (
+      {requirements.filter((r) => !parked.includes(r)).map((r) => (
         <DocRow key={r.type} req={r} files={visible.filter((d) => d.docType === r.type)} {...rest} />
       ))}
+      {parked.length > 0 && rest.editable && (
+        <details className="doc-parked">
+          <summary>{t('docs.notNeededTitle', { count: parked.length })}</summary>
+          {parked.map((r) => <DocRow key={r.type} req={r} files={[]} {...rest} />)}
+        </details>
+      )}
     </div>
   );
 }
@@ -53,6 +61,7 @@ function DocRow({ req, files, editable, onUpload, onDelete, canDelete, uploadLab
     <div className={`doc-row ${missing ? 'doc-missing' : ''}`}>
       <div className="doc-info">
         <div className="doc-title">{req.label}{req.isRequired ? <span className="req"> *</span> : <span className="muted small"> {req.appliesIf ? t('docs.ifApplies') : t('docs.optional')}</span>}</div>
+        {req.notNeeded && <div className="field-help applies-if">{t('docs.notNeeded', { question: req.notNeeded.field, answer: req.notNeeded.answer, value: req.notNeeded.values[0] ?? '' })}</div>}
         {req.appliesIf && <div className="field-help applies-if">{req.appliesIf.values.length === 1 ? t('docs.appliesIf', { question: req.appliesIf.field, answer: req.appliesIf.values[0] }) : t('docs.appliesIfAny', { question: req.appliesIf.field, answer: req.appliesIf.values.join('; ') })}</div>}
         {req.help && <div className="field-help">{req.help}</div>}
         {files.map((f) => {

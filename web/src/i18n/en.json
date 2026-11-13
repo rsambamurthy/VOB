@@ -115,6 +115,8 @@
   "docs.enterValidUntil": "Enter the “valid until” date first.",
   "docs.ifApplies": "(if it applies to you)",
   "docs.notAccepted": "Not accepted",
+  "docs.notNeeded": "You answered “{answer}” to “{question}”. If that’s not right, upload it here — the answer changes to {value}.",
+  "docs.notNeededTitle": "Not needed based on your answers ({count}) — open to upload anyway",
   "docs.notSubmitted": "New — not yet submitted",
   "docs.notUploaded": "Not uploaded",
   "docs.optional": "(optional)",
