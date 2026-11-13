@@ -22,6 +22,7 @@ import { supplierOrdersRouter } from './routes/supplierOrders.js';
 import { staffCollabRouter, supplierCollabRouter } from './routes/collab.js';
 import { erpApiRouter } from './routes/erpApi.js';
 import { staffAuthRouter } from './routes/staffAuth.js';
+import { ssoRouter } from './routes/sso.js';
 import { vendorAuthRouter } from './routes/vendorAuth.js';
 import { metaRouter } from './routes/meta.js';
 import { reportsRouter } from './routes/reports.js';
@@ -85,6 +86,7 @@ export function createApp() {
   app.use('/api', apiLimiter, csrfGuard, loadSessions, supportReadOnly, loadPlatformSession);
   app.use('/api/platform', platformRouter);
   app.use('/api/signup', signupRouter);
+  app.use('/api/auth/sso', ssoRouter);
   app.use('/api/auth', staffAuthRouter);
   app.use('/api/vendor-auth', vendorAuthRouter);
   app.use('/api/meta', metaRouter);

@@ -20,6 +20,17 @@ export function Login() {
   const next = params.get('next') || '/staff/vendors';
   const [signupOpen, setSignupOpen] = useState(false);
   useEffect(() => { api('/signup/config').then((c) => setSignupOpen(!!c.enabled)).catch(() => {}); }, []);
+  // Single sign-on: shown as soon as the workspace is known.
+  const [sso, setSso] = useState<{ enabled: boolean; label?: string; passwordLogin?: 'everyone' | 'admins' | 'off' }>({ enabled: false });
+  const [showPassword, setShowPassword] = useState(false);
+  useEffect(() => {
+    const ws = workspace.trim().toLowerCase();
+    if (!/^[a-z0-9-]{2,}$/.test(ws)) { setSso({ enabled: false }); return; }
+    const timer = setTimeout(() => api(`/auth/sso/info/${ws}`).then(setSso).catch(() => setSso({ enabled: false })), 300);
+    return () => clearTimeout(timer);
+  }, [workspace]);
+  const ssoHref = `/api/auth/sso/start?workspace=${encodeURIComponent(workspace.trim().toLowerCase())}&next=${encodeURIComponent(next.startsWith('/staff') ? next : '/staff/vendors')}`;
+  const passwordForm = !sso.enabled || sso.passwordLogin === 'everyone' || showPassword;
 
   async function finish() {
     const me = await refresh();
@@ -48,15 +59,23 @@ export function Login() {
   return (
     <AuthLayout title={step === 'password' ? 'Sign in to your workspace' : 'Two-factor verification'}>
       {params.get('reset') && <Alert kind="success">Password updated. Sign in with your new password.</Alert>}
+      {params.get('ssoError') && !error && <Alert kind="error">{params.get('ssoError')}</Alert>}
       {notice && <Alert kind="warning">{notice}</Alert>}
       {error && <Alert kind="error">{error}</Alert>}
       {step === 'password' ? (
         <form onSubmit={submitPassword} className="stack">
           <div className="field"><label htmlFor="ws">Workspace ID</label><input id="ws" value={workspace} onChange={(e) => setWorkspace(e.target.value)} placeholder="e.g. acme" required autoComplete="organization" autoCapitalize="none" /></div>
+          {sso.enabled && (<>
+            <a className="btn btn-primary btn-block sso-btn" href={ssoHref} onClick={() => lastWorkspace.set(workspace.trim().toLowerCase())}>{sso.label}</a>
+            {!passwordForm && <button type="button" className="link-btn small center" onClick={() => setShowPassword(true)}>{sso.passwordLogin === 'admins' ? 'Administrator? Sign in with a password' : 'Sign in with a password'}</button>}
+            {passwordForm && <div className="or-line">or with your VendorGate password</div>}
+          </>)}
+          {passwordForm && (<>
           <div className="field"><label htmlFor="em">Email</label><input id="em" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" /></div>
           <div className="field"><label htmlFor="pw">Password</label><input id="pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" /></div>
-          <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+          <button className={`btn ${sso.enabled ? 'btn-secondary' : 'btn-primary'} btn-block`} disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
           <Link to={`/forgot-password?workspace=${encodeURIComponent(workspace)}`} className="small center">Forgot password?</Link>
+          </>)}
           <p className="small muted center">Supplier? Use the invitation link from your email instead.</p>
           {signupOpen && <p className="small center">New to VendorGate? <Link to="/signup">Create a workspace</Link></p>}
         </form>

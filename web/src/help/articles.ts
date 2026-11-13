@@ -282,6 +282,32 @@ The steps suppliers see under **How onboarding works** in their portal. Write th
 Every published version is kept with who published it and their note. Click **Restore as draft** to copy an older version into the draft, review it, then publish.`,
   },
   {
+    id: 'sso', title: 'Sign-in and single sign-on (Microsoft, Okta, Google, SAML)', audience: ['staff'], perms: ['tenant.settings'],
+    summary: 'Let staff sign in with their work account, and decide whether VendorGate passwords stay on.',
+    screens: ['^/staff/admin/sign-in'],
+    keywords: 'sso single sign-on login sign in azure ad entra microsoft okta google workspace saml adfs oidc openid password 2fa mfa identity provider',
+    related: ['users', 'workspace-settings'],
+    body: `Open **Administration → Sign-in & SSO**. Staff can sign in with a **VendorGate password and two-factor authentication** (the default), or with **single sign-on** through your company's identity provider. Suppliers are not affected.
+
+## Setting up single sign-on
+1. Pick your provider: **Microsoft Entra ID** (Azure AD), **Okta**, **Google Workspace**, **another OpenID Connect provider**, or **SAML 2.0** (AD FS, Ping, JumpCloud…).
+2. Register VendorGate in your provider using the URLs shown on the page (copy buttons): the **Redirect URI** for OpenID Connect, or the **ACS URL**, **Entity ID** and **metadata URL** for SAML.
+3. Copy back what the provider gives you: tenant ID / domain, **client ID** and **client secret** (OpenID Connect), or the **sign-in URL** and **signing certificate** (SAML). Save.
+4. Click **Test sign-in**. You go to your provider and come back signed in; the page then shows the setup as working.
+
+## Who can sign in
+- **Allowed email domains**: only these addresses can come in through single sign-on.
+- People must already be **Users** in VendorGate, unless you tick **Create a VendorGate user on first sign-in** and choose the role they get.
+- Invited users with single sign-on don't set a password — the invitation shows the sign-in button.
+
+## Password sign-in
+- **Keep it for everyone**, **Administrators only** (recommended: a way in if your provider is down), or **Off**.
+- **Off** can only be chosen after an administrator has signed in through single sign-on with the current settings, so nobody gets locked out. Changing the provider details resets this check.
+- With single sign-on, two-factor authentication is handled by your provider; VendorGate doesn't ask again.
+
+Every sign-in, refused sign-in and settings change is recorded in the audit log.`,
+  },
+  {
     id: 'integrations', title: 'Email, SMS and other integrations', audience: ['staff'], perms: ['tenant.settings'],
     summary: 'Test email delivery, choose how suppliers get sign-in codes, and how suppliers enter their details (manual, assisted or automatic from documents).',
     screens: ['^/staff/admin/integrations'],

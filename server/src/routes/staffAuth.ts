@@ -16,6 +16,16 @@ import { effectiveLimits, trialExpired } from '../lib/plans.js';
 import { createSession, destroySession, revokeUserSessions, staffCtx } from '../auth/session.js';
 import { consumeToken, issueToken } from '../services/users.js';
 import { loginLimiter, sensitiveLimiter } from '../lib/rateLimits.js';
+import { buttonLabel, isWorkspaceAdmin, ssoOf } from '../services/sso.js';
+
+/** With single sign-on on, password sign-in may be limited to admins (break-glass) or switched off. */
+async function passwordAllowed(tenant: typeof schema.tenants.$inferSelect, userId: string) {
+  const s = ssoOf(tenant);
+  if (!s || s.passwordLogin === 'everyone') return true;
+  if (s.passwordLogin === 'admins') return isWorkspaceAdmin(userId, tenant.id);
+  return false;
+}
+const useSso = (tenant: typeof schema.tenants.$inferSelect) => new HttpError(403, `This workspace signs in with single sign-on. Use “${buttonLabel(ssoOf(tenant)!)}”.`, undefined, 'USE_SSO');
 
 const { users, tenants, sessions } = schema;
 export const staffAuthRouter = Router();
@@ -63,6 +73,10 @@ staffAuthRouter.post('/login', loginLimiter, ah(async (req, res) => {
   }
   if (user.status === 'DISABLED') throw new HttpError(403, 'Your account has been disabled. Contact your administrator.');
   await db.update(users).set({ failedLogins: 0, lockedUntil: null }).where(eq(users.id, user.id));
+  if (!(await passwordAllowed(tenant, user.id))) {
+    await audit({ tenantId: tenant.id, actor: user.email, action: 'LOGIN_PASSWORD_REFUSED', detail: { reason: 'sso only' }, ip: req.ip });
+    throw useSso(tenant);
+  }
   if (user.mfaEnabled) {
     await createSession(req, res, { kind: 'STAFF', tenant, userId: user.id, mfaPending: true });
     return res.json({ mfaRequired: true });
@@ -117,14 +131,17 @@ staffAuthRouter.get('/me', ah(async (req, res) => {
 
 staffAuthRouter.get('/invite/:token', ah(async (req, res) => {
   const { user, tenant } = await consumeToken(req.params.token, 'INVITE', { markUsed: false });
-  res.json({ name: user.name, email: user.email, workspace: tenant.slug, tenantName: tenant.name });
+  // Single sign-on only: the invitee signs in with the workspace's provider instead of setting a password.
+  const sso = !(await passwordAllowed(tenant, user.id)) ? { label: buttonLabel(ssoOf(tenant)!) } : undefined;
+  res.json({ name: user.name, email: user.email, workspace: tenant.slug, tenantName: tenant.name, sso });
 }));
 
 staffAuthRouter.post('/accept-invite', sensitiveLimiter, ah(async (req, res) => {
   const { token, name, password } = z.object({ token: z.string(), name: z.string().min(2).max(100), password: z.string() }).parse(req.body);
-  const { user: peek } = await consumeToken(token, 'INVITE', { markUsed: false });
+  const { user: peek, tenant: peekTenant } = await consumeToken(token, 'INVITE', { markUsed: false });
   const problem = passwordProblem(password, { email: peek.email, name });
   if (problem) throw new HttpError(400, problem);
+  if (!(await passwordAllowed(peekTenant, peek.id))) throw useSso(peekTenant);
   const { user, tenant } = await consumeToken(token, 'INVITE');
   await db.update(users).set({ name: name.trim(), passwordHash: await hashPassword(password), status: 'ACTIVE', passwordChangedAt: new Date(), lastLoginAt: new Date() }).where(eq(users.id, user.id));
   await audit({ tenantId: tenant.id, actor: user.email, action: 'INVITE_ACCEPTED', ip: req.ip });

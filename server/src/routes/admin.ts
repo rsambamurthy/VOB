@@ -27,6 +27,8 @@ import { checkConnection, connectionInput, getConnection, publicConnection, save
 import { send as sendErp } from '../integrations/erp/drivers.js';
 import { defaultNotice, noticeFor, retentionFor } from '../services/privacy.js';
 import { supplierLanguages } from '../i18n/index.js';
+import { encrypt as encryptSecret } from '../lib/crypto.js';
+import { buttonLabel, forgetOidcConfig, oidcConfig, oidcRedirectUri, samlAcsUrl, samlEntityId, type SsoSettings } from '../services/sso.js';
 
 const { users, roles, userRoles, auditLogs, tenants, approvalSteps } = schema;
 export const adminRouter = Router();
@@ -275,6 +277,89 @@ adminRouter.post('/email/unsuppress', requireStaff('tenant.settings'), ah(async 
 }));
 
 /* ---------- Integrations (read-only status: providers are configured on the server) ---------- */
+
+/* ---------- Staff sign-in: password + 2FA, or single sign-on ---------- */
+
+function ssoView(tenant: typeof tenants.$inferSelect) {
+  const s = tenant.settings.sso;
+  const { clientSecretEnc, ...rest } = s ?? ({} as SsoSettings);
+  return {
+    sso: s ? { ...rest, hasClientSecret: !!clientSecretEnc, buttonLabel: buttonLabel(s) } : null,
+    requireMfa: !!tenant.settings.requireMfa,
+    // What the administrator registers at the identity provider.
+    provider: { redirectUri: oidcRedirectUri(), samlAcsUrl: samlAcsUrl(), samlEntityId: samlEntityId(tenant.slug), samlMetadataUrl: `${env.appBaseUrl}/api/auth/sso/saml/${tenant.slug}/metadata`, signInUrl: `${env.appBaseUrl}/login?workspace=${tenant.slug}` },
+  };
+}
+
+adminRouter.get('/sso', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const { tenant } = staffCtx(req);
+  const roles = await db.select({ id: schema.roles.id, name: schema.roles.name }).from(schema.roles).where(eq(schema.roles.tenantId, tenant.id)).orderBy(asc(schema.roles.name));
+  res.json({ ...ssoView(tenant), roles });
+}));
+
+const domain = z.string().trim().toLowerCase().regex(/^[a-z0-9.-]+\.[a-z]{2,}$/, 'Enter domains like acme.com');
+adminRouter.put('/sso', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const input = z.object({
+    enabled: z.boolean(),
+    provider: z.enum(['entra', 'okta', 'google', 'oidc', 'saml']),
+    label: z.string().trim().max(60).optional(),
+    issuer: z.string().trim().url('Enter the issuer URL').max(300).optional().or(z.literal('')),
+    clientId: z.string().trim().max(300).optional(),
+    /** Empty or missing = keep the stored secret. */
+    clientSecret: z.string().max(500).optional(),
+    samlEntryPoint: z.string().trim().url('Enter the sign-in URL of your identity provider').max(500).optional().or(z.literal('')),
+    samlIdpIssuer: z.string().trim().max(300).optional(),
+    samlCert: z.string().max(10_000).optional(),
+    allowedDomains: z.array(domain).max(20).default([]),
+    passwordLogin: z.enum(['everyone', 'admins', 'off']),
+    autoCreate: z.boolean().default(false),
+    defaultRoleId: z.string().optional().or(z.literal('')),
+  }).parse(req.body);
+  const old = s.tenant.settings.sso;
+  const oidcKind = input.provider !== 'saml';
+  if (input.enabled) {
+    if (oidcKind && (!input.issuer || !input.clientId)) throw new HttpError(400, 'Enter the issuer URL and client ID from your identity provider.');
+    if (!oidcKind && (!input.samlEntryPoint || !input.samlCert?.trim())) throw new HttpError(400, 'Enter the sign-in URL and signing certificate from your identity provider.');
+    if (input.autoCreate && !input.allowedDomains.length) throw new HttpError(400, 'To create users automatically, list the email domains that may sign in.');
+    if (input.autoCreate && !input.defaultRoleId) throw new HttpError(400, 'Choose the role new users get.');
+    if (input.defaultRoleId && !(await db.query.roles.findFirst({ where: and(eq(schema.roles.id, input.defaultRoleId), eq(schema.roles.tenantId, s.tenant.id)) }))) throw new HttpError(400, 'Unknown role');
+  }
+  // Anything that changes who the provider is (or how we trust it) needs a fresh admin sign-in before passwords can go.
+  const identityChanged = !old || old.provider !== input.provider || (old.issuer ?? '') !== (input.issuer ?? '') || (old.clientId ?? '') !== (input.clientId ?? '')
+    || !!input.clientSecret || (old.samlEntryPoint ?? '') !== (input.samlEntryPoint ?? '') || (old.samlCert ?? '').trim() !== (input.samlCert ?? '').trim();
+  const verifiedAt = identityChanged ? undefined : old?.verifiedAt;
+  if (input.enabled && input.passwordLogin === 'off' && !verifiedAt) {
+    throw new HttpError(409, 'Before switching password sign-in off, sign in once through single sign-on as an administrator (use “Test sign-in”). This makes sure nobody gets locked out.');
+  }
+  const next: SsoSettings = {
+    enabled: input.enabled, provider: input.provider, label: input.label || undefined,
+    issuer: oidcKind ? input.issuer || undefined : undefined, clientId: oidcKind ? input.clientId || undefined : undefined,
+    clientSecretEnc: oidcKind ? (input.clientSecret ? encryptSecret(input.clientSecret) : old?.clientSecretEnc) : undefined,
+    samlEntryPoint: !oidcKind ? input.samlEntryPoint || undefined : undefined, samlIdpIssuer: !oidcKind ? input.samlIdpIssuer || undefined : undefined,
+    samlCert: !oidcKind ? input.samlCert?.trim() || undefined : undefined,
+    allowedDomains: input.allowedDomains, passwordLogin: input.passwordLogin, autoCreate: input.autoCreate, defaultRoleId: input.defaultRoleId || undefined,
+    verifiedAt, verifiedBy: verifiedAt ? old?.verifiedBy : undefined,
+  };
+  await db.update(tenants).set({ settings: { ...s.tenant.settings, sso: next } }).where(eq(tenants.id, s.tenant.id));
+  forgetOidcConfig();
+  const { clientSecretEnc: _x, ...logged } = next;
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'SSO_SETTINGS_UPDATED', detail: logged, ip: req.ip });
+  res.json(ssoView({ ...s.tenant, settings: { ...s.tenant.settings, sso: next } }));
+}));
+
+/** Check the OpenID Connect settings reach the provider (discovery document and client). */
+adminRouter.post('/sso/check', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req).tenant.settings.sso;
+  if (!s) throw new HttpError(400, 'Save the single sign-on settings first.');
+  if (s.provider === 'saml') return res.json({ ok: true, message: 'SAML settings saved. Use “Test sign-in” to try them.' });
+  try {
+    const cfg = await oidcConfig(s);
+    res.json({ ok: true, message: `Reached ${cfg.serverMetadata().issuer}.` });
+  } catch (err: any) {
+    res.json({ ok: false, message: `Couldn’t reach the provider: ${String(err?.message ?? err).slice(0, 200)}` });
+  }
+}));
 
 adminRouter.get('/integrations', requireStaff('tenant.settings'), ah(async (req, res) => {
   const { tenant } = staffCtx(req);

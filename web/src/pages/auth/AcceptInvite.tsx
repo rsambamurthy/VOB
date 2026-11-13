@@ -9,7 +9,7 @@ export function AcceptInvite() {
   const { token = '' } = useParams();
   const nav = useNavigate();
   const { refresh } = useSession();
-  const [info, setInfo] = useState<{ name: string; email: string; workspace: string; tenantName: string }>();
+  const [info, setInfo] = useState<{ name: string; email: string; workspace: string; tenantName: string; sso?: { label: string } }>();
   const [name, setName] = useState('');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
@@ -31,7 +31,13 @@ export function AcceptInvite() {
   return (
     <AuthLayout title={info ? `Join ${info.tenantName}` : 'Accept invitation'} subtitle={info && <>Workspace ID <strong>{info.workspace}</strong> · {info.email}</>}>
       {error && <Alert kind="error">{error}</Alert>}
-      {info && (
+      {info?.sso && (
+        <div className="stack">
+          <p className="muted">{info.tenantName} signs in with your work account — no VendorGate password needed.</p>
+          <a className="btn btn-primary btn-block" href={`/api/auth/sso/start?workspace=${encodeURIComponent(info.workspace)}`} onClick={() => lastWorkspace.set(info.workspace)}>{info.sso.label}</a>
+        </div>
+      )}
+      {info && !info.sso && (
         <form onSubmit={submit} className="stack">
           <div className="field"><label htmlFor="nm">Your name</label><input id="nm" value={name} onChange={(e) => setName(e.target.value)} required /></div>
           <div className="field"><label htmlFor="pw">Password</label><input id="pw" type="password" value={pw} onChange={(e) => setPw(e.target.value)} required autoComplete="new-password" /><PasswordHint /></div>

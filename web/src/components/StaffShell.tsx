@@ -42,6 +42,7 @@ export function StaffShell() {
       { to: '/staff/admin/roles', label: 'Roles', icon: 'roles', show: can('users.manage') },
       { to: '/staff/admin/config', label: 'Configuration', icon: 'config', show: can('config.manage') },
       { to: '/staff/admin/workspace', label: 'Workspace', icon: 'workspace', show: can('tenant.settings') },
+      { to: '/staff/admin/sign-in', label: 'Sign-in & SSO', icon: 'signin', show: can('tenant.settings') },
       { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },
       { to: '/staff/admin/erp', label: 'ERP integration', icon: 'erp', show: can('tenant.settings') },
       { to: '/staff/admin/help-topics', label: 'Help topics', icon: 'help', show: can('tenant.settings') },

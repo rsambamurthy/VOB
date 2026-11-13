@@ -78,7 +78,15 @@ export interface PlatformBilling {
 export interface InvoiceLine { description: string; sac: string; quantity: number; unitPrice: number; amount: number }
 export interface InvoiceParty { name: string; gstin?: string; address: string; country: string; stateCode?: string; stateName?: string; email?: string }
 
+/** Outstanding SAML sign-in requests (matched against the identity provider's reply). */
+export const ssoRequests = pgTable('sso_requests', {
+  id: text('id').primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export interface TenantSettings {
+  /** Staff single sign-on (OpenID Connect or SAML); see services/sso.ts. */
+  sso?: import('../services/sso.js').SsoSettings;
   requireMfa?: boolean;
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
   reKycMonths?: number;
@@ -189,6 +197,8 @@ export const sessions = pgTable('sessions', {
   vendorId: text('vendor_id').references(() => vendors.id, { onDelete: 'cascade' }),
   /** true between password check and TOTP check */
   mfaPending: boolean('mfa_pending').notNull().default(false),
+  /** Signed in through the workspace's single sign-on (the identity provider handles 2FA). */
+  sso: boolean('sso').notNull().default(false),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   ip: text('ip'),

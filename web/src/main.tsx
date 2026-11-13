@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ConfigProvider } from './lib/meta';
 import { ConfigEditor } from './pages/admin/config/ConfigEditor';
 import { Integrations } from './pages/admin/Integrations';
+import { SignIn } from './pages/admin/SignIn';
 import { RequireStaff, SessionProvider } from './lib/session';
 import { StaffShell } from './components/StaffShell';
 import { Login } from './pages/auth/Login';
@@ -77,6 +78,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/audit" element={<Audit />} />
               <Route path="admin/config" element={<ConfigEditor />} />
               <Route path="admin/integrations" element={<Integrations />} />
+              <Route path="admin/sign-in" element={<SignIn />} />
               <Route path="mailbox" element={<Mailbox />} />
               <Route path="orders" element={<OrderList />} />
               <Route path="orders/:id" element={<OrderDetail />} />

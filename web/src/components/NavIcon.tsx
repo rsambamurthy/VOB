@@ -14,6 +14,7 @@ const PATHS: Record<string, string> = {
   config: 'M4 4h16v16H4zM8 9h8M8 13h8M8 17h5',
   workspace: 'M3 21h18M5 21V7l7-4 7 4v14M9 9h1M14 9h1M9 13h1M14 13h1M9 17h1M14 17h1',
   integrations: 'M9 2v6M15 2v6M7 8h10v4a5 5 0 0 1-10 0zM12 17v5',
+  signin: 'M15 7a4 4 0 1 1-3.5 6L5 19.5V22h3v-2h2v-2h2l1.5-1.5A4 4 0 0 1 15 7zM16.5 9.5h.01',
   erp: 'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6',
   audit: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
   mail: 'M3 5h18v14H3zM3 6l9 7 9-7',

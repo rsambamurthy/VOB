@@ -852,3 +852,16 @@ h1, h2, .page-head h1, .group > legend, .card-title, .af-product, .stat-n { font
 .doc-parked { margin-top: 14px; border: 1px dashed var(--line, #e2e8f0); border-radius: 10px; padding: 10px 14px; }
 .doc-parked summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--muted); }
 .doc-parked[open] summary { margin-bottom: 10px; }
+
+/* Sign-in & SSO admin page */
+.provider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.provider-card { display: flex; flex-direction: column; gap: 3px; text-align: start; border: 1px solid var(--line, #e2e8f0); border-radius: 10px; padding: 12px 14px; background: #fff; cursor: pointer; font: inherit; }
+.provider-card.on { border-color: var(--brand); background: var(--brand-50); box-shadow: 0 0 0 1px var(--brand) inset; }
+.sso-register { background: #f8fafc; border: 1px solid var(--line, #e2e8f0); border-radius: 10px; padding: 12px 14px; }
+.copy-row { display: grid; grid-template-columns: 170px 1fr auto; gap: 10px; align-items: center; padding: 4px 0; }
+.copy-val { overflow-wrap: anywhere; font-size: 12.5px; background: #fff; border: 1px solid var(--line, #e2e8f0); border-radius: 6px; padding: 5px 8px; }
+@media (max-width: 640px) { .copy-row { grid-template-columns: 1fr auto; } .copy-row > span { grid-column: 1 / -1; } }
+.btn.disabled { opacity: .5; pointer-events: none; }
+.sso-btn { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.or-line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin: 4px 0; }
+.or-line::before, .or-line::after { content: ''; flex: 1; border-top: 1px solid var(--line, #e2e8f0); }

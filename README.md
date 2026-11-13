@@ -252,3 +252,8 @@ The `Dockerfile` builds one container (API + web) on port 4000. Set these variab
 - `TRUST_PROXY=true` (behind a load balancer)
 
 Run `npm run -w server db:migrate` once against the database, or set `MIGRATE_ON_START=true`.
+
+
+## Single sign-on for staff
+
+Administration → Sign-in & SSO: Microsoft Entra ID (Azure AD), Okta, Google Workspace, any OpenID Connect provider, or SAML 2.0. Password sign-in can stay on for everyone, for admins only, or be switched off after an admin has tested SSO. See the in-app help topic "Sign-in and single sign-on".

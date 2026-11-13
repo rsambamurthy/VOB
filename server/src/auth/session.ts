@@ -45,7 +45,7 @@ function cookieOpts(hours: number) {
 
 export async function createSession(
   req: Request, res: Response,
-  s: { kind: 'STAFF'; tenant: Tenant; userId: string; mfaPending?: boolean; support?: { adminId: string; reason: string; minutes: number } } | { kind: 'VENDOR'; tenant: Tenant; vendorId: string; contactEmail?: string },
+  s: { kind: 'STAFF'; tenant: Tenant; userId: string; mfaPending?: boolean; sso?: boolean; support?: { adminId: string; reason: string; minutes: number } } | { kind: 'VENDOR'; tenant: Tenant; vendorId: string; contactEmail?: string },
 ) {
   const token = randomToken();
   const hours = s.kind === 'STAFF' ? (s.support ? s.support.minutes / 60 : s.tenant.settings.sessionHours ?? DEFAULT_SESSION_HOURS) : VENDOR_SESSION_HOURS;
@@ -54,6 +54,7 @@ export async function createSession(
     userId: s.kind === 'STAFF' ? s.userId : null,
     vendorId: s.kind === 'VENDOR' ? s.vendorId : null,
     mfaPending: s.kind === 'STAFF' ? !!s.mfaPending : false,
+    sso: s.kind === 'STAFF' ? !!s.sso : false,
     supportAdminId: s.kind === 'STAFF' ? s.support?.adminId ?? null : null,
     contactEmail: s.kind === 'VENDOR' ? s.contactEmail ?? null : null,
     supportReason: s.kind === 'STAFF' ? s.support?.reason ?? null : null,
@@ -91,7 +92,8 @@ async function loadStaff(token: string): Promise<StaffCtx | undefined> {
   if (s.supportAdminId && supporter?.status !== 'ACTIVE') return;
   return {
     kind: 'staff', sessionId: s.id, tenant, mfaPending: s.mfaPending,
-    mfaSetupRequired: !supporter && !!tenant.settings.requireMfa && !user.mfaEnabled,
+    // Two-factor is the identity provider's job for single sign-on sessions.
+    mfaSetupRequired: !supporter && !s.sso && !!tenant.settings.requireMfa && !user.mfaEnabled,
     support: supporter ? { by: `${supporter.name} (${supporter.email})`, reason: s.supportReason, endsAt: s.expiresAt } : undefined,
     user: { id: user.id, name: user.name, email: user.email, mfaEnabled: user.mfaEnabled, tenantId: user.tenantId },
     roles: rs.map(({ id, key, name }) => ({ id, key, name })),
@@ -133,6 +135,8 @@ export function csrfGuard(req: Request, _res: Response, next: NextFunction) {
   if (req.get('x-requested-with')) return next();
   // The ERP API (/api/v1) authenticates with a bearer key and never reads cookies, so cross-site forgery doesn't apply.
   if (req.path.startsWith('/v1/')) return next();
+  // The SAML reply is posted by the browser from the identity provider; it is checked by its own signature.
+  if (req.path === '/auth/sso/saml/acs') return next();
   next(new HttpError(403, 'Missing X-Requested-With header'));
 }
 
