@@ -9,7 +9,10 @@ const year = (v: string) => (v.match(/(19|20)\d{2}/)?.[0] ?? '');
 const K = {
   legalName: { key: 'legalName', description: 'Legal / registered name of the business exactly as printed', target: 'basic.vendorName' },
   tradeName: { key: 'tradeName', description: 'Trade name, if different from the legal name', target: 'basic.tradingName' },
-  address: { key: 'address', description: 'Principal place of business address (street lines only)', target: 'basic.address' },
+  address: { key: 'address', description: 'Street lines of the business address (principal place of business, or the registered office / mailing address) — building, street and locality only, without the city, PIN code and state', target: 'basic.address' },
+  city: { key: 'city', description: 'City or district of that address', target: 'basic.district' },
+  pinCode: { key: 'pinCode', description: '6-digit PIN code of that address', target: 'basic.postalCode', transform: (v: string) => v.replace(/\D/g, ''), validate: (v: string) => /^[1-9]\d{5}$/.test(v) },
+  state: { key: 'state', description: 'State or union territory of that address, full name (e.g. Tamil Nadu)', target: 'basic.region' },
   gstin: { key: 'gstin', description: '15-character GSTIN', target: 'tax.gstin', validate: ok('gstin'), transform: upper },
   pan: { key: 'pan', description: '10-character PAN', target: 'tax.pan', validate: ok('pan'), transform: upper },
   tan: { key: 'tan', description: '10-character TAN (Tax Deduction and Collection Account Number)', target: 'tax.tan', validate: ok('tan'), transform: upper },
@@ -25,11 +28,11 @@ const K = {
 } satisfies Record<string, ExtractKey>;
 
 export const indiaDocuments: Record<string, ReadableDocument> = {
-  GST_CERT: { label: 'GST registration certificate (Form GST REG-06)', keys: [K.gstin, K.legalName, K.tradeName, K.address, K.pan] },
+  GST_CERT: { label: 'GST registration certificate (Form GST REG-06)', keys: [K.gstin, K.legalName, K.tradeName, K.address, K.city, K.pinCode, K.state, K.pan] },
   PAN_CARD: { label: 'PAN card', keys: [K.pan, K.legalName] },
   CANCELLED_CHEQUE: { label: 'cancelled cheque or bank letter', keys: [K.accountHolderName, K.accountNumber, K.ifsc, K.bankName, K.branch] },
-  INCORPORATION_CERT: { label: 'certificate of incorporation', keys: [K.cin, K.legalName, K.incorporationYear, K.pan, K.tan] },
-  MSME_CERT: { label: 'Udyam (MSME) registration certificate', keys: [K.udyamNumber, K.legalName, K.msmeCategory, K.address] },
+  INCORPORATION_CERT: { label: 'certificate of incorporation', keys: [K.cin, K.legalName, K.incorporationYear, K.pan, K.tan, K.address, K.city, K.pinCode, K.state] },
+  MSME_CERT: { label: 'Udyam (MSME) registration certificate', keys: [K.udyamNumber, K.legalName, K.msmeCategory, K.address, K.city, K.pinCode, K.state] },
 };
 
 /** State codes inside a CIN (letters) and a GSTIN (digits). */

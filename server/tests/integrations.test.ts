@@ -293,7 +293,7 @@ describe('AI document reading', () => {
 
   test('incorporation certificate: CIN implies entity type, state and year; Udyam number answers the MSME question', async () => {
     const values: Record<string, any> = {
-      INCORPORATION_CERT: { cin: 'U62099TN2026PTC197777', legalName: 'INTEGRATATECH.AI PRIVATE LIMITED', pan: 'AAJCI1277P', tan: 'CHEI13518B' },
+      INCORPORATION_CERT: { cin: 'U62099TN2026PTC197777', legalName: 'INTEGRATATECH.AI PRIVATE LIMITED', pan: 'AAJCI1277P', tan: 'CHEI13518B', address: '4/384, Ram Garden, Anna Salai, Palavakkam', city: 'Kanchipuram', pinCode: '600 041', state: 'Tamil Nadu' },
       MSME_CERT: { udyamNumber: 'UDYAM-TN-02-0012345', msmeCategory: 'Micro' },
     };
     let current = 'INCORPORATION_CERT';
@@ -309,7 +309,7 @@ describe('AI document reading', () => {
     const me = (await v.get('/api/vendor')).body;
     const p = me.vendor.profile;
     expect(p.tax.cin).toBe('U62099TN2026PTC197777');
-    expect(p.basic).toMatchObject({ entityType: 'Company (Pvt / Public Ltd)', region: 'Tamil Nadu', yearEstablished: '2026', vendorName: 'Integratatech' });
+    expect(p.basic).toMatchObject({ entityType: 'Company (Pvt / Public Ltd)', region: 'Tamil Nadu', yearEstablished: '2026', vendorName: 'Integratatech', address: '4/384, Ram Garden, Anna Salai, Palavakkam', district: 'Kanchipuram', postalCode: '600041' });
     expect(p.tax.pan ?? '').toBe(''); expect(p.tax.tan ?? '').toBe('');
     const byId = Object.fromEntries(me.extractions[0].suggestions.map((x: any) => [x.fieldId, x]));
     expect(byId['tax.tan']).toMatchObject({ value: 'CHEI13518B', sensitive: true, state: 'empty' });
