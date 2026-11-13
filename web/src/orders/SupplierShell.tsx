@@ -14,6 +14,8 @@ import { setLang, t, useLang, type Lang } from '../i18n';
 import { LangSwitch } from '../i18n/LangSwitch';
 
 export interface SupplierInfo {
+  /** The buyer shares the supplier's performance scorecard with them. */
+  scorecard?: boolean;
   buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>;
   language?: Lang;
   vendor: { name: string; code: string; status: VendorStatus };
@@ -44,6 +46,7 @@ export function SupplierFrame({ info, onLanguage, children }: { info: SupplierIn
       { to: '/vendor/invoices', label: t('shell.navInvoices'), icon: 'invoices' },
       { to: '/vendor/payments', label: t('shell.navPayments'), icon: 'payments' },
     ] : []),
+    ...(info.scorecard ? [{ to: '/vendor/performance', label: t('shell.navPerformance'), icon: 'scorecard' }] : []),
   ];
   return (
     <AppFrame
@@ -79,7 +82,7 @@ export function SupplierShell({ children }: { children: ReactNode }) {
   const reload = useCallback(() => {
     api<SupplierInfo>('/vendor').then((r) => {
       // Privacy notice must be accepted first; the profile page shows it.
-      if (r.privacy?.needsConsent || !r.orders.enabled) { nav('/vendor', { replace: true }); return; }
+      if (r.privacy?.needsConsent || (!r.orders.enabled && !(r.scorecard && loc.pathname.startsWith('/vendor/performance')))) { nav('/vendor', { replace: true }); return; }
       setInfo(r); setLocaleInfo(r.buyer); rememberWorkspace(r.buyer.workspace); applyBranding(r.buyer.branding); setLang(r.language ?? 'en');
     }).catch((e) => { if (e instanceof ApiError && e.status === 401) nav(`/vendor/expired?next=${encodeURIComponent(loc.pathname)}`, { replace: true }); });
   }, [nav, loc.pathname]);

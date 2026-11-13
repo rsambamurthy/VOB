@@ -282,6 +282,29 @@ The steps suppliers see under **How onboarding works** in their portal. Write th
 Every published version is kept with who published it and their note. Click **Restore as draft** to copy an older version into the draft, review it, then publish.`,
   },
   {
+    id: 'scorecards', title: 'Supplier scorecards', audience: ['staff'], perms: ['vendors.view'],
+    summary: 'A score out of 100 for each supplier from deliveries, order handling, invoices and buyer ratings.',
+    screens: ['^/staff/scorecards'],
+    keywords: 'scorecard performance kpi otd on-time delivery fill rate acknowledgement invoice accuracy asn rating grade supplier evaluation vendor rating',
+    related: ['orders-overview', 'supplier-invoices'],
+    body: `Open **Vendors → Scorecards** to see every supplier ranked, or **Scorecard** on a vendor's page.
+
+## The measures
+- **On-time delivery**: deliveries (goods receipts) on or before the promised date, or the need-by date if none was promised.
+- **Fill rate**: quantity received against quantity ordered, on goods lines that fell due in the period.
+- **Order acknowledgement**: orders the supplier accepted in the portal. Orders accepted automatically, or never answered, don't count. The average time to accept is shown too.
+- **Invoice accuracy**: invoices that matched the order and receipts first time.
+- **Shipment notices**: deliveries that came with a shipment notice (only if your workspace uses them).
+- **Buyer rating**: buyers' 1–5 ratings of quality, delivery, service and communication. Click **Rate this supplier**; comments are internal.
+
+The **score** is the weighted average of the measures that have data in the period (30, 90, 180 or 365 days), with at least 3 data points. Grades: **A** 90+, **B** 80+, **C** 70+, **D** below 70. **Change** compares with the period before.
+
+## Weights and sharing
+Administrators click **Weights & sharing** to change how much each measure counts (0 leaves it out), add grace days for on-time delivery, and let approved suppliers see their own scorecard in their portal — never other suppliers, buyer names or rating comments.
+
+**Download Excel** exports the ranked list.`,
+  },
+  {
     id: 'sso', title: 'Sign-in and single sign-on (Microsoft, Okta, Google, SAML)', audience: ['staff'], perms: ['tenant.settings'],
     summary: 'Let staff sign in with their work account, and decide whether VendorGate passwords stay on.',
     screens: ['^/staff/admin/sign-in'],
@@ -691,6 +714,22 @@ To replace a file before submitting, remove it and upload the new one. After app
     body: `When nothing is left on the Required fields list, click **Review & submit**, then **Submit for review**.
 
 **Approval progress** shows each review level and where your registration is. If a reviewer asks for changes, you'll get an email with their remarks: sign in, correct the form and submit again. When every level approves, you're notified and your portal says *You're approved and active as a vendor*.`,
+  },
+  {
+    id: 'supplier-performance', title: 'Your performance scorecard', audience: ['supplier'],
+    summary: 'How your buyer measures deliveries, order handling and invoices, if they share it with you.',
+    screens: ['^/vendor/performance'],
+    keywords: 'performance scorecard score grade on time delivery fill rate invoice accuracy late',
+    body: `If your buyer shares it, **Performance** in the menu shows your score out of 100 and how it is worked out:
+
+- **On-time delivery**: deliveries received on or before the promised date.
+- **Fill rate**: how much of the ordered quantity you delivered on lines that fell due.
+- **Order acknowledgement**: orders you accepted in the portal — accept new orders promptly rather than letting them be accepted automatically.
+- **Invoice accuracy**: invoices that matched the order and deliveries first time.
+- **Shipment notices**: deliveries you announced with a shipment notice.
+- **Buyer rating**: your buyer's ratings of quality, delivery, service and communication.
+
+**Late deliveries** lists the orders that arrived after the due date. Grades: A 90+, B 80+, C 70+, D below 70.`,
   },
   {
     id: 'supplier-after-approval', title: 'Updating your details after approval', audience: ['supplier'],

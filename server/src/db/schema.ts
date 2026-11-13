@@ -88,6 +88,8 @@ export interface TenantSettings {
   /** Staff single sign-on (OpenID Connect or SAML); see services/sso.ts. */
   sso?: import('../services/sso.js').SsoSettings;
   /** SCIM 2.0 user provisioning from the identity provider; the bearer token is stored hashed. */
+  /** Supplier performance scorecards: weights per measure (0–100), grace days for on-time, supplier visibility. */
+  scorecard?: { weights?: Partial<Record<'onTime' | 'fillRate' | 'acknowledgement' | 'invoiceAccuracy' | 'asn' | 'rating', number>>; graceDays?: number; showToSuppliers?: boolean };
   scim?: { enabled: boolean; tokenHash?: string; tokenCreatedAt?: string; lastUsedAt?: string; defaultRoleId?: string };
   requireMfa?: boolean;
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
@@ -779,6 +781,17 @@ export const supplierPayments = pgTable('supplier_payments', {
   notifiedAt: timestamp('notified_at', { withTimezone: true }),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('supplier_payments_erp_uq').on(t.tenantId, t.erpId), index('supplier_payments_vendor_idx').on(t.tenantId, t.vendorId, t.paymentDate)]);
+
+/** A buyer's rating of a supplier (1–5 per criterion; a criterion left out is null). Feeds the scorecard. */
+export const supplierRatings = pgTable('supplier_ratings', {
+  id: id(), tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  quality: integer('quality'), delivery: integer('delivery'), service: integer('service'), communication: integer('communication'),
+  comment: text('comment'),
+  ratedById: text('rated_by_id').references(() => users.id, { onDelete: 'set null' }),
+  ratedByName: text('rated_by_name').notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('supplier_ratings_vendor_idx').on(t.tenantId, t.vendorId, t.createdAt)]);
 
 /** Keys an ERP or middleware uses to call the VendorGate API (stored hashed). */
 export const apiKeys = pgTable('api_keys', {

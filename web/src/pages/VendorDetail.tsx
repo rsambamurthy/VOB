@@ -122,6 +122,7 @@ export function VendorDetail() {
           <p className="muted"><span className="mono">{v.code}</span> · {VENDOR_TYPES.find((t) => t.value === v.vendorType)?.label} · {v.contactFirstName} {v.contactLastName} ({v.contactEmail}{d.canEditContact && <> <button className="link-btn small" onClick={() => setContactOpen(true)}>change</button></>}, {v.contactMobile}) · created {fmtDate(v.createdAt)} by {v.createdBy?.name}</p>
         </div>
         <div className="head-actions">
+          {approved && <Link className="btn btn-secondary" to={`/staff/scorecards/${v.id}`}>Scorecard</Link>}
           {d.canInvite && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && <button className="btn btn-secondary" onClick={resend}>Resend invite</button>}
           {canStartProposal && <button className="btn btn-secondary" onClick={startProposal} title="Update details or documents on the vendor’s behalf (needs approval)">Propose change</button>}
           {approved && d.canBlock && <button className="btn btn-secondary" disabled={reviewing} onClick={runReview}>{reviewing ? 'Checking…' : 'Run re-check'}</button>}

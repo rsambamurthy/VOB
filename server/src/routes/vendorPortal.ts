@@ -16,6 +16,7 @@ import { runKyc, latestChecks } from '../integrations/kyc/index.js';
 import { checkDef, checkInputs, checkList, checkOffered, checksForVendor, localeFor, inputsComplete } from '../countries/registry.js';
 import { hasFeature } from '../services/limits.js';
 import { pendingOrderCount } from '../services/orders/queries.js';
+import { scorecardFor } from '../services/scorecards.js';
 import { queueExtraction, extractionsFor, getExtraction, dataEntryMode, answerFromDocument, willReadLive } from '../integrations/ai/index.js';
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
@@ -129,7 +130,19 @@ vendorRouter.get('/', ah(async (req, res) => {
     extractions: await extractionsFor(v.id, profile, config),
     // 'automatic': the portal starts with the documents and fills the form from them.
     dataEntry: dataEntryMode(tenant),
+    // The buyer shares the supplier's performance scorecard with them.
+    scorecard: !!tenant.settings.scorecard?.showToSuppliers && v.status === 'APPROVED',
   });
+}));
+
+/** The supplier's own performance scorecard, when the buyer shares it (no buyer names or comments). */
+vendorRouter.get('/scorecard', ah(async (req, res) => {
+  const v = await loadMine(req);
+  const tenant = vendorCtx(req).tenant;
+  if (!tenant.settings.scorecard?.showToSuppliers || v.status !== 'APPROVED') throw new HttpError(404, 'Not available');
+  const days = [30, 90, 180, 365].includes(Number(req.query.days)) ? Number(req.query.days) : 90;
+  const { ratings, ...card } = await scorecardFor(tenant, v.id, days);
+  res.json({ ...card, ratingsCount: ratings.length, late: card.late.map(({ poId: _p, ...l }) => l) });
 }));
 
 vendorRouter.put('/profile/:section', ah(async (req, res) => {

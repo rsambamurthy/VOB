@@ -24,6 +24,7 @@ import { erpApiRouter } from './routes/erpApi.js';
 import { staffAuthRouter } from './routes/staffAuth.js';
 import { ssoRouter } from './routes/sso.js';
 import { scimRouter } from './routes/scim.js';
+import { scorecardsRouter } from './routes/scorecards.js';
 import { vendorAuthRouter } from './routes/vendorAuth.js';
 import { metaRouter } from './routes/meta.js';
 import { reportsRouter } from './routes/reports.js';
@@ -94,6 +95,7 @@ export function createApp() {
   app.use('/api/meta', metaRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);
+  app.use('/api/scorecards', scorecardsRouter);
   app.use('/api/help', helpRouter);
   app.use('/api/ask', askRouter);
   app.use('/api/admin/billing', billingRouter);

@@ -5,6 +5,8 @@ import { ConfigProvider } from './lib/meta';
 import { ConfigEditor } from './pages/admin/config/ConfigEditor';
 import { Integrations } from './pages/admin/Integrations';
 import { SignIn } from './pages/admin/SignIn';
+import { ScorecardDetail, Scorecards } from './scorecards/Scorecards';
+import { SupplierPerformance } from './scorecards/SupplierPerformance';
 import { RequireStaff, SessionProvider } from './lib/session';
 import { StaffShell } from './components/StaffShell';
 import { Login } from './pages/auth/Login';
@@ -64,6 +66,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="vendors" element={<VendorList />} />
               <Route path="queue" element={<VendorList mine />} />
               <Route path="vendors/:id" element={<VendorDetail />} />
+              <Route path="scorecards" element={<Scorecards />} />
+              <Route path="scorecards/:vendorId" element={<ScorecardDetail />} />
               <Route path="changes" element={<ChangeRequests />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="reports" element={<Reports />} />
@@ -115,6 +119,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/vendor/invoices" element={<SupplierShell><SupplierInvoices /></SupplierShell>} />
             <Route path="/vendor/invoices/:id" element={<SupplierShell><SupplierInvoiceDetail /></SupplierShell>} />
             <Route path="/vendor/payments" element={<SupplierShell><SupplierPayments /></SupplierShell>} />
+            <Route path="/vendor/performance" element={<SupplierShell><SupplierPerformance /></SupplierShell>} />
             <Route path="/s/:workspace" element={<SupplierLogin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
