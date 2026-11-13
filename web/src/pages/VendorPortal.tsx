@@ -288,7 +288,7 @@ export function VendorPortal() {
               {tab === 'documents' && me.editable && me.extractions.filter((e) => e.status !== 'SKIPPED' && v.documents.some((d) => d.id === e.documentId)).map((e) => {
                 const doc = v.documents.find((d) => d.id === e.documentId)!;
                 const label = me.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType;
-                return <ExtractionCard key={e.id} ex={e} docLabel={label} onApply={(ids) => applyExtraction(e.id, ids)} />;
+                return <ExtractionCard key={`${e.id}-${e.status}`} ex={e} docLabel={label} onApply={(ids) => applyExtraction(e.id, ids)} />;
               })}
             </div>
             {approved && (changeMode || newDocs.length > 0) && (

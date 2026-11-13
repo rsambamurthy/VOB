@@ -201,7 +201,7 @@ export function VendorDetail() {
             {tab === 'documents' && d.extractions.filter((e) => e.status === 'DONE' || e.status === 'FAILED').map((e) => {
               const doc = v.documents.find((x) => x.id === e.documentId);
               if (!doc) return null;
-              return <ExtractionCard key={e.id} ex={e} readOnly docLabel={d.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType} />;
+              return <ExtractionCard key={`${e.id}-${e.status}`} ex={e} readOnly docLabel={d.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType} />;
             })}
             {tab === 'history' && (
               <ul className="audit">
