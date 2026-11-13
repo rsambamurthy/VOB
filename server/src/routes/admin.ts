@@ -28,6 +28,8 @@ import { send as sendErp } from '../integrations/erp/drivers.js';
 import { defaultNotice, noticeFor, retentionFor } from '../services/privacy.js';
 import { supplierLanguages } from '../i18n/index.js';
 import { encrypt as encryptSecret } from '../lib/crypto.js';
+import { scimBase } from './scim.js';
+import { randomToken, sha256 } from '../lib/crypto.js';
 import { buttonLabel, forgetOidcConfig, oidcConfig, oidcRedirectUri, samlAcsUrl, samlEntityId, type SsoSettings } from '../services/sso.js';
 
 const { users, roles, userRoles, auditLogs, tenants, approvalSteps } = schema;
@@ -346,6 +348,34 @@ adminRouter.put('/sso', requireStaff('tenant.settings'), ah(async (req, res) => 
   const { clientSecretEnc: _x, ...logged } = next;
   await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'SSO_SETTINGS_UPDATED', detail: logged, ip: req.ip });
   res.json(ssoView({ ...s.tenant, settings: { ...s.tenant.settings, sso: next } }));
+}));
+
+/* ---------- SCIM: automatic user set-up and removal from the identity provider ---------- */
+
+const scimView = (t: typeof tenants.$inferSelect) => {
+  const s = t.settings.scim;
+  return { enabled: !!s?.enabled, baseUrl: scimBase(), hasToken: !!s?.tokenHash, tokenCreatedAt: s?.tokenCreatedAt ?? null, lastUsedAt: s?.lastUsedAt ?? null, defaultRoleId: s?.defaultRoleId ?? null };
+};
+adminRouter.get('/scim', requireStaff('tenant.settings'), ah(async (req, res) => res.json(scimView(staffCtx(req).tenant))));
+
+adminRouter.put('/scim', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const input = z.object({ enabled: z.boolean(), defaultRoleId: z.string().optional().or(z.literal('')).or(z.null()) }).parse(req.body);
+  if (input.defaultRoleId && !(await db.query.roles.findFirst({ where: and(eq(schema.roles.id, input.defaultRoleId), eq(schema.roles.tenantId, s.tenant.id)) }))) throw new HttpError(400, 'Unknown role');
+  const scim = { ...(s.tenant.settings.scim ?? {}), enabled: input.enabled, defaultRoleId: input.defaultRoleId || undefined };
+  await db.update(tenants).set({ settings: { ...s.tenant.settings, scim } }).where(eq(tenants.id, s.tenant.id));
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'SCIM_SETTINGS_UPDATED', detail: { enabled: input.enabled, defaultRoleId: input.defaultRoleId || null }, ip: req.ip });
+  res.json(scimView({ ...s.tenant, settings: { ...s.tenant.settings, scim } }));
+}));
+
+/** A new token replaces the old one at once; it is shown only in this response. */
+adminRouter.post('/scim/token', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const token = `vgscim_${randomToken()}`;
+  const scim = { ...(s.tenant.settings.scim ?? { enabled: true }), tokenHash: sha256(token), tokenCreatedAt: new Date().toISOString(), lastUsedAt: undefined };
+  await db.update(tenants).set({ settings: { ...s.tenant.settings, scim } }).where(eq(tenants.id, s.tenant.id));
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'SCIM_TOKEN_CREATED', ip: req.ip });
+  res.json({ ...scimView({ ...s.tenant, settings: { ...s.tenant.settings, scim } }), token });
 }));
 
 /** Check the OpenID Connect settings reach the provider (discovery document and client). */

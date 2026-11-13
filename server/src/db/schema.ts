@@ -87,6 +87,8 @@ export const ssoRequests = pgTable('sso_requests', {
 export interface TenantSettings {
   /** Staff single sign-on (OpenID Connect or SAML); see services/sso.ts. */
   sso?: import('../services/sso.js').SsoSettings;
+  /** SCIM 2.0 user provisioning from the identity provider; the bearer token is stored hashed. */
+  scim?: { enabled: boolean; tokenHash?: string; tokenCreatedAt?: string; lastUsedAt?: string; defaultRoleId?: string };
   requireMfa?: boolean;
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
   reKycMonths?: number;
@@ -158,6 +160,8 @@ export const users = pgTable('users', {
   email: text('email').notNull(),
   status: userStatusEnum('status').notNull().default('INVITED'),
   passwordHash: text('password_hash'),
+  /** The identity provider's id for this person (SCIM externalId). */
+  scimExternalId: text('scim_external_id'),
   /** AES-GCM encrypted TOTP secret (see lib/crypto.ts) */
   mfaSecretEnc: text('mfa_secret_enc'),
   mfaEnabled: boolean('mfa_enabled').notNull().default(false),

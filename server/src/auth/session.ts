@@ -137,6 +137,8 @@ export function csrfGuard(req: Request, _res: Response, next: NextFunction) {
   if (req.path.startsWith('/v1/')) return next();
   // The SAML reply is posted by the browser from the identity provider; it is checked by its own signature.
   if (req.path === '/auth/sso/saml/acs') return next();
+  // SCIM is called server-to-server by the identity provider with a bearer token; no cookies.
+  if (req.path.startsWith('/scim/')) return next();
   next(new HttpError(403, 'Missing X-Requested-With header'));
 }
 

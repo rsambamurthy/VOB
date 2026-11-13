@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "scim_external_id" text;

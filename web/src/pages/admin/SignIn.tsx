@@ -56,6 +56,48 @@ function Copy({ label, value }: { label: string; value: string }) {
   );
 }
 
+interface Scim { enabled: boolean; baseUrl: string; hasToken: boolean; tokenCreatedAt: string | null; lastUsedAt: string | null; defaultRoleId: string | null; token?: string }
+
+/** SCIM: the identity provider creates, updates and removes VendorGate users by itself. */
+function ScimSection({ roles }: { roles: { id: string; name: string }[] }) {
+  const [s, setS] = useState<Scim>();
+  const [token, setToken] = useState<string>();
+  const [err, setErr] = useState<string>();
+  useEffect(() => { api<Scim>('/admin/scim').then(setS).catch((e) => setErr(e.message)); }, []);
+  async function put(p: Partial<Scim>) {
+    try { setS(await api<Scim>('/admin/scim', { method: 'PUT', body: { enabled: p.enabled ?? s!.enabled, defaultRoleId: (p.defaultRoleId !== undefined ? p.defaultRoleId : s!.defaultRoleId) || null } })); setErr(undefined); }
+    catch (e: any) { setErr(e.message); }
+  }
+  async function newToken() {
+    if (s?.hasToken && !confirm('Create a new token? The current one stops working at once — update it in your identity provider.')) return;
+    try { const r = await api<Scim>('/admin/scim/token', { method: 'POST' }); setToken(r.token); setS(r); } catch (e: any) { setErr(e.message); }
+  }
+  if (!s) return err ? <Alert kind="error">{err}</Alert> : null;
+  return (
+    <section className="card pad" style={{ marginTop: 18 }}>
+      <h3 className="card-title">Automatic user set-up and removal (SCIM)</h3>
+      <p className="muted small">Your identity provider (Entra ID, Okta, OneLogin, JumpCloud…) creates VendorGate users when IT assigns them the app, updates their name and email, and <strong>disables them and signs them out</strong> when they leave. Groups give VendorGate roles of the same name (e.g. a “Finance Manager” group).</p>
+      {err && <Alert kind="error">{err}</Alert>}
+      <label className="check-item" style={{ margin: '10px 0' }}><input type="checkbox" checked={s.enabled} onChange={(e) => put({ enabled: e.target.checked })} />
+        <span><strong>Accept users from my identity provider</strong></span></label>
+      {s.enabled && (<>
+        <div className="sso-register">
+          <p className="small"><strong>In your identity provider</strong> (Entra: Enterprise app → Provisioning → Automatic; Okta: app → Provisioning → SCIM 2.0, Bearer token):</p>
+          <Copy label="Tenant / SCIM base URL" value={s.baseUrl} />
+          {token ? <Copy label="Secret token (shown once)" value={token} /> : (
+            <div className="copy-row"><span className="muted small">Secret token</span><span className="small">{s.hasToken ? `Created ${fmtDateTime(s.tokenCreatedAt!)} — hidden for safety` : 'Not created yet'}</span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={newToken}>{s.hasToken ? 'New token' : 'Create token'}</button></div>
+          )}
+          {token && <p className="small warn-text">Copy the token now — it won’t be shown again.</p>}
+        </div>
+        <div className="field" style={{ maxWidth: 320, marginTop: 12 }}><label>Role for new users (before any group gives them one)</label>
+          <select value={s.defaultRoleId ?? ''} onChange={(e) => put({ defaultRoleId: e.target.value || null })}><option value="">No role</option>{roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+        <p className="muted small">{s.lastUsedAt ? `Last call from your identity provider: ${fmtDateTime(s.lastUsedAt)}.` : 'No calls from your identity provider yet.'} Users removed in the identity provider are disabled here, not deleted, so their approvals and audit history stay. With single sign-on on they sign in straight away; otherwise they get an invitation email.</p>
+      </>)}
+    </section>
+  );
+}
+
 export function SignIn() {
   const { me } = useSession();
   const [params] = useSearchParams();
@@ -188,6 +230,8 @@ export function SignIn() {
       </>)}
 
       <div className="form-foot"><span className="grow" /><button className="btn btn-primary" disabled={busy || !dirty} onClick={save}>{busy ? 'Saving…' : 'Save'}</button></div>
+
+      <ScimSection roles={v.roles} />
     </div>
   );
 }

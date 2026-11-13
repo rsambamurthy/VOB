@@ -285,7 +285,7 @@ Every published version is kept with who published it and their note. Click **Re
     id: 'sso', title: 'Sign-in and single sign-on (Microsoft, Okta, Google, SAML)', audience: ['staff'], perms: ['tenant.settings'],
     summary: 'Let staff sign in with their work account, and decide whether VendorGate passwords stay on.',
     screens: ['^/staff/admin/sign-in'],
-    keywords: 'sso single sign-on login sign in azure ad entra microsoft okta google workspace saml adfs oidc openid password 2fa mfa identity provider',
+    keywords: 'scim provisioning deprovisioning automatic users sso single sign-on login sign in azure ad entra microsoft okta google workspace saml adfs oidc openid password 2fa mfa identity provider',
     related: ['users', 'workspace-settings'],
     body: `Open **Administration → Sign-in & SSO**. Staff can sign in with a **VendorGate password and two-factor authentication** (the default), or with **single sign-on** through your company's identity provider. Suppliers are not affected.
 
@@ -304,6 +304,13 @@ Every published version is kept with who published it and their note. Click **Re
 - **Keep it for everyone**, **Administrators only** (recommended: a way in if your provider is down), or **Off**.
 - **Off** can only be chosen after an administrator has signed in through single sign-on with the current settings, so nobody gets locked out. Changing the provider details resets this check.
 - With single sign-on, two-factor authentication is handled by your provider; VendorGate doesn't ask again.
+
+## Automatic user set-up and removal (SCIM)
+Tick **Accept users from my identity provider**, click **Create token**, and enter the **SCIM base URL** and **token** in your provider (Entra: Enterprise app → Provisioning → Automatic; Okta: app → Provisioning → SCIM 2.0). Then:
+- People IT assigns to VendorGate are created here, with the role you choose for new users. Name and email changes follow.
+- **Groups give roles of the same name** — a "Finance Manager" group gives the Finance Manager role. Groups with no matching role are refused; create the role first under Roles.
+- Removing or disabling someone in the provider **disables** them here and signs them out at once. Their approvals and audit history stay.
+- **New token** replaces the old one immediately. Every change from the provider is in the audit log as "SCIM (identity provider)".
 
 Every sign-in, refused sign-in and settings change is recorded in the audit log.`,
   },
