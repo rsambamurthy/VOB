@@ -76,6 +76,20 @@ function describeCondition(cfg: OnboardingConfig, c: Condition) {
 }
 
 /**
+ * A value read from a document, fitted to the field: for a list field it must be one of the workspace's
+ * options (matched ignoring case, or by prefix — "FY 2025-26" fits a workspace that lists "FY 2025").
+ * Returns '' when it doesn't fit.
+ */
+export function fitToField(cfg: OnboardingConfig, fieldId: string, value: string): string {
+  const [sec, key] = fieldId.split('.');
+  const f = cfg.sections.find((s) => s.key === sec)?.groups.flatMap((g) => g.fields).find((x) => x.key === key);
+  if (!f) return '';
+  if (!f.options?.length || !['select', 'radio'].includes(f.type)) return value;
+  const v = value.trim().toLowerCase();
+  return f.options.find((o) => o.toLowerCase() === v) ?? f.options.find((o) => v.startsWith(o.toLowerCase()) || o.toLowerCase().startsWith(v)) ?? '';
+}
+
+/**
  * A value filled into a field that sits behind a question ("GSTIN" behind "Do you hold a GST number?")
  * answers that question too, when the question is still blank and has a single "equals" answer.
  * Changes `profile` in place; returns the questions answered as "section.field".

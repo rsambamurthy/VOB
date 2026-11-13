@@ -22,7 +22,7 @@ import { normaliseExtracted } from '../../i18n/digits.js';
 import type { Tenant } from '../../db/schema.js';
 import { hasFeature } from '../../services/limits.js';
 import { getPublished } from '../../services/config.js';
-import { answerImpliedBy, fillImpliedAnswers, sanitizeSection, type Profile } from '../../lib/profileEngine.js';
+import { answerImpliedBy, fillImpliedAnswers, fitToField, sanitizeSection, type Profile } from '../../lib/profileEngine.js';
 import { isSensitive } from '../../lib/fieldCrypto.js';
 import { audit } from '../../lib/audit.js';
 
@@ -128,7 +128,7 @@ defineJob<{ id: string }>('document.extract', async ({ id }) => {
       if (await refile(doc, raw.documentType)) await db.update(schema.documentExtractions).set({ summary: `This is a ${raw.documentType === 'INCORPORATION_CERT' ? 'certificate of incorporation' : (EXTRACTABLE[raw.documentType]?.label ?? raw.documentType)}, not a ${spec.label} — moved to the right place and read again.` }).where(eq(schema.documentExtractions.id, id));
     } else if (raw.documentType !== 'UNREADABLE') {
       await answerFromDocument(vendor.id, doc.docType);
-      await autoFill(ex.id, vendor.id, fields);
+      await autoFill(ex.id, vendor.id, fields, new Set(spec.keys.filter((k) => k.confirm).map((k) => k.target)));
     }
   } catch (err: any) {
     logger.error({ err, extraction: id }, 'document extraction failed');
@@ -140,7 +140,7 @@ defineJob<{ id: string }>('document.extract', async ({ id }) => {
  * Automatic data entry: copy confident values into *empty* fields. Skips sensitive fields (bank account,
  * IBAN, PAN…) and anything the supplier already typed; those stay as suggestions on the document.
  */
-async function autoFill(extractionId: string, vendorId: string, fields: { fieldId: string; value: string; confidence: number }[]) {
+async function autoFill(extractionId: string, vendorId: string, fields: { fieldId: string; value: string; confidence: number }[], confirmOnly = new Set<string>()) {
   const vendor = await db.query.vendors.findFirst({ where: eq(schema.vendors.id, vendorId) });
   if (!vendor || !EDITABLE_STATUSES.includes(vendor.status)) return;
   const tenant = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, vendor.tenantId) });
@@ -149,10 +149,12 @@ async function autoFill(extractionId: string, vendorId: string, fields: { fieldI
   const profile = structuredClone(vendor.profile as Profile);
   const filled: string[] = [];
   for (const f of fields) {
-    if (f.confidence < AUTO_FILL_CONFIDENCE || isSensitive(f.fieldId)) continue;
+    if (f.confidence < AUTO_FILL_CONFIDENCE || isSensitive(f.fieldId) || confirmOnly.has(f.fieldId)) continue;
     const [sec, key] = f.fieldId.split('.');
     if (String(profile[sec]?.[key] ?? '').trim()) continue;
-    const clean = sanitizeSection(config, sec, { [key]: f.value });
+    const fitted = fitToField(config, f.fieldId, f.value);
+    if (!fitted) continue;
+    const clean = sanitizeSection(config, sec, { [key]: fitted });
     if (key in clean && String(clean[key] ?? '').trim()) { profile[sec] = { ...(profile[sec] ?? {}), ...clean }; filled.push(f.fieldId); }
   }
   if (!filled.length) return;

@@ -9,7 +9,7 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireVendor, vendorCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { getPublished } from '../services/config.js';
-import { answerImpliedBy, buildChecklist, fillImpliedAnswers, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
+import { answerImpliedBy, buildChecklist, fillImpliedAnswers, fitToField, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
 import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks } from '../integrations/kyc/index.js';
@@ -209,7 +209,9 @@ vendorRouter.post('/extractions/:id/apply', ah(async (req, res) => {
   const applied: string[] = [];
   for (const f of ex.fields.filter((x) => fieldIds.includes(x.fieldId))) {
     const [sec, key] = f.fieldId.split('.');
-    const clean = sanitizeSection(config, sec, { [key]: f.value });
+    const fitted = fitToField(config, f.fieldId, f.value);
+    if (!fitted) continue;
+    const clean = sanitizeSection(config, sec, { [key]: fitted });
     if (key in clean) { profile[sec] = { ...(profile[sec] ?? {}), ...clean }; applied.push(f.fieldId); }
   }
   // Applying a GSTIN also answers "Do you hold a GST number?" when it's still blank.

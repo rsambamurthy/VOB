@@ -365,6 +365,27 @@ describe('AI document reading', () => {
     expect(create).toHaveBeenCalledTimes(3);
   });
 
+  test('financial statements fill the risk tab; turnover and net worth wait for the supplier', async () => {
+    setExtractor({ name: 'anthropic', live: true, async extract() {
+      return { documentType: 'FINANCIALS', values: { periodEnd: '2026-03-31', financialYear: '2025-26', currency: 'Rs.', turnover: '12,50,00,000', netWorth: '(1,200)', audited: 'Yes' },
+        confidence: { periodEnd: 0.95, financialYear: 0.95, currency: 0.95, turnover: 0.93, netWorth: 0.9, audited: 0.95 } };
+    } } as any);
+    const admin = await login('admin@acme.test');
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: true, dataEntry: 'automatic' } });
+    const { v } = await newVendor('Fin Co', 'fin@co.test');
+    expect((await v.upload('/api/vendor/documents', 'FINANCIALS', PDF).field('expiresOn', '2027-09-30')).status).toBe(201);
+    const me = (await v.get('/api/vendor')).body;
+    expect(me.vendor.profile.risk).toMatchObject({ fiscalYearEnd: 'March', turnoverYear: 'FY 2025-26', currency: 'INR', sourceOfInfo: 'Audited financial statements' });
+    expect(me.vendor.profile.risk.annualTurnover ?? '').toBe('');
+    const byId = Object.fromEntries(me.extractions[0].suggestions.map((x: any) => [x.fieldId, x]));
+    expect(byId['risk.annualTurnover']).toMatchObject({ value: '125000000', state: 'empty' });
+    expect(byId['risk.netWorth']).toMatchObject({ value: '-1200', state: 'empty' });
+    // "Use this" applies a confirmed amount.
+    await v.post(`/api/vendor/extractions/${me.extractions[0].id}/apply`, { fieldIds: ['risk.annualTurnover'] });
+    expect(String((await v.get('/api/vendor')).body.vendor.profile.risk.annualTurnover)).toBe('125000000');
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
+  });
+
   test('each pack’s readable documents only target fields that exist in that pack’s template', async () => {
     const { PACKS } = await import('../src/countries/registry.js');
     for (const p of PACKS.filter((x) => x.template && x.documents)) {

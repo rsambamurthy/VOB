@@ -65,7 +65,7 @@ export interface CheckDef {
 
 /* ---------- Document reading (AI) ---------- */
 
-export interface ExtractKey { key: string; description: string; target: string; validate?: (v: string) => boolean; transform?: (v: string) => string }
+export interface ExtractKey { key: string; description: string; target: string; validate?: (v: string) => boolean; transform?: (v: string) => string; /** Never filled automatically — the supplier confirms it (e.g. amounts, where a unit misread is costly). */ confirm?: boolean }
 export interface ExtractedField { fieldId: string; label: string; value: string; confidence: number }
 export interface ReadableDocument {
   /** How the AI is told what it is looking at, e.g. "GST registration certificate (Form GST REG-06)". */

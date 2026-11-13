@@ -3,6 +3,7 @@
  * Add a country by writing its pack and listing it in PACKS — nothing else in the app changes.
  */
 import { basePack } from './base.js';
+import { financialsDocument } from './financials.js';
 import { indiaPack } from './in/index.js';
 import { gccPack } from './gcc/index.js';
 import { saudiPack } from './sa/index.js';
@@ -188,7 +189,8 @@ export function checkInputs(def: CheckDef, profile: Profile) {
 
 /* ---------- Document reading (global by document code) ---------- */
 
-const DOCUMENTS: Record<string, ReadableDocument> = {};
+// Shared by every country: audited financial statements.
+const DOCUMENTS: Record<string, ReadableDocument> = { ...financialsDocument };
 for (const p of PACKS) for (const [code, d] of Object.entries(p.documents ?? {})) {
   if (DOCUMENTS[code]) throw new Error(`Readable document "${code}" is defined twice`);
   DOCUMENTS[code] = d;
