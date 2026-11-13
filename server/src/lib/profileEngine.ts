@@ -76,6 +76,28 @@ function describeCondition(cfg: OnboardingConfig, c: Condition) {
 }
 
 /**
+ * A value filled into a field that sits behind a question ("GSTIN" behind "Do you hold a GST number?")
+ * answers that question too, when the question is still blank and has a single "equals" answer.
+ * Changes `profile` in place; returns the questions answered as "section.field".
+ */
+export function fillImpliedAnswers(cfg: OnboardingConfig, profile: Profile, filledIds: string[], vendorType?: string): string[] {
+  const answered: string[] = [];
+  const queue = [...filledIds];
+  while (queue.length) {
+    const [sec, key] = queue.shift()!.split('.');
+    const c = cfg.sections.find((s) => s.key === sec)?.groups.flatMap((g) => g.fields).find((f) => f.key === key)?.showIf;
+    if (!c || readValue(c.field, ctxOf(profile, vendorType))) continue;
+    const v = c.op === 'eq' ? c.value : c.op === 'in' && Array.isArray(c.value) && c.value.length === 1 ? c.value[0] : undefined;
+    if (v === undefined || v === '') continue;
+    const [qs, qk] = c.field.split('.');
+    if (!cfg.sections.some((s) => s.key === qs && s.groups.some((g) => g.fields.some((f) => f.key === qk)))) continue;
+    profile[qs] = { ...(profile[qs] ?? {}), [qk]: String(v) };
+    answered.push(c.field); queue.push(c.field);
+  }
+  return answered;
+}
+
+/**
  * The answer implied by uploading a document that was offered "if it applies": a GST certificate means
  * "Do you hold a GST number?" is Yes. Only for a single-value "equals" condition on an empty field.
  */

@@ -22,7 +22,7 @@ import { normaliseExtracted } from '../../i18n/digits.js';
 import type { Tenant } from '../../db/schema.js';
 import { hasFeature } from '../../services/limits.js';
 import { getPublished } from '../../services/config.js';
-import { sanitizeSection, type Profile } from '../../lib/profileEngine.js';
+import { fillImpliedAnswers, sanitizeSection, type Profile } from '../../lib/profileEngine.js';
 import { isSensitive } from '../../lib/fieldCrypto.js';
 import { audit } from '../../lib/audit.js';
 
@@ -108,10 +108,12 @@ async function autoFill(extractionId: string, vendorId: string, fields: { fieldI
     if (key in clean && String(clean[key] ?? '').trim()) { profile[sec] = { ...(profile[sec] ?? {}), ...clean }; filled.push(f.fieldId); }
   }
   if (!filled.length) return;
+  // A filled GSTIN answers "Do you hold a GST number?", a Udyam number answers "Registered as MSME?"…
+  const answered = fillImpliedAnswers(config, profile, filled, vendor.vendorType).filter((f) => !filled.includes(f));
   const name = filled.includes('basic.vendorName') ? String(profile.basic.vendorName) : vendor.name;
   await db.update(schema.vendors).set({ profile, name, status: vendor.status === 'INVITED' ? 'IN_PROGRESS' : vendor.status }).where(eq(schema.vendors.id, vendor.id));
   await db.update(schema.documentExtractions).set({ autoApplied: filled }).where(eq(schema.documentExtractions.id, extractionId));
-  await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: 'AI (from document)', action: 'AI_VALUES_AUTOFILLED', detail: { fields: filled.join(', ') } });
+  await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: 'AI (from document)', action: 'AI_VALUES_AUTOFILLED', detail: { fields: filled.join(', '), ...(answered.length ? { answered: answered.join(', ') } : {}) } });
 }
 
 export interface Suggestion { fieldId: string; label: string; value: string; confidence: number; current: string; state: 'empty' | 'match' | 'differs'; fieldLabel: string; autoFilled: boolean; sensitive: boolean }

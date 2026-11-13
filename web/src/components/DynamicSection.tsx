@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { FieldDef, Profile, SectionDef } from '../lib/types';
-import { conditionHolds, isRequired } from '../lib/conditions';
+import { conditionHolds, isRequired, readValue } from '../lib/conditions';
 import { t } from '../i18n';
 
 interface Props {
@@ -22,7 +22,8 @@ export function DynamicSection({ section, profile, onChange, errors = {}, readOn
   return (
     <div className="section-groups">
       {section.groups.map((g) => {
-        const fields = g.fields.filter((f) => conditionHolds(f.showIf, ctx));
+        // A field holding a value read from a document shows even while the question it depends on is blank.
+        const fields = g.fields.filter((f) => conditionHolds(f.showIf, ctx) || (!readOnly && !!sources?.[`${section.key}.${f.key}`] && !!f.showIf && !readValue(f.showIf.field, ctx)));
         if (!fields.length) return null;
         return (
           <fieldset key={g.key} className="group">

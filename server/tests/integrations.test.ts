@@ -275,7 +275,9 @@ describe('AI document reading', () => {
     expect(byId['tax.pan']).toMatchObject({ autoFilled: false, sensitive: true, state: 'empty' });
     expect(byId['basic.vendorName']).toMatchObject({ autoFilled: false, state: 'differs' });
     const log = (await admin.get('/api/admin/audit')).body.rows.find((r: any) => r.action === 'AI_VALUES_AUTOFILLED');
-    expect(log).toMatchObject({ actor: 'AI (from document)', detail: { fields: 'tax.gstin' } });
+    expect(log).toMatchObject({ actor: 'AI (from document)' });
+    expect(log.detail.fields.split(', ').sort()).toEqual(['basic.region', 'tax.gstin']);
+    expect(me.vendor.profile.basic.region).toBe('Karnataka');
 
     // Assisted mode: nothing is filled in, only suggested.
     await admin.patch('/api/admin/tenant', { settings: { dataEntry: 'assisted' } });
@@ -287,6 +289,37 @@ describe('AI document reading', () => {
     expect(me2.vendor.profile.tax?.gstin ?? '').toBe('');
     await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
     expect((await b.v.get('/api/vendor')).body.dataEntry).toBe('manual');
+  });
+
+  test('incorporation certificate: CIN implies entity type, state and year; Udyam number answers the MSME question', async () => {
+    const values: Record<string, any> = {
+      INCORPORATION_CERT: { cin: 'U62099TN2026PTC197777', legalName: 'INTEGRATATECH.AI PRIVATE LIMITED', pan: 'AAJCI1277P', tan: 'CHEI13518B' },
+      MSME_CERT: { udyamNumber: 'UDYAM-TN-02-0012345', msmeCategory: 'Micro' },
+    };
+    let current = 'INCORPORATION_CERT';
+    const create = vi.fn(async () => {
+      const v = values[current];
+      return { content: [{ type: 'tool_use', id: 't', name: 'record_document', input: { documentType: current, values: v, confidence: Object.fromEntries(Object.keys(v).map((k) => [k, 0.96])), notes: '' } }] };
+    });
+    setExtractor(anthropicExtractor({ apiKey: 'x', model: 'claude-sonnet-5-5' }, { messages: { create } } as any));
+    const admin = await login('admin@acme.test');
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: true, dataEntry: 'automatic' } });
+    const { v } = await newVendor('Integratatech', 'it@integratatech.test');
+    await v.upload('/api/vendor/documents', 'INCORPORATION_CERT', PDF);
+    const me = (await v.get('/api/vendor')).body;
+    const p = me.vendor.profile;
+    expect(p.tax.cin).toBe('U62099TN2026PTC197777');
+    expect(p.basic).toMatchObject({ entityType: 'Company (Pvt / Public Ltd)', region: 'Tamil Nadu', yearEstablished: '2026', vendorName: 'Integratatech' });
+    expect(p.tax.pan ?? '').toBe(''); expect(p.tax.tan ?? '').toBe('');
+    const byId = Object.fromEntries(me.extractions[0].suggestions.map((x: any) => [x.fieldId, x]));
+    expect(byId['tax.tan']).toMatchObject({ value: 'CHEI13518B', sensitive: true, state: 'empty' });
+    expect(byId['tax.pan']).toMatchObject({ value: 'AAJCI1277P', sensitive: true });
+
+    current = 'MSME_CERT';
+    await v.upload('/api/vendor/documents', 'MSME_CERT', PDF);
+    const p2 = (await v.get('/api/vendor')).body.vendor.profile;
+    expect(p2.basic).toMatchObject({ udyamNumber: 'UDYAM-TN-02-0012345', msmeCategory: 'Micro', msmeRegistered: 'Yes' });
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
   });
 
   test('each pack’s readable documents only target fields that exist in that pack’s template', async () => {

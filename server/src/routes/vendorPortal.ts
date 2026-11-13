@@ -9,7 +9,7 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireVendor, vendorCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { getPublished } from '../services/config.js';
-import { answerImpliedBy, buildChecklist, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
+import { answerImpliedBy, buildChecklist, fillImpliedAnswers, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
 import { startReview } from '../services/workflowEngine.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks } from '../integrations/kyc/index.js';
@@ -217,6 +217,8 @@ vendorRouter.post('/extractions/:id/apply', ah(async (req, res) => {
     const clean = sanitizeSection(config, sec, { [key]: f.value });
     if (key in clean) { profile[sec] = { ...(profile[sec] ?? {}), ...clean }; applied.push(f.fieldId); }
   }
+  // Applying a GSTIN also answers "Do you hold a GST number?" when it's still blank.
+  fillImpliedAnswers(config, profile, applied, v.vendorType);
   await db.update(vendors).set({ profile }).where(eq(vendors.id, v.id));
   await db.update(schema.documentExtractions).set({ appliedAt: new Date() }).where(eq(schema.documentExtractions.id, ex.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'AI_VALUES_APPLIED', detail: { fields: applied.join(', ') }, ip: req.ip });
