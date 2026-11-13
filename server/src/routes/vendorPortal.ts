@@ -16,7 +16,7 @@ import { runKyc, latestChecks } from '../integrations/kyc/index.js';
 import { checkDef, checkInputs, checkList, checkOffered, checksForVendor, localeFor, inputsComplete } from '../countries/registry.js';
 import { hasFeature } from '../services/limits.js';
 import { pendingOrderCount } from '../services/orders/queries.js';
-import { queueExtraction, extractionsFor, getExtraction, dataEntryMode } from '../integrations/ai/index.js';
+import { queueExtraction, extractionsFor, getExtraction, dataEntryMode, answerFromDocument, willReadLive } from '../integrations/ai/index.js';
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
 import { arLabel, localizeConfig, supplierLanguages, translateMessage, vendorLanguage, type Lang } from '../i18n/index.js';
@@ -164,16 +164,11 @@ vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
   // Approved vendors' uploads wait in a change request; during onboarding they count straight away.
   const [doc] = await db.insert(documents).values({ tenantId: v.tenantId, vendorId: v.id, docType, ...stored, expiresOn, status: approved ? 'PENDING' : 'ACTIVE' }).returning();
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'DOCUMENT_UPLOADED', detail: { docType, fileName: stored.fileName, scan: stored.scanStatus }, ip: req.ip });
-  // Documents first: uploading a document offered "if it applies" answers the question it depends on.
-  if (!approved && dataEntryMode(vendorCtx(req).tenant) === 'automatic') {
-    const implied = answerImpliedBy(config, docType, v.profile as Profile, v.vendorType);
-    if (implied) {
-      const profile = { ...(v.profile as Profile), [implied.section]: { ...((v.profile as Profile)[implied.section] ?? {}), [implied.field]: implied.value } };
-      await db.update(vendors).set({ profile, status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status }).where(eq(vendors.id, v.id));
-      await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'AI (from document)', action: 'ANSWER_FROM_DOCUMENT', detail: { field: `${implied.section}.${implied.field}`, value: implied.value, docType } });
-    }
-  }
-  await queueExtraction(doc, !!vendorCtx(req).tenant.settings.aiExtraction && hasFeature(vendorCtx(req).tenant, 'ai'));
+  const aiAllowed = !!vendorCtx(req).tenant.settings.aiExtraction && hasFeature(vendorCtx(req).tenant, 'ai');
+  // Documents first: uploading a document offered "if it applies" answers its question. When a live AI reads
+  // the document, that waits until the AI has confirmed it really is that document.
+  if (!approved && !willReadLive(docType, aiAllowed)) await answerFromDocument(v.id, docType);
+  await queueExtraction(doc, aiAllowed);
   const { storagePath: _p, ...safe } = doc;
   res.status(201).json(safe);
 }));

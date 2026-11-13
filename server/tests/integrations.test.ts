@@ -322,6 +322,31 @@ describe('AI document reading', () => {
     await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
   });
 
+  test('automatic mode: a document in the wrong slot is moved, read again, and only then answers questions', async () => {
+    const calls: string[] = [];
+    setExtractor({ name: 'anthropic', live: true, async extract({ expected }: any) {
+      calls.push(expected.type);
+      // Whatever slot it was put in, this file is a certificate of incorporation.
+      return expected.type === 'INCORPORATION_CERT'
+        ? { documentType: 'INCORPORATION_CERT', values: { cin: 'U62099TN2026PTC197777', pan: 'AAJCI1277P' }, confidence: { cin: 0.97, pan: 0.96 } }
+        : { documentType: 'INCORPORATION_CERT', values: {}, confidence: {} };
+    } } as any);
+    const admin = await login('admin@acme.test');
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: true, dataEntry: 'automatic' } });
+    const { v } = await newVendor('Wrong Slot Co', 'wrong@slot.test');
+    await v.upload('/api/vendor/documents', 'GST_CERT', PDF);
+    const me = (await v.get('/api/vendor')).body;
+    expect(calls).toEqual(['GST_CERT', 'INCORPORATION_CERT']);
+    expect(me.vendor.documents.map((d: any) => d.docType)).toEqual(['INCORPORATION_CERT']);
+    // Not a GST certificate, so "Do you hold a GST number?" stays unanswered.
+    expect(me.vendor.profile.tax?.hasGst ?? '').toBe('');
+    expect(me.vendor.profile.tax.cin).toBe('U62099TN2026PTC197777');
+    expect(me.vendor.profile.basic.entityType).toBe('Company (Pvt / Public Ltd)');
+    const log = (await admin.get('/api/admin/audit')).body.rows.find((r: any) => r.action === 'DOCUMENT_REFILED');
+    expect(log.detail).toEqual({ from: 'GST_CERT', to: 'INCORPORATION_CERT' });
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false } });
+  });
+
   test('each pack’s readable documents only target fields that exist in that pack’s template', async () => {
     const { PACKS } = await import('../src/countries/registry.js');
     for (const p of PACKS.filter((x) => x.template && x.documents)) {

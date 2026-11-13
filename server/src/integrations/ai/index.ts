@@ -22,7 +22,7 @@ import { normaliseExtracted } from '../../i18n/digits.js';
 import type { Tenant } from '../../db/schema.js';
 import { hasFeature } from '../../services/limits.js';
 import { getPublished } from '../../services/config.js';
-import { fillImpliedAnswers, sanitizeSection, type Profile } from '../../lib/profileEngine.js';
+import { answerImpliedBy, fillImpliedAnswers, sanitizeSection, type Profile } from '../../lib/profileEngine.js';
 import { isSensitive } from '../../lib/fieldCrypto.js';
 import { audit } from '../../lib/audit.js';
 
@@ -40,6 +40,48 @@ const i = env.int;
 let extractor: Extractor = i.AI_PROVIDER === 'anthropic' ? anthropicExtractor({ apiKey: i.ANTHROPIC_API_KEY!, model: i.AI_MODEL }) : mockExtractor;
 export function setExtractor(e: Extractor) { extractor = e; }
 export const aiStatus = () => ({ provider: extractor.name, live: extractor.live, model: extractor.live ? i.AI_MODEL : undefined, supports: Object.keys(EXTRACTABLE) });
+
+/** Will this upload be read by a live AI (so the document type gets checked before we rely on it)? */
+export const willReadLive = (docType: string, aiAllowed: boolean) => !!EXTRACTABLE[docType] && extractor.live && aiAllowed;
+
+/**
+ * Documents first: a document offered "if it applies" answers the question it depends on
+ * (a GST certificate means "Do you hold a GST number?" = Yes).
+ */
+export async function answerFromDocument(vendorId: string, docType: string) {
+  const vendor = await db.query.vendors.findFirst({ where: eq(schema.vendors.id, vendorId) });
+  if (!vendor || !EDITABLE_STATUSES.includes(vendor.status)) return;
+  const tenant = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, vendor.tenantId) });
+  if (!tenant || dataEntryMode(tenant) !== 'automatic') return;
+  const { config } = await getPublished(tenant.id);
+  const implied = answerImpliedBy(config, docType, vendor.profile as Profile, vendor.vendorType);
+  if (!implied) return;
+  const profile = { ...(vendor.profile as Profile), [implied.section]: { ...((vendor.profile as Profile)[implied.section] ?? {}), [implied.field]: implied.value } };
+  await db.update(schema.vendors).set({ profile, status: vendor.status === 'INVITED' ? 'IN_PROGRESS' : vendor.status }).where(eq(schema.vendors.id, vendor.id));
+  await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: 'AI (from document)', action: 'ANSWER_FROM_DOCUMENT', detail: { field: `${implied.section}.${implied.field}`, value: implied.value, docType } });
+}
+
+/**
+ * Automatic data entry: the supplier put a document in the wrong slot (a certificate of incorporation
+ * under "GST certificate"). Move it to the slot it belongs to and read it again as that document.
+ */
+async function refile(doc: { id: string; tenantId: string; vendorId: string; docType: string }, detected: string): Promise<boolean> {
+  if (!EXTRACTABLE[detected]) return false;
+  // Move a document once at most (never back and forth).
+  const reads = await db.select({ id: schema.documentExtractions.id }).from(schema.documentExtractions).where(eq(schema.documentExtractions.documentId, doc.id));
+  if (reads.length > 1) return false;
+  const vendor = await db.query.vendors.findFirst({ where: eq(schema.vendors.id, doc.vendorId) });
+  if (!vendor || !EDITABLE_STATUSES.includes(vendor.status)) return false;
+  const tenant = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, doc.tenantId) });
+  if (!tenant || dataEntryMode(tenant) !== 'automatic') return false;
+  const { config } = await getPublished(tenant.id);
+  if (!config.documents.some((d) => d.type === detected)) return false;
+  await db.update(schema.documents).set({ docType: detected }).where(eq(schema.documents.id, doc.id));
+  await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: 'AI (from document)', action: 'DOCUMENT_REFILED', detail: { from: doc.docType, to: detected } });
+  await answerFromDocument(vendor.id, detected);
+  await queueExtraction({ ...doc, docType: detected }, true);
+  return true;
+}
 
 export async function queueExtraction(doc: { id: string; tenantId: string; vendorId: string; docType: string }, aiAllowed: boolean) {
   if (!EXTRACTABLE[doc.docType]) return;
@@ -81,7 +123,13 @@ defineJob<{ id: string }>('document.extract', async ({ id }) => {
         : wrongDoc ? `This looks like a ${raw.documentType.replace(/_/g, ' ').toLowerCase()}, not a ${spec.label}.`
         : raw.notes ?? null,
     }).where(eq(schema.documentExtractions.id, id));
-    if (!wrongDoc && raw.documentType !== 'UNREADABLE') await autoFill(ex.id, vendor.id, fields);
+    if (wrongDoc) {
+      // Automatic mode: put it where it belongs and read it again as that document.
+      if (await refile(doc, raw.documentType)) await db.update(schema.documentExtractions).set({ summary: `This is a ${raw.documentType === 'INCORPORATION_CERT' ? 'certificate of incorporation' : (EXTRACTABLE[raw.documentType]?.label ?? raw.documentType)}, not a ${spec.label} — moved to the right place and read again.` }).where(eq(schema.documentExtractions.id, id));
+    } else if (raw.documentType !== 'UNREADABLE') {
+      await answerFromDocument(vendor.id, doc.docType);
+      await autoFill(ex.id, vendor.id, fields);
+    }
   } catch (err: any) {
     logger.error({ err, extraction: id }, 'document extraction failed');
     await db.update(schema.documentExtractions).set({ status: 'FAILED', error: String(err?.message ?? err).slice(0, 300), completedAt: new Date() }).where(eq(schema.documentExtractions.id, id));
