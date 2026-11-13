@@ -6,6 +6,29 @@ const ok = (k: string) => (v: string) => indiaValidators[k].check(v, {}) === nul
 const upper = (v: string) => v.toUpperCase().replace(/\s+/g, '');
 const year = (v: string) => (v.match(/(19|20)\d{2}/)?.[0] ?? '');
 
+/** "Type of Registration" on REG-06 → the form's GST classification. */
+const gstClass = (v: string) => {
+  const t = v.toLowerCase();
+  if (/composition/.test(t)) return 'Composition';
+  if (/sez/.test(t)) return /developer/.test(t) ? 'SEZ Developer' : 'SEZ Unit';
+  if (/input service|\bisd\b/.test(t)) return 'Input Service Distributor';
+  if (/regular|normal/.test(t)) return 'Regular';
+  return '';
+};
+/** "Constitution of Business" on REG-06 → the form's type of entity. */
+const entityType = (v: string) => {
+  const t = v.toLowerCase();
+  if (/limited liability partnership|\bllp\b/.test(t)) return 'Limited Liability Partnership';
+  if (/government|public sector|local authority|statutory/.test(t)) return 'Government Organisation';
+  if (/company|private limited|public limited/.test(t)) return 'Company (Pvt / Public Ltd)';
+  if (/partnership/.test(t)) return 'Partnership Firm';
+  if (/proprietor|individual/.test(t)) return 'Individual / Proprietorship';
+  if (/hindu undivided|\bhuf\b/.test(t)) return 'Hindu Undivided Family (HUF)';
+  if (/trust/.test(t)) return 'Trust';
+  if (/association of persons|body of individuals|society|\baop\b/.test(t)) return 'Association of Persons';
+  return '';
+};
+
 const K = {
   legalName: { key: 'legalName', description: 'Legal / registered name of the business exactly as printed', target: 'basic.vendorName' },
   tradeName: { key: 'tradeName', description: 'Trade name, if different from the legal name', target: 'basic.tradingName' },
@@ -14,6 +37,8 @@ const K = {
   pinCode: { key: 'pinCode', description: '6-digit PIN code of that address', target: 'basic.postalCode', transform: (v: string) => v.replace(/\D/g, ''), validate: (v: string) => /^[1-9]\d{5}$/.test(v) },
   state: { key: 'state', description: 'State or union territory of that address, full name (e.g. Tamil Nadu)', target: 'basic.region' },
   gstin: { key: 'gstin', description: '15-character GSTIN', target: 'tax.gstin', validate: ok('gstin'), transform: upper },
+  gstClassification: { key: 'registrationType', description: 'Type of Registration as printed (e.g. Regular, Composition, SEZ Unit, SEZ Developer, Input Service Distributor)', target: 'tax.gstClassification', transform: gstClass, validate: (v: string) => v !== '' },
+  constitution: { key: 'constitution', description: 'Constitution of Business as printed (e.g. Private Limited Company, Partnership, Proprietorship)', target: 'basic.entityType', transform: entityType, validate: (v: string) => v !== '' },
   pan: { key: 'pan', description: '10-character PAN', target: 'tax.pan', validate: ok('pan'), transform: upper },
   tan: { key: 'tan', description: '10-character TAN (Tax Deduction and Collection Account Number)', target: 'tax.tan', validate: ok('tan'), transform: upper },
   cin: { key: 'cin', description: '21-character CIN or LLPIN', target: 'tax.cin', validate: ok('cin'), transform: upper },
@@ -28,7 +53,7 @@ const K = {
 } satisfies Record<string, ExtractKey>;
 
 export const indiaDocuments: Record<string, ReadableDocument> = {
-  GST_CERT: { label: 'GST registration certificate (Form GST REG-06)', keys: [K.gstin, K.legalName, K.tradeName, K.address, K.city, K.pinCode, K.state, K.pan] },
+  GST_CERT: { label: 'GST registration certificate (Form GST REG-06)', keys: [K.gstin, K.legalName, K.tradeName, K.gstClassification, K.constitution, K.address, K.city, K.pinCode, K.state, K.pan] },
   PAN_CARD: { label: 'PAN card', keys: [K.pan, K.legalName] },
   CANCELLED_CHEQUE: { label: 'cancelled cheque or bank letter', keys: [K.accountHolderName, K.accountNumber, K.ifsc, K.bankName, K.branch] },
   INCORPORATION_CERT: { label: 'certificate of incorporation', keys: [K.cin, K.legalName, K.incorporationYear, K.pan, K.tan, K.address, K.city, K.pinCode, K.state] },

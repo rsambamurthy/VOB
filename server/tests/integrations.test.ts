@@ -245,7 +245,7 @@ describe('AI document reading', () => {
   test('automatic data entry fills empty fields from documents, never over typed values or bank details', async () => {
     const g = `29AABCA1234F1Z`; const gstin = g + gstinCheckChar(g);
     const create = vi.fn(async () => ({ content: [{ type: 'tool_use', id: 't', name: 'record_document', input: {
-      documentType: 'GST_CERT', values: { gstin, legalName: 'AUTO FILL TRADERS PRIVATE LIMITED', address: '7 Residency Road' }, confidence: { gstin: 0.97, legalName: 0.95, address: 0.6 }, notes: '' } }] }));
+      documentType: 'GST_CERT', values: { gstin, legalName: 'AUTO FILL TRADERS PRIVATE LIMITED', address: '7 Residency Road', registrationType: 'Regular', constitution: 'Private Limited Company' }, confidence: { gstin: 0.97, legalName: 0.95, address: 0.6, registrationType: 0.95, constitution: 0.95 }, notes: '' } }] }));
     setExtractor(anthropicExtractor({ apiKey: 'x', model: 'claude-sonnet-5-5' }, { messages: { create } } as any));
     const admin = await login('admin@acme.test');
     await admin.patch('/api/admin/tenant', { settings: { aiExtraction: true, dataEntry: 'automatic' } });
@@ -276,7 +276,9 @@ describe('AI document reading', () => {
     expect(byId['basic.vendorName']).toMatchObject({ autoFilled: false, state: 'differs' });
     const log = (await admin.get('/api/admin/audit')).body.rows.find((r: any) => r.action === 'AI_VALUES_AUTOFILLED');
     expect(log).toMatchObject({ actor: 'AI (from document)' });
-    expect(log.detail.fields.split(', ').sort()).toEqual(['basic.region', 'tax.gstin']);
+    expect(log.detail.fields.split(', ').sort()).toEqual(['basic.entityType', 'basic.region', 'tax.gstClassification', 'tax.gstin']);
+    expect(me.vendor.profile.tax.gstClassification).toBe('Regular');
+    expect(me.vendor.profile.basic.entityType).toBe('Company (Pvt / Public Ltd)');
     expect(me.vendor.profile.basic.region).toBe('Karnataka');
 
     // Assisted mode: nothing is filled in, only suggested.
