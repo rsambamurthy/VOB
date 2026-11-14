@@ -8,7 +8,7 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireVendor, vendorCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { getPublished } from '../services/config.js';
-import { buildChecklist, type Profile } from '../lib/profileEngine.js';
+import type { Profile } from '../lib/profileEngine.js';
 import { removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks } from '../integrations/kyc/index.js';
 import { checkDef, checkList, checkOffered, localeFor } from '../countries/registry.js';
@@ -19,8 +19,9 @@ import { extractionsFor, dataEntryMode } from '../integrations/ai/index.js';
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
 import { arLabel, localizeConfig, supplierLanguages, translateMessage, vendorLanguage, type Lang } from '../i18n/index.js';
-import { activeTypes, addDocument, applyExtractedValues, docRequirementsFor, formState, isEditableStatus, saveSection, submitForReview, type Actor } from '../services/onboarding.js';
+import { addDocument, applyExtractedValues, formState, isEditableStatus, saveSection, submitForReview, type Actor } from '../services/onboarding.js';
 import { upload } from '../lib/upload.js';
+import { acceptAgreement } from '../services/agreements.js';
 
 export const vendorRouter = Router();
 vendorRouter.use(requireVendor);
@@ -32,7 +33,7 @@ const requireConsent = ah(async (req, _res, next) => {
   if (!v || needsConsent(tenant, v)) throw new HttpError(403, 'Please read and accept the privacy notice first', undefined, 'CONSENT_REQUIRED');
   next();
 });
-for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
+for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details', '/agreements']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
 
 /** The supplier, as the one acting (their contact email is what the history shows). */
 const supplier = (req: { ip?: string }, v: { contactEmail: string }): Actor => ({ name: v.contactEmail, ip: req.ip });
@@ -56,9 +57,6 @@ function assertEditable(status: string) {
   if (!isEditableStatus(status)) throw new HttpError(409, 'Your registration has been submitted and can no longer be edited');
 }
 
-/** Checklist items in the supplier's language (labels come from the localized form; messages are translated). */
-const localChecklist = <T extends { label: string; message?: string }>(items: T[], lang: Lang) =>
-  (lang === 'en' ? items : items.map((i) => ({ ...i, label: translateMessage(i.label, lang), message: i.message ? translateMessage(i.message, lang) : i.message })));
 const arLabelFor = (s: string, lang: Lang) => (lang === 'ar' ? arLabel(s) : s);
 
 /** The supplier's portal and email language (from the languages the buyer offers). */
@@ -83,15 +81,17 @@ vendorRouter.get('/', ah(async (req, res) => {
   // What the supplier reads is in their language; values and rules are the same.
   const config = localizeConfig(stored, lang);
   const tx = (s: string) => translateMessage(s, lang);
+  const form = await formState(tenant, stored, v, { profile, lang });
   res.json({
     language: lang,
     // Reviewers' identities and remarks are internal; the vendor only sees level, label and status (plus send-back remarks).
     vendor: { ...vendor, steps: v.steps.filter((s) => s.cycle === v.reviewCycle).map((s) => ({ id: s.id, cycle: s.cycle, level: s.level, label: arLabelFor(s.label, lang), status: s.status, actedAt: s.actedAt })) },
     sendBackRemarks: v.status === 'SENT_BACK' ? lastSendBack?.remarks : undefined,
     config: { sections: config.sections, guide: config.guide, levels: config.workflow.levels.map((l) => l.label) },
-    checklist: localChecklist(buildChecklist(config, profile, activeTypes(v.documents), v.vendorType), lang),
-    // Documents first: documents that depend on answers not yet given are offered "if it applies".
-    docRequirements: docRequirementsFor(tenant, config, profile, v),
+    // Fields, documents and agreements still to do; documents first offers "if it applies" documents.
+    checklist: form.checklist,
+    docRequirements: form.docRequirements,
+    agreements: form.agreements,
     editable: isEditableStatus(v.status),
     lifecycle: v.status === 'APPROVED' ? {
       blocked: !!v.blockedAt,
@@ -132,9 +132,7 @@ vendorRouter.put('/profile/:section', ah(async (req, res) => {
   assertEditable(v.status);
   const { config } = await getPublished(v.tenantId);
   const profile = await saveSection(config, v, req.params.section, z.record(z.unknown()).parse(req.body), supplier(req, v));
-  const lang = vendorLanguage(vendorCtx(req).tenant, v);
-  const shown = formState(vendorCtx(req).tenant, localizeConfig(config, lang), v, profile);
-  res.json({ ...shown, checklist: localChecklist(shown.checklist, lang) });
+  res.json(await formState(vendorCtx(req).tenant, config, v, { profile, lang: vendorLanguage(vendorCtx(req).tenant, v) }));
 }));
 
 vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
@@ -181,17 +179,32 @@ vendorRouter.post('/extractions/:id/apply', ah(async (req, res) => {
   const { fieldIds } = z.object({ fieldIds: z.array(z.string()).min(1).max(30) }).parse(req.body);
   const { config } = await getPublished(v.tenantId);
   const { applied, profile } = await applyExtractedValues(config, v, req.params.id, fieldIds, supplier(req, v));
+  const { checklist } = await formState(vendorCtx(req).tenant, config, v, { profile, lang: vendorLanguage(vendorCtx(req).tenant, v) });
+  res.json({ applied, checklist, profile });
+}));
+
+/** Accept an agreement: the version shown (versionId), with the signer's name and designation. Also for approved suppliers asked to accept a new version. */
+vendorRouter.post('/agreements/:id/accept', ah(async (req, res) => {
+  const v = await loadMine(req);
+  if (!isEditableStatus(v.status) && v.status !== 'APPROVED') throw new HttpError(409, 'Your registration has been submitted and can no longer be edited');
+  const body = z.object({
+    versionId: z.string().min(1),
+    signerName: z.string().trim().min(3, 'Type your full name').max(120),
+    signerDesignation: z.string().trim().min(2, 'Type your designation').max(120),
+    agree: z.literal(true, { errorMap: () => ({ message: 'Tick “I agree” to accept' }) }),
+  }).parse(req.body);
   const lang = vendorLanguage(vendorCtx(req).tenant, v);
-  res.json({ applied, checklist: localChecklist(buildChecklist(localizeConfig(config, lang), profile, activeTypes(v.documents), v.vendorType), lang), profile });
+  await acceptAgreement(v, req.params.id, body.versionId, body, { email: vendorCtx(req).contactEmail ?? v.contactEmail, ip: req.ip, userAgent: req.get('user-agent'), language: lang });
+  const { config } = await getPublished(v.tenantId);
+  const form = await formState(vendorCtx(req).tenant, config, v, { lang });
+  res.json({ checklist: form.checklist, agreements: form.agreements });
 }));
 
 vendorRouter.post('/submit', ah(async (req, res) => {
   const v = await loadMine(req);
   assertEditable(v.status);
   const { config } = await getPublished(v.tenantId);
-  const lang = vendorLanguage(vendorCtx(req).tenant, v);
-  await submitForReview(vendorCtx(req).tenant, config, v, supplier(req, v),
-    () => localChecklist(buildChecklist(localizeConfig(config, lang), v.profile as Profile, activeTypes(v.documents), v.vendorType), lang).filter((c) => !c.ok && c.severity === 'error'));
+  await submitForReview(vendorCtx(req).tenant, config, v, supplier(req, v), vendorLanguage(vendorCtx(req).tenant, v));
   res.json({ ok: true });
 }));
 

@@ -34,6 +34,7 @@ import { staffRouter } from './routes/staff.js';
 import { adminRouter } from './routes/admin.js';
 import { vendorRouter } from './routes/vendorPortal.js';
 import { documentsRouter } from './routes/documents.js';
+import { agreementsRouter } from './routes/agreements.js';
 import { configRouter } from './routes/config.js';
 
 import { handleResendEvent, verifySvix } from './integrations/email/resend.js';
@@ -111,6 +112,7 @@ export function createApp() {
   app.use('/api', ordersRouter);
   app.use('/api', staffCollabRouter);
   app.use('/api/documents', documentsRouter);
+  app.use('/api/agreements', agreementsRouter);
   app.use('/api', configRouter);
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found', undefined, 'NO_ROUTE')));
 

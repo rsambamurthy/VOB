@@ -9,18 +9,19 @@ import { Checklist } from '../components/Checklist';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import { isEditableStatus } from '../lib/types';
-import type { ChangeRequest, Check, Duplicate, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
+import type { AgreementView, ChangeRequest, Check, Duplicate, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
 import { ChangeDiff, CrBadge, diffProfiles, FlagBadges, isMasked, MASKED_FIELDS } from '../components/Lifecycle';
 import { ErpCard } from '../components/Erp';
 import { SupplierAccessCard } from '../components/SupplierAccess';
 import { useSession } from '../lib/session';
 import { ChecksPanel } from '../components/Checks';
 import { ExtractionList } from '../components/ExtractionCard';
+import { AgreementsPanel } from '../components/Agreements';
 import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { TabStrip } from '../components/TabStrip';
 
 type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
-  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode };
+  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode; agreements: AgreementView[] };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
@@ -68,7 +69,8 @@ export function VendorDetail() {
   const autoAssist = !!assist && d.dataEntry === 'automatic';
   const sectionTabs = config.sections.map((s) => ({ key: s.key, label: s.label }));
   const docTab = { key: 'documents', label: 'Documents' };
-  const tabs = [...formTabs(sectionTabs, docTab, autoAssist),
+  const agrTab = d.agreements.length ? { key: 'agreements', label: `Agreements${d.agreements.some((a) => a.required && a.outstanding) ? ' •' : ''}` } : undefined;
+  const tabs = [...formTabs(sectionTabs, docTab, autoAssist, agrTab),
     ...(d.changeRequests.length ? [{ key: 'changes', label: `Changes${openCrs.length ? ` (${openCrs.length})` : ''}` }] : []), { key: 'history', label: 'History' }];
   const approved = v.status === 'APPROVED';
   const shownProfile = Object.keys(revealed).length ? Object.fromEntries(Object.entries(v.profile).map(([sec, vals]) => [sec, { ...vals, ...Object.fromEntries(Object.entries(revealed).filter(([k]) => k.startsWith(`${sec}.`)).map(([k, x]) => [k.split('.')[1], x])) }])) : v.profile;
@@ -106,6 +108,11 @@ export function VendorDetail() {
   }
   async function assistRemove(docId: string) {
     try { await api(`/staff/vendors/${id}/assist/documents/${docId}`, { method: 'DELETE' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+  }
+  async function assistSignedCopy(a: AgreementView, signer: { signerName: string; signerDesignation: string }, file: File) {
+    const fd = new FormData(); fd.append('signerName', signer.signerName); fd.append('signerDesignation', signer.signerDesignation); fd.append('file', file);
+    await api(`/staff/vendors/${id}/assist/agreements/${a.id}/signed-copy`, { body: fd });
+    setFlash({ kind: 'success', text: `Signed copy of the ${a.title} recorded.` }); await load();
   }
   async function assistDone() {
     if (assistDirty.size && !(await assistSave())) return;
@@ -266,6 +273,7 @@ export function VendorDetail() {
                 {cr.remarks && cr.status !== 'PENDING' && <p className="small muted">Decision remarks: “{cr.remarks}”</p>}
               </div>
             ))}
+            {tab === 'agreements' && <AgreementsPanel agreements={d.agreements} vendorName={v.name} onSignedCopy={assisting ? assistSignedCopy : undefined} />}
             {tab === 'documents' && <ExtractionList extractions={d.extractions} documents={v.documents} requirements={d.docRequirements} onApply={assisting ? assistApply : undefined} />}
             {tab === 'history' && (
               <ul className="audit">

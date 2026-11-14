@@ -20,6 +20,8 @@ import { hasFeature } from './limits.js';
 import { startReview } from './workflowEngine.js';
 import { withIdentity } from './duplicates.js';
 import type { OnboardingConfig } from '../config/types.js';
+import { agreementChecklist, agreementsFor, agreementView } from './agreements.js';
+import { localizeConfig, translateMessage, type Lang } from '../i18n/index.js';
 import type { Tenant, Vendor } from '../db/schema.js';
 
 export { activeTypes, isEditableStatus, EDITABLE_STATUSES } from '../lib/onboardingStatus.js';
@@ -36,9 +38,24 @@ export function docRequirementsFor(tenant: Tenant, config: OnboardingConfig, pro
   return visibleDocRequirements(config, profile, vendor.vendorType, { undecided: dataEntryMode(tenant) === 'automatic' && isEditableStatus(vendor.status) });
 }
 
-/** The form state either side shows after a change: checklist and which documents apply. */
-export function formState(tenant: Tenant, config: OnboardingConfig, vendor: VendorWithDocs, profile = vendor.profile as Profile) {
-  return { checklist: buildChecklist(config, profile, activeTypes(vendor.documents), vendor.vendorType), docRequirements: docRequirementsFor(tenant, config, profile, vendor) };
+/** Checklist items in the reader's language (labels from the localized form; messages translated). */
+const localItems = <T extends { label: string; message?: string }>(items: T[], lang: Lang) =>
+  (lang === 'en' ? items : items.map((i) => ({ ...i, label: translateMessage(i.label, lang), message: i.message ? translateMessage(i.message, lang) : i.message })));
+
+/**
+ * The form state either side shows: checklist (fields, documents and agreements), which documents apply,
+ * and the agreements to accept — in the reader's language.
+ */
+export async function formState(tenant: Tenant, config: OnboardingConfig, vendor: VendorWithDocs, opts: { profile?: Profile; lang?: Lang } = {}) {
+  const profile = opts.profile ?? (vendor.profile as Profile);
+  const lang = opts.lang ?? 'en';
+  const shown = localizeConfig(config, lang);
+  const ags = await agreementsFor(vendor);
+  return {
+    checklist: [...localItems(buildChecklist(shown, profile, activeTypes(vendor.documents), vendor.vendorType), lang), ...localItems(agreementChecklist(ags, lang), lang)],
+    docRequirements: docRequirementsFor(tenant, shown, profile, vendor),
+    agreements: ags.map((a) => agreementView(a, lang)),
+  };
 }
 
 /**
@@ -106,13 +123,13 @@ export async function applyExtractedValues(config: OnboardingConfig, v: Vendor, 
 }
 
 /**
- * Submit for approval: everything required must be there, automatic checks run (e.g. sanctions screening in
- * Gulf workspaces) so reviewers see the result, then the approval flow starts.
- * `missingDetails` lets the portal show the missing items in the supplier's language.
+ * Submit for approval: every required field, document and agreement must be there, automatic checks run (e.g.
+ * sanctions screening in Gulf workspaces) so reviewers see the result, then the approval flow starts.
+ * Missing items are listed in `lang` (the supplier's language in the portal).
  */
-export async function submitForReview(tenant: Tenant, config: OnboardingConfig, v: VendorWithDocs, actor: Actor, missingDetails?: () => unknown) {
-  const checklist = buildChecklist(config, v.profile as Profile, activeTypes(v.documents), v.vendorType);
-  if (!isSubmittable(checklist)) throw new HttpError(422, 'Please complete all required fields before submitting', missingDetails ? missingDetails() : checklist.filter((c) => !c.ok && c.severity === 'error'));
+export async function submitForReview(tenant: Tenant, config: OnboardingConfig, v: VendorWithDocs, actor: Actor, lang: Lang = 'en') {
+  const { checklist } = await formState(tenant, config, v, { lang });
+  if (!isSubmittable(checklist)) throw new HttpError(422, 'Please complete all required fields before submitting', checklist.filter((c) => !c.ok && c.severity === 'error'));
   for (const { def } of checksForVendor(tenant.country, v.profile as Profile).filter((c) => c.def.runOnSubmit)) {
     const input = checkInputs(def, v.profile as Profile);
     if (inputsComplete(def, input)) await runKyc(v, def.kind, input, 'system (on submit)').catch(() => {});

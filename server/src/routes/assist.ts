@@ -22,6 +22,7 @@ import { noticeFor } from '../services/privacy.js';
 import { upload } from '../lib/upload.js';
 import { addDocument, applyExtractedValues, formState, isEditableStatus, saveSection, submitForReview, type Actor } from '../services/onboarding.js';
 import type { Tenant } from '../db/schema.js';
+import { recordSignedCopy } from '../services/agreements.js';
 
 export const assistRouter = Router({ mergeParams: true });
 const { vendors, documents } = schema;
@@ -35,7 +36,7 @@ async function editableVendor(tenantId: string, id: string) {
 async function state(tenant: Tenant, vendorId: string) {
   const v = (await db.query.vendors.findFirst({ where: eq(vendors.id, vendorId), with: { documents: true } }))!;
   const { config } = await getPublished(tenant.id);
-  return { profile: maskProfile(v.profile as Profile), ...formState(tenant, config, v) };
+  return { profile: maskProfile(v.profile as Profile), ...(await formState(tenant, config, v)) };
 }
 const buyer = (req: Parameters<typeof staffCtx>[0]): Actor => { const s = staffCtx(req); return { name: s.user.name, userId: s.user.id, onBehalf: true, ip: req.ip }; };
 
@@ -77,13 +78,23 @@ assistRouter.post('/extractions/:exId/apply', requireStaff('vendors.create'), ah
   res.json({ applied, ...(await state(s.tenant, v.id)) });
 }));
 
+/** Record an agreement the supplier signed on paper or by email: the signed copy is kept, with who signed it. */
+assistRouter.post('/agreements/:agreementId/signed-copy', requireStaff('vendors.create'), upload.single('file'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await editableVendor(s.tenant.id, req.params.id);
+  if (!req.file) throw new HttpError(400, 'Attach the signed copy');
+  const signer = z.object({ signerName: z.string().trim().min(3, 'Who signed it?').max(120), signerDesignation: z.string().trim().min(2, 'Their designation').max(120) }).parse(req.body);
+  await recordSignedCopy(v, req.params.agreementId, signer, req.file, { id: s.user.id, name: s.user.name, email: s.user.email, ip: req.ip });
+  res.status(201).json(await state(s.tenant, v.id));
+}));
+
 /** Submit for approval on the supplier's behalf. The buyer confirms the supplier provided the details and saw the privacy notice. */
 assistRouter.post('/submit', requireStaff('vendors.create'), ah(async (req, res) => {
   const s = staffCtx(req);
   const v = await editableVendor(s.tenant.id, req.params.id);
   const { confirm } = z.object({ confirm: z.literal(true, { errorMap: () => ({ message: 'Confirm that the supplier gave these details and was shown the privacy notice' }) }) }).parse(req.body);
   const { config } = await getPublished(v.tenantId);
-  if (!v.consentVersion && formState(s.tenant, config, v).checklist.every((c) => c.ok || c.severity !== 'error')) {
+  if (!v.consentVersion && (await formState(s.tenant, config, v)).checklist.every((c) => c.ok || c.severity !== 'error')) {
     // The supplier didn't accept the notice in the portal: record that the buyer showed it to them.
     await db.update(vendors).set({ consentAt: new Date(), consentVersion: noticeFor(s.tenant).version, consentIp: `buyer: ${s.user.name}` }).where(eq(vendors.id, v.id));
     await audit({ tenantId: v.tenantId, vendorId: v.id, actor: s.user.name, action: 'CONSENT_RECORDED_BY_BUYER', detail: { noticeVersion: noticeFor(s.tenant).version, confirm }, ip: req.ip });

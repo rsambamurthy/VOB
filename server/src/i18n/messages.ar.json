@@ -170,5 +170,11 @@
   "AI answers are turned off for this workspace": "الإجابات الآلية غير مفعلة لدى هذه الجهة",
   "Your workspace has used today’s AI help answers. Search the help topics instead, or try again tomorrow.": "استُنفد حد الإجابات الآلية لهذا اليوم. ابحثوا في مواضيع المساعدة أو حاولوا غداً.",
   "Use a date": "أدخلوا تاريخاً",
-  "Something went wrong": "حدث خطأ ما"
+  "Something went wrong": "حدث خطأ ما",
+  "{label} must be accepted": "يجب قبول {label}",
+  "This agreement was updated while you were reading it. Please read the new version.": "تم تحديث هذه الاتفاقية أثناء قراءتكم لها. يرجى قراءة النسخة الجديدة.",
+  "Agreement not found": "لم يتم العثور على الاتفاقية",
+  "Type your full name": "اكتبوا اسمكم الكامل",
+  "Type your designation": "اكتبوا مسماكم الوظيفي",
+  "Tick “I agree” to accept": "ضعوا علامة على «أوافق» للقبول"
 }

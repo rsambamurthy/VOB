@@ -8,7 +8,7 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { env } from '../lib/env.js';
-import { buildChecklist, type Profile } from '../lib/profileEngine.js';
+import type { Profile } from '../lib/profileEngine.js';
 import { assignableUsers, decide, reassign } from '../services/workflowEngine.js';
 import { canAct, coveringFor } from '../services/approvers.js';
 import { getConfig } from '../services/config.js';
@@ -17,7 +17,7 @@ import { checkDef, checkInputs, checkOffered, inputsComplete } from '../countrie
 import { dataEntryMode, extractionsFor } from '../integrations/ai/index.js';
 import { publicCheck } from './vendorPortal.js';
 import { upload } from '../lib/upload.js';
-import { checkExpiry, docRequirementsFor, isEditableStatus } from '../services/onboarding.js';
+import { checkExpiry, formState, isEditableStatus } from '../services/onboarding.js';
 import { getPublished } from '../services/config.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { cancelStaffChange, changeRequestsForVendor, decideChange, flagsForMany, openChangeRequest, reassignChangeStep, reviewVendor, setBlocked, submitChangeRequest } from '../services/lifecycle.js';
@@ -151,8 +151,8 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
   const canInvite = s.permissions.has('vendors.create');
   res.json({
     vendor: { ...rest, profile: maskProfile(rest.profile), steps: rest.steps.map(({ role, assignee, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
-    checklist: buildChecklist(config, profile, v.documents.filter((d) => d.status === 'ACTIVE').map((d) => d.docType), v.vendorType),
-    docRequirements: docRequirementsFor(s.tenant, config, profile, v),
+    // Fields, documents and agreements — the same rules the supplier sees.
+    ...(await formState(s.tenant, config, v)),
     /** How the form is filled in: 'automatic' means documents first (also when a buyer fills it in for the supplier). */
     dataEntry: dataEntryMode(s.tenant),
     canAct: !!pending && await canAct(pending, s.user.id),

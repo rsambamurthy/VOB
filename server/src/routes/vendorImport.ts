@@ -22,6 +22,7 @@ import { supplierLanguages } from '../i18n/index.js';
 import { packFor } from '../countries/registry.js';
 import { basicProblems, createSchema, createVendor, type CreateInput } from '../services/vendors.js';
 import { identityKeys, KIND_LABEL } from '../services/duplicates.js';
+import { agreementsFor } from '../services/agreements.js';
 import type { FieldDef, OnboardingConfig } from '../config/types.js';
 import type { Tenant } from '../db/schema.js';
 
@@ -125,6 +126,9 @@ vendorImportRouter.post('/', requireStaff('vendors.create'), fileUpload.single('
   const rows: { result: RowResult; input: CreateInput; profile: Profile; erpCode?: string; keys: string[] }[] = [];
   const seenNames = new Map<string, number>(); const seenCodes = new Map<string, number>();
   const existingCodes = new Set((await db.select({ code: schema.supplierCodes.code }).from(schema.supplierCodes).where(eq(schema.supplierCodes.tenantId, s.tenant.id))).map((r) => r.code.toLowerCase()));
+  // Imported suppliers accept the workspace's agreements when they next sign in.
+  const agreementsToAccept: Record<string, number> = mode === 'approved' ? Object.fromEntries(await Promise.all((['DOMESTIC', 'IMPORT', 'GOVERNMENT'] as const).map(async (t) =>
+    [t, (await agreementsFor({ id: '-', tenantId: s.tenant.id, vendorType: t, status: 'APPROVED', decidedAt: new Date() })).filter((x) => x.required && x.outstanding).length]))) : {};
   ws.eachRow((row, n) => {
     if (n === 1) return;
     const get = (h: string) => { const i = header.get(h.toLowerCase()); return i ? cellValue(row.getCell(i)) : ''; };
@@ -179,6 +183,8 @@ vendorImportRouter.post('/', requireStaff('vendors.create'), fileUpload.single('
         }
         if (missingFields.length) result.warnings.push(`Not filled: ${missingFields.slice(0, 5).join(', ')}${missingFields.length > 5 ? ` and ${missingFields.length - 5} more` : ''}`);
         if (missingDocs) result.warnings.push(`${missingDocs} required document${missingDocs > 1 ? 's' : ''} to be uploaded by the supplier`);
+        const ags = agreementsToAccept[type] ?? 0;
+        if (ags) result.warnings.push(`${ags} agreement${ags > 1 ? 's' : ''} to be accepted by the supplier`);
         keys = identityKeys(full);
       }
     }

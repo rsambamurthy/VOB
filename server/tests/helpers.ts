@@ -49,11 +49,12 @@ export async function globexAdmin() {
   return login('admin@globex.test', 'globex');
 }
 
-/** Onboard a vendor all the way to APPROVED and return a signed-in vendor session. */
+/** Onboard a vendor all the way to APPROVED and return a signed-in vendor session. `beforeSubmit` runs just before
+ *  submitting (e.g. to accept agreements); `vendorType` defaults to DOMESTIC. */
 const PDF = '%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF';
-export async function approvedVendor(name: string, email: string) {
+export async function approvedVendor(name: string, email: string, opts: { vendorType?: 'DOMESTIC' | 'GOVERNMENT'; beforeSubmit?: (v: ReturnType<typeof client>) => Promise<unknown> } = {}) {
   const admin = await login('admin@acme.test');
-  const id = (await admin.post('/api/staff/vendors', { name, vendorType: 'DOMESTIC', contactFirstName: 'Life', contactLastName: 'Cycle', contactEmail: email, contactMobile: '9800022233' })).body.vendor.id;
+  const id = (await admin.post('/api/staff/vendors', { name, vendorType: opts.vendorType ?? 'DOMESTIC', contactFirstName: 'Life', contactLastName: 'Cycle', contactEmail: email, contactMobile: '9800022233' })).body.vendor.id;
   const token = tokenOf((await lastLinkTo(email))!);
   const v = client();
   const { devOtp } = (await v.post('/api/vendor-auth/request-otp', { token })).body;
@@ -68,6 +69,7 @@ export async function approvedVendor(name: string, email: string) {
   await v.put('/api/vendor/profile/tax', { hasGst: 'Yes', gstin: g + gstinCheckChar(g), gstClassification: 'Regular', pan, cin: `U74999MH2015PTC12${n}` });
   await v.put('/api/vendor/profile/risk', { fiscalYearEnd: 'March', currency: 'INR', turnoverYear: 'FY 2024-25', annualTurnover: '9000000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' });
   for (const t of ['PAN_CARD', 'GST_CERT', 'CANCELLED_CHEQUE', 'INCORPORATION_CERT']) expect((await v.upload('/api/vendor/documents', t, PDF)).status).toBe(201);
+  if (opts.beforeSubmit) await opts.beforeSubmit(v);
   expect((await v.post('/api/vendor/submit')).status).toBe(200);
   for (const u of ['tax@acme.test', 'finance@acme.test', 'mdm@acme.test']) expect((await (await login(u)).post(`/api/staff/vendors/${id}/decision`, { action: 'APPROVE' })).status).toBe(200);
   return { v, id, admin };

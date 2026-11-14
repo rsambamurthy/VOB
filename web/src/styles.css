@@ -896,3 +896,9 @@ h1, h2, .page-head h1, .group > legend, .card-title, .af-product, .stat-n { font
 .import-steps { padding-left: 20px; display: grid; gap: 10px; margin: 0; }
 ul.plain { list-style: none; margin: 0; padding: 0; } ul.plain li + li { margin-top: 3px; }
 .dup-list { margin: 6px 0; } .dup-list li { margin: 3px 0; } .dup-list .link-btn { margin-left: 8px; }
+/* Agreements (portal, vendor page) */
+.agreement-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--card); }
+.agreement-card.open { border-color: var(--warn, #d97706); box-shadow: inset 3px 0 0 var(--warn, #d97706); }
+.agreement-text { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--bg); }
+.agreement-status { margin: 0; }
+.history-row { padding: 10px 0; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }

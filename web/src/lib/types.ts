@@ -93,3 +93,9 @@ export interface ChangeQueueRow {
 /** Onboarding statuses in which the form can still be filled in (same list as the server's lib/onboardingStatus.ts). */
 export const EDITABLE_STATUSES: readonly VendorStatus[] = ['INVITED', 'IN_PROGRESS', 'SENT_BACK'];
 export const isEditableStatus = (s: string) => (EDITABLE_STATUSES as readonly string[]).includes(s);
+/** An agreement as the supplier (or staff) sees it, with the supplier's acceptance. */
+export interface AgreementView {
+  id: string; title: string; required: boolean; outstanding: boolean;
+  current: { id: string; version: number; kind: 'TEXT' | 'PDF'; body: string | null; hasArabic: boolean; fileName: string | null; publishedAt: string; changeNote: string | null };
+  accepted: { id: string; version: number; signerName: string; signerDesignation: string; acceptedAt: string; recordedByName: string | null } | null;
+}

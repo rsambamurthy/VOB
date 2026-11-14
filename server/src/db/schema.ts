@@ -796,6 +796,62 @@ export const supplierRatings = pgTable('supplier_ratings', {
   createdAt: createdAt(),
 }, (t) => [index('supplier_ratings_vendor_idx').on(t.tenantId, t.vendorId, t.createdAt)]);
 
+/**
+ * Agreements suppliers accept in the portal (code of conduct, NDA, supplier agreement). Each has versions; a
+ * supplier accepts a specific version. Required ones must be accepted before submitting for approval.
+ */
+export const agreements = pgTable('agreements', {
+  id: id(), tenantId: tenantId(),
+  title: text('title').notNull(),
+  titleAr: text('title_ar'),
+  /** Which suppliers it applies to: vendor types (empty = all). */
+  vendorTypes: text('vendor_types').array().notNull().default([]),
+  /** Required before submitting for approval (otherwise offered, optional). */
+  required: boolean('required').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** ACTIVE · ARCHIVED (no longer asked for; past acceptances kept) */
+  status: text('status').notNull().default('ACTIVE'),
+  createdAt: createdAt(),
+}, (t) => [index('agreements_tenant_idx').on(t.tenantId, t.status)]);
+
+export const agreementVersions = pgTable('agreement_versions', {
+  id: id(), tenantId: tenantId(),
+  agreementId: text('agreement_id').notNull().references(() => agreements.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  /** TEXT (written in VendorGate) · PDF (the company's own document) */
+  kind: text('kind').notNull(),
+  body: text('body'),
+  bodyAr: text('body_ar'),
+  fileName: text('file_name'), mimeType: text('mime_type'), size: integer('size'),
+  storagePath: text('storage_path'), storageDriver: text('storage_driver'),
+  /** SHA-256 of the text or file — recorded on each acceptance as evidence of exactly what was accepted. */
+  contentHash: text('content_hash').notNull(),
+  changeNote: text('change_note'),
+  /** Approved suppliers who accepted an earlier version are asked to accept this one. */
+  reaccept: boolean('reaccept').notNull().default(false),
+  publishedByName: text('published_by_name').notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('agreement_versions_uq').on(t.agreementId, t.version)]);
+
+export const agreementAcceptances = pgTable('agreement_acceptances', {
+  id: id(), tenantId: tenantId(),
+  agreementId: text('agreement_id').notNull().references(() => agreements.id, { onDelete: 'cascade' }),
+  versionId: text('version_id').notNull().references(() => agreementVersions.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  signerName: text('signer_name').notNull(),
+  signerDesignation: text('signer_designation').notNull(),
+  /** Signed-in email (supplier) — or the buyer's user who recorded a paper signature. */
+  signerEmail: text('signer_email'),
+  language: text('language'),
+  contentHash: text('content_hash').notNull(),
+  ip: text('ip'), userAgent: text('user_agent'),
+  /** Set when a buyer recorded it from a signed copy (the copy is a document on the supplier). */
+  recordedByName: text('recorded_by_name'),
+  signedCopyDocumentId: text('signed_copy_document_id'),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('agreement_acceptances_vendor_idx').on(t.vendorId, t.agreementId)]);
+
 /** "Not a duplicate": a person checked two suppliers that share an identifier and confirmed they are different. Pair stored with vendorA < vendorB. */
 export const duplicateDismissals = pgTable('duplicate_dismissals', {
   id: id(), tenantId: tenantId(),

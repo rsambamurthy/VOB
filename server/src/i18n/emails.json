@@ -458,5 +458,15 @@
       "subject": "{buyer}: يُرجى مراجعة بيانات المورد",
       "body": "مرحباً {first}،\n\nأصبح {buyer} يدير موردّيه عبر بوابة إلكترونية، وقد نُقلت بيانات {vendor} من سجلاته. يُرجى تسجيل الدخول والتأكد من صحة البيانات (العنوان، الحساب المصرفي، التسجيلات الضريبية)، ورفع أي مستندات ناقصة، ثم التأكيد."
     }
+  },
+  "agreementToAccept": {
+    "en": {
+      "subject": "{buyer}: please accept the {agreement}",
+      "body": "Dear {first},\n\n{buyer} asks its suppliers to accept the {agreement}. Please sign in to the supplier portal, read it and accept it under Agreements. It takes a minute."
+    },
+    "ar": {
+      "subject": "{buyer}: يُرجى قبول {agreement}",
+      "body": "مرحباً {first}،\n\nيطلب {buyer} من موردّيه قبول {agreement}. يُرجى تسجيل الدخول إلى بوابة الموردين وقراءتها وقبولها من قسم الاتفاقيات. لن يستغرق ذلك سوى دقيقة."
+    }
   }
 }

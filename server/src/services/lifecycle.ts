@@ -23,6 +23,7 @@ import type { OnboardingConfig } from '../config/types.js';
 import { langForVendor, mailDate, mailSupplier, snippet } from '../i18n/emails.js';
 import { arLabel } from '../i18n/index.js';
 import { vendorsWithDuplicates, withIdentity } from './duplicates.js';
+import { vendorsWithOutstandingAgreements } from './agreements.js';
 
 const { vendors, documents, changeRequests, changeRequestSteps, roles, tenants, users, userRoles } = schema;
 const DAY = 86_400_000;
@@ -399,7 +400,7 @@ export async function runPeriodicReviews(now = new Date(), limit = 200) {
 
 /* ======================= "Needs attention" flags ======================= */
 
-export interface Flag { code: 'POSSIBLE_DUPLICATE' | 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
+export interface Flag { code: 'POSSIBLE_DUPLICATE' | 'AGREEMENT_PENDING' | 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
 
 export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null; emailBouncedAt?: Date | null; emailBounceReason?: string | null }, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
   const flags: Flag[] = [];
@@ -420,7 +421,13 @@ export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus'
 
 export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, 'id' | 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null; emailBouncedAt?: Date | null; emailBounceReason?: string | null })[]) {
   const dups = await vendorsWithDuplicates(tenantId, vendorRows.map((v) => v.id));
-  const withDup = (id: string, f: Flag[]) => (dups.has(id) ? [{ code: 'POSSIBLE_DUPLICATE', label: 'Possible duplicate', severity: 'high' } as Flag, ...f] : f);
+  // Approved suppliers asked to accept a new or updated agreement who haven't yet.
+  const agr = await vendorsWithOutstandingAgreements(tenantId, vendorRows.filter((v) => v.status === 'APPROVED').map((v) => v.id));
+  const withDup = (id: string, f: Flag[]) => [
+    ...(dups.has(id) ? [{ code: 'POSSIBLE_DUPLICATE', label: 'Possible duplicate', severity: 'high' } as Flag] : []),
+    ...f,
+    ...(agr.has(id) ? [{ code: 'AGREEMENT_PENDING', label: 'Agreement to accept', severity: 'medium' } as Flag] : []),
+  ];
   const ids = vendorRows.filter((v) => v.status === 'APPROVED').map((v) => v.id);
   if (!ids.length) return new Map(vendorRows.map((v) => [v.id, withDup(v.id, flagsFor(v, [], false))]));
   const docs = await db.select({ vendorId: documents.vendorId, status: documents.status, expiresOn: documents.expiresOn, docType: documents.docType }).from(documents)

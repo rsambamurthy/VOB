@@ -25,6 +25,11 @@ documents-first because the supplier portal had its own copy of that logic).
 - Read-values cards: `ExtractionList` / `ExtractionCard`.
 - Form rendering: `DynamicSection`, `DocumentsPanel`, `Checklist`.
 
+**Agreements** (code of conduct, NDA):
+- Rules: `server/src/services/agreements.ts`.
+- Checklist and submit go through `services/onboarding.ts` (`formState`).
+- Screens: one `AgreementsPanel` (`web/src/components/Agreements.tsx`) for the portal, the buyer's fill-in and reviewers.
+
 **Creating suppliers** (invite, Excel invite, approved import): `server/src/services/vendors.ts`.
 
 **Duplicate check:** `server/src/services/duplicates.ts`.

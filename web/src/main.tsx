@@ -48,6 +48,7 @@ import { StaffInvoiceDetail, StaffInvoices, StaffPayments, SupplierInvoiceDetail
 import './styles.css';
 import { Billing } from './pages/admin/Billing';
 import { HelpTopics } from './pages/admin/HelpTopics';
+import { Agreements } from './pages/admin/Agreements';
 import { LangGate } from './i18n/LangGate';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -83,6 +84,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/workspace" element={<Workspace />} />
               <Route path="admin/audit" element={<Audit />} />
               <Route path="admin/config" element={<ConfigEditor />} />
+              <Route path="admin/agreements" element={<Agreements />} />
               <Route path="admin/integrations" element={<Integrations />} />
               <Route path="admin/sign-in" element={<SignIn />} />
               <Route path="mailbox" element={<Mailbox />} />

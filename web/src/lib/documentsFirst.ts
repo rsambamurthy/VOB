@@ -8,9 +8,9 @@ import type { FieldSource } from '../components/DynamicSection';
 
 export type DataEntryMode = 'manual' | 'assisted' | 'automatic';
 
-/** Documents first in automatic mode; otherwise after the form tabs. */
-export function formTabs<T extends { key: string; label: string }>(sectionTabs: T[], docTab: T, automatic: boolean): T[] {
-  return automatic ? [docTab, ...sectionTabs] : [...sectionTabs, docTab];
+/** Tab order of the onboarding form: documents first in automatic mode (otherwise after the form tabs); agreements, when any, last — just before submitting. */
+export function formTabs<T extends { key: string; label: string }>(sectionTabs: T[], docTab: T, automatic: boolean, agreementsTab?: T): T[] {
+  return [...(automatic ? [docTab, ...sectionTabs] : [...sectionTabs, docTab]), ...(agreementsTab ? [agreementsTab] : [])];
 }
 
 /** While any document is still being read, refresh every few seconds so the form fills in as it happens. */

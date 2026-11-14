@@ -8,11 +8,12 @@ import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
-import type { Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Flag, Profile, SectionDef, VendorFull } from '../lib/types';
+import type { AgreementView, Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Flag, Profile, SectionDef, VendorFull } from '../lib/types';
 import { ChangeDiff, CrHistory, diffProfiles, FlagBadges } from '../components/Lifecycle';
 import { fmtDate, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionList } from '../components/ExtractionCard';
+import { AgreementsPanel } from '../components/Agreements';
 import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
 import { rememberWorkspace, saveLanguage, SupplierFrame, supplierSignOut } from '../orders/SupplierShell';
@@ -21,7 +22,7 @@ import { setLang, t, useLang, type Lang } from '../i18n';
 import { Rich } from '../i18n/Rich';
 import { TabStrip } from '../components/TabStrip';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode; agreements: AgreementView[] };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; hold: { reason: string | null } | null; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
@@ -101,7 +102,9 @@ export function VendorPortal() {
   const auto = me.dataEntry === 'automatic' && me.editable;
   const sectionTabs = cfg.sections.map((s) => ({ key: s.key, label: s.label }));
   const docTab = { key: 'documents', label: t('portal.documentsTab') };
-  const tabs = formTabs(sectionTabs, docTab, auto);
+  const agrTab = me.agreements.length ? { key: 'agreements', label: t('agr.tab') } : undefined;
+  const tabs = formTabs(sectionTabs, docTab, auto, agrTab);
+  const agreementsDue = me.agreements.filter((a) => a.required && a.outstanding).length;
   // Per field: filled in from which document, or read but waiting for the supplier (bank details, low confidence, different from what they typed).
   const { sources, filledCount, toConfirm } = auto
     ? fieldSources({ extractions: me.extractions, documents: v.documents, requirements: me.docRequirements, profile, onUse: (exId, fieldId) => applyExtraction(exId, [fieldId]) })
@@ -143,6 +146,12 @@ export function VendorPortal() {
   }
   async function remove(id: string) {
     try { await api(`/vendor/documents/${id}`, { method: 'DELETE' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+  }
+  async function acceptAgreement(a: AgreementView, signer: { signerName: string; signerDesignation: string }) {
+    for (const sec of [...dirty]) if (!(await save(sec, true))) return;
+    await api(`/vendor/agreements/${a.id}/accept`, { body: { versionId: a.current.id, ...signer, agree: true } });
+    setFlash({ kind: 'success', text: t('agr.accepted') });
+    await load();
   }
   async function applyExtraction(id: string, fieldIds: string[]) {
     for (const sec of [...dirty]) if (!(await save(sec, true))) return;
@@ -245,6 +254,7 @@ export function VendorPortal() {
             <button className="btn btn-primary btn-sm" onClick={confirmDetails}>{t('portal.theyAreCorrect')}</button>{' '}
             {canChange && <button className="btn btn-ghost btn-sm" onClick={() => setChangeMode(true)}>{t('portal.somethingChanged')}</button>}</Alert>
         )}
+        {approved && agreementsDue > 0 && tab !== 'agreements' && <Alert kind="warning">{t('agr.pendingBanner', { buyer: me.buyer.name, count: agreementsDue })} <button className="link-btn" onClick={() => goTo('agreements')}>{t('agr.review')}</button></Alert>}
         {approved && docFlags.length > 0 && <Alert kind="warning"><strong>{docFlags.map((f) => f.label).join(' · ')}.</strong> {t('portal.uploadRenewedA')} <button className="link-btn" onClick={() => goTo('documents')}>{t('portal.documentsTab')}</button> {t('portal.uploadRenewedB')}</Alert>}
         {approved && changeMode && <Alert kind="info"><strong>{t('portal.editing')}</strong> {t('portal.editingText')}</Alert>}
         {approved && !changeMode && !lc!.flags.length && !reviewRequested && <Alert kind="success">{t('portal.approvedActive')}</Alert>}
@@ -274,6 +284,7 @@ export function VendorPortal() {
               ))}
               {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={docsEditable} onUpload={upload} onDelete={remove}
                 canDelete={approved ? (d) => d.status === 'PENDING' && !d.changeRequestId : undefined} uploadLabel={approved ? t('portal.uploadRenewal') : undefined} />}
+              {tab === 'agreements' && <AgreementsPanel agreements={me.agreements} vendorName={v.name} buyer={me.buyer.name} defaultSigner={`${v.contactFirstName} ${v.contactLastName}`.trim()} onAccept={acceptAgreement} />}
               {tab === 'documents' && me.editable && <ExtractionList extractions={me.extractions} documents={v.documents} requirements={me.docRequirements} onApply={applyExtraction} />}
             </div>
             {approved && (changeMode || newDocs.length > 0) && (

@@ -443,6 +443,26 @@ Click a row to open the vendor.`,
 The **Approval flow** card on the right shows every level and its status. When a level's deadline passes, the step shows as overdue and its approvers get an escalation email. Users with *Reassign approval steps* can hand a waiting step to a specific person.`,
   },
   {
+    id: 'agreements', title: 'Agreements suppliers accept', audience: ['staff'], perms: ['config.manage', 'vendors.view'],
+    summary: 'Code of conduct, NDA, supplier agreement: set them up, versions, accept again, certificates.',
+    screens: ['^/staff/admin/agreements', '^/staff/vendors/[^/]+$'],
+    keywords: 'agreement agreements code of conduct nda non-disclosure supplier agreement contract terms accept acceptance sign signature e-sign certificate version accept again signed copy',
+    related: ['invite-vendor', 'review-decide', 'privacy'],
+    body: `Under **Administration → Agreements** (needs *Edit onboarding configuration*) add what suppliers must accept — for example your **Supplier Code of Conduct** or an **NDA**.
+
+- **Write the text** in VendorGate (with an optional Arabic version), or **upload your own PDF**.
+- **Applies to**: Domestic, Import and/or Government suppliers (none ticked = all).
+- **Required**: suppliers can't submit for approval until they accept it. Optional ones are offered only.
+
+**In the portal** suppliers find an **Agreements** tab just before submitting. They read the agreement, tick *I agree*, and type their name and designation. VendorGate records the version, the date and time, the sign-in email, IP address and browser, and a fingerprint of the exact text or file. A **certificate of acceptance** (PDF) can be downloaded from the supplier's page.
+
+**Filling in for a supplier** who signed on paper or by email: open the supplier, click *Fill in for supplier*, go to **Agreements**, enter who signed and attach the signed copy.
+
+**New versions**: *New version* keeps every earlier version and who accepted it. Tick **Ask suppliers who accepted an earlier version to accept again** for real changes — approved suppliers are then emailed and show **Agreement to accept** in the vendor list until they do. Leave it off for small corrections. When you add a new agreement, *Also ask approved suppliers to accept it* does the same for your existing suppliers.
+
+**Archive** stops asking for an agreement; past acceptances stay on record.`,
+  },
+  {
     id: 'duplicates', title: 'Possible duplicate suppliers', audience: ['staff'], perms: ['vendors.view'],
     summary: 'Suppliers sharing a PAN, GSTIN, bank account, IBAN, CR or VAT number are flagged.',
     screens: ['^/staff/vendors'],

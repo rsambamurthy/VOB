@@ -6,7 +6,7 @@ export function Checklist({ items, sections, onJump }: { items: ChecklistItem[];
   const warnings = items.filter((i) => !i.ok && i.severity === 'warning');
   const done = items.filter((i) => i.ok).length;
   const pct = items.length ? Math.round((done / (done + errors.length)) * 100) : 0;
-  const sectionLabel = (k: string) => (k === 'documents' ? t('checklist.documents') : sections.find((s) => s.key === k)?.label ?? k);
+  const sectionLabel = (k: string) => (k === 'documents' ? t('checklist.documents') : k === 'agreements' ? t('checklist.agreements') : sections.find((s) => s.key === k)?.label ?? k);
   return (
     <div className="checklist">
       <div className="checklist-head">
