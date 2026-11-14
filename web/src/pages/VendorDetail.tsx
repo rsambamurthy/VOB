@@ -9,7 +9,7 @@ import { Checklist } from '../components/Checklist';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import { isEditableStatus } from '../lib/types';
-import type { AgreementView, ChangeRequest, Check, Duplicate, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
+import type { AgreementView, QuestionnaireView, ChangeRequest, Check, Duplicate, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
 import { ChangeDiff, CrBadge, diffProfiles, FlagBadges, isMasked, MASKED_FIELDS } from '../components/Lifecycle';
 import { ErpCard } from '../components/Erp';
 import { SupplierAccessCard } from '../components/SupplierAccess';
@@ -17,11 +17,12 @@ import { useSession } from '../lib/session';
 import { ChecksPanel } from '../components/Checks';
 import { ExtractionList } from '../components/ExtractionCard';
 import { AgreementsPanel } from '../components/Agreements';
+import { QuestionnairesPanel, RiskBadge } from '../components/Questionnaires';
 import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { TabStrip } from '../components/TabStrip';
 
 type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
-  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode; agreements: AgreementView[] };
+  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; questionnaireHistory: { id: string; questionnaireId: string; submittedAt: string; submittedByName: string | null; percent: number | null; band: string | null; requestedByName: string | null }[]; canRequestQuestionnaire: boolean };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
@@ -51,6 +52,7 @@ export function VendorDetail() {
   const [assistDirty, setAssistDirty] = useState<Set<string>>(new Set());
   const [assistSubmit, setAssistSubmit] = useState(false);
   const [dismissing, setDismissing] = useState<Duplicate>();
+  const [sendingQn, setSendingQn] = useState(false);
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
   useEffect(() => { load(); }, [load]);
@@ -70,7 +72,8 @@ export function VendorDetail() {
   const sectionTabs = config.sections.map((s) => ({ key: s.key, label: s.label }));
   const docTab = { key: 'documents', label: 'Documents' };
   const agrTab = d.agreements.length ? { key: 'agreements', label: `Agreements${d.agreements.some((a) => a.required && a.outstanding) ? ' •' : ''}` } : undefined;
-  const tabs = [...formTabs(sectionTabs, docTab, autoAssist, agrTab),
+  const qnTab = d.questionnaires.length || d.canRequestQuestionnaire ? { key: 'questionnaires', label: `Questionnaires${d.questionnaires.some((q) => q.result?.band === 'HIGH') ? ' ⚠' : d.questionnaires.some((q) => q.outstanding) ? ' •' : ''}` } : undefined;
+  const tabs = [...formTabs(sectionTabs, docTab, autoAssist, qnTab, agrTab),
     ...(d.changeRequests.length ? [{ key: 'changes', label: `Changes${openCrs.length ? ` (${openCrs.length})` : ''}` }] : []), { key: 'history', label: 'History' }];
   const approved = v.status === 'APPROVED';
   const shownProfile = Object.keys(revealed).length ? Object.fromEntries(Object.entries(v.profile).map(([sec, vals]) => [sec, { ...vals, ...Object.fromEntries(Object.entries(revealed).filter(([k]) => k.startsWith(`${sec}.`)).map(([k, x]) => [k.split('.')[1], x])) }])) : v.profile;
@@ -114,6 +117,9 @@ export function VendorDetail() {
     await api(`/staff/vendors/${id}/assist/agreements/${a.id}/signed-copy`, { body: fd });
     setFlash({ kind: 'success', text: `Signed copy of the ${a.title} recorded.` }); await load();
   }
+  async function assistQnSave(q: QuestionnaireView, answers: Record<string, unknown>) { await api(`/staff/vendors/${id}/assist/questionnaires/${q.id}`, { method: 'PUT', body: { answers } }); await load(); }
+  async function assistQnSubmit(q: QuestionnaireView, answers: Record<string, unknown>) { await api(`/staff/vendors/${id}/assist/questionnaires/${q.id}/submit`, { body: { answers } }); setFlash({ kind: 'success', text: `${q.title} submitted for ${v.name}.` }); await load(); }
+  async function assistQnUpload(q: QuestionnaireView, file: File) { const fd = new FormData(); fd.append('file', file); return api<{ documentId: string; fileName: string }>(`/staff/vendors/${id}/assist/questionnaires/${q.id}/file`, { body: fd }); }
   async function assistDone() {
     if (assistDirty.size && !(await assistSave())) return;
     setAssist(undefined); setFlash({ kind: 'success', text: 'Saved. The supplier sees these details when they open their invitation, and can check them and submit.' });
@@ -273,6 +279,11 @@ export function VendorDetail() {
                 {cr.remarks && cr.status !== 'PENDING' && <p className="small muted">Decision remarks: “{cr.remarks}”</p>}
               </div>
             ))}
+            {tab === 'questionnaires' && <>
+              {d.canRequestQuestionnaire && !d.privacy.erasedAt && <div className="row-between"><span className="small muted">Scores and risk are shown to your staff only, never to the supplier.</span><button className="btn btn-secondary btn-sm" onClick={() => setSendingQn(true)}>Send questionnaire…</button></div>}
+              <QuestionnairesPanel items={d.questionnaires} {...(assisting ? { onSave: assistQnSave, onSubmit: assistQnSubmit, onUpload: assistQnUpload } : {})} />
+              {(() => { const seen = new Set<string>(); const earlier = d.questionnaireHistory.filter((r) => (seen.has(r.questionnaireId) ? true : (seen.add(r.questionnaireId), false))); return earlier.length > 0 && <QuestionnaireHistory rows={earlier} titles={Object.fromEntries(d.questionnaires.map((q) => [q.id, q.title]))} />; })()}
+            </>}
             {tab === 'agreements' && <AgreementsPanel agreements={d.agreements} vendorName={v.name} onSignedCopy={assisting ? assistSignedCopy : undefined} />}
             {tab === 'documents' && <ExtractionList extractions={d.extractions} documents={v.documents} requirements={d.docRequirements} onApply={assisting ? assistApply : undefined} />}
             {tab === 'history' && (
@@ -333,6 +344,7 @@ export function VendorDetail() {
       {privacyAction && <PrivacyModal mode={privacyAction} vendor={v} onClose={() => setPrivacyAction(undefined)} onDone={(m) => { setPrivacyAction(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {blockMode && <BlockModal mode={blockMode} vendorId={v.id} onClose={() => setBlockMode(undefined)} onDone={(m) => { setBlockMode(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {proposeOpen && <ProposeModal changes={proposedChanges} docCount={myStaged.length} onClose={() => setProposeOpen(false)} onSubmit={submitProposal} />}
+      {sendingQn && <SendQuestionnaireModal vendorId={v.id} vendorName={v.name} onClose={() => setSendingQn(false)} onDone={(m) => { setSendingQn(false); setFlash({ kind: 'success', text: m }); load(); }} />}
       {dismissing && <DismissDuplicateModal vendorId={v.id} other={dismissing} onClose={() => setDismissing(undefined)} onDone={() => { setDismissing(undefined); setFlash({ kind: 'success', text: `Marked as not a duplicate of ${dismissing.code}.` }); load(); }} />}
       {crAction && <CrDecisionModal {...crAction} onClose={() => setCrAction(undefined)} onDone={(m) => { setCrAction(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {crReassign && <ReassignModal listUrl={`/staff/change-requests/${crReassign.id}/assignable`} assignUrl={`/staff/change-requests/${crReassign.id}/steps/${crReassign.steps.find((s) => s.status === 'PENDING')!.id}/assign`}
@@ -588,6 +600,37 @@ function DismissDuplicateModal({ vendorId, other, onClose, onDone }: { vendorId:
       <p className="small muted">Both suppliers share the same {other.matches.join(', ')}. Use this only when they really are different businesses — for example group companies with one PAN, or a proprietor with two firms. The reason is kept on both suppliers’ history.</p>
       <div className="field"><label htmlFor="dup-note">Why they are different<span className="req"> *</span></label>
         <input id="dup-note" value={note} maxLength={500} placeholder="e.g. sister company, separate GST registration; confirmed with procurement" onChange={(e) => setNote(e.target.value)} autoFocus /></div>
+    </Modal>
+  );
+}
+
+function QuestionnaireHistory({ rows, titles }: { rows: { id: string; questionnaireId: string; submittedAt: string; submittedByName: string | null; percent: number | null; band: string | null; requestedByName: string | null }[]; titles: Record<string, string> }) {
+  return (
+    <div><h4 className="small">Earlier answers</h4>
+      <table className="table static small"><thead><tr><th>Questionnaire</th><th>Submitted</th><th>By</th><th>Result</th></tr></thead>
+        <tbody>{rows.map((r) => <tr key={r.id}><td>{titles[r.questionnaireId] ?? '—'}{r.requestedByName ? <span className="muted"> · sent by {r.requestedByName}</span> : ''}</td><td>{fmtDateTime(r.submittedAt)}</td><td>{r.submittedByName}</td><td><RiskBadge band={r.band} percent={r.percent} /></td></tr>)}</tbody></table>
+    </div>
+  );
+}
+
+function SendQuestionnaireModal({ vendorId, vendorName, onClose, onDone }: { vendorId: string; vendorName: string; onClose: () => void; onDone: (m: string) => void }) {
+  const [list, setList] = useState<{ id: string; title: string; status: string }[]>();
+  const [qid, setQid] = useState('');
+  const [dueOn, setDueOn] = useState('');
+  const [err, setErr] = useState<string>();
+  useEffect(() => { api<{ id: string; title: string; status: string }[]>('/questionnaires/active').then((l) => { setList(l); setQid(l[0]?.id ?? ''); }).catch((e) => setErr(e.message)); }, []);
+  async function send() {
+    try { await api(`/staff/vendors/${vendorId}/questionnaires/${qid}/request`, { body: { dueOn: dueOn || null } }); onDone(`Questionnaire sent to ${vendorName}. They have been emailed and see it in their portal.`); }
+    catch (e: any) { setErr(e.message); }
+  }
+  return (
+    <Modal title="Send questionnaire" onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={!qid} onClick={send}>Send</button></>}>
+      {err && <Alert kind="error">{err}</Alert>}
+      {!list ? <div className="spinner" /> : !list.length ? <p className="muted">No questionnaires yet — add one under Administration → Questionnaires.</p> : (<>
+        <div className="field"><label htmlFor="sq-q">Questionnaire</label><select id="sq-q" value={qid} onChange={(e) => setQid(e.target.value)}>{list.map((q) => <option key={q.id} value={q.id}>{q.title}</option>)}</select></div>
+        <div className="field"><label htmlFor="sq-due">Answer by (optional)</label><input id="sq-due" type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} /></div>
+        <p className="small muted">{vendorName} is emailed and the questionnaire appears in their portal, starting from their last answers. Until they submit, the vendor list shows “Questionnaire to answer”.</p>
+      </>)}
     </Modal>
   );
 }

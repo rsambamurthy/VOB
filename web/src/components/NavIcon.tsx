@@ -19,6 +19,7 @@ const PATHS: Record<string, string> = {
   erp: 'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6',
   audit: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
   apply: 'M15 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19 8v6M22 11h-6',
+  questionnaire: 'M9 4h6v3H9zM7 5H5v16h14V5h-2M8 11h1M11 11h5M8 15h1M11 15h5',
   agreement: 'M7 3h7l5 5v13H7zM14 3v5h5M9.5 17.5c1-1.5 1.8-1.5 2.5 0s1.5 1.5 2.5 0',
   mail: 'M3 5h18v14H3zM3 6l9 7 9-7',
   billing: 'M2 6h20v12H2zM2 10h20M6 15h4',

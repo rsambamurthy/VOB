@@ -23,6 +23,7 @@ import { upload } from '../lib/upload.js';
 import { addDocument, applyExtractedValues, formState, isEditableStatus, saveSection, submitForReview, type Actor } from '../services/onboarding.js';
 import type { Tenant } from '../db/schema.js';
 import { recordSignedCopy } from '../services/agreements.js';
+import { answerRoutes } from './questionnaires.js';
 
 export const assistRouter = Router({ mergeParams: true });
 const { vendors, documents } = schema;
@@ -36,7 +37,7 @@ async function editableVendor(tenantId: string, id: string) {
 async function state(tenant: Tenant, vendorId: string) {
   const v = (await db.query.vendors.findFirst({ where: eq(vendors.id, vendorId), with: { documents: true } }))!;
   const { config } = await getPublished(tenant.id);
-  return { profile: maskProfile(v.profile as Profile), ...(await formState(tenant, config, v)) };
+  return { profile: maskProfile(v.profile as Profile), ...(await formState(tenant, config, v, { forStaff: true })) };
 }
 const buyer = (req: Parameters<typeof staffCtx>[0]): Actor => { const s = staffCtx(req); return { name: s.user.name, userId: s.user.id, onBehalf: true, ip: req.ip }; };
 
@@ -87,6 +88,14 @@ assistRouter.post('/agreements/:agreementId/signed-copy', requireStaff('vendors.
   await recordSignedCopy(v, req.params.agreementId, signer, req.file, { id: s.user.id, name: s.user.name, email: s.user.email, ip: req.ip });
   res.status(201).json(await state(s.tenant, v.id));
 }));
+
+// Questionnaires, answered for the supplier — the same routes the supplier portal uses.
+answerRoutes(assistRouter, {
+  guard: requireStaff('vendors.create'),
+  vendor: (req) => editableVendor(staffCtx(req).tenant.id, req.params.id),
+  actor: (req) => { const s = staffCtx(req); return { name: s.user.name, userId: s.user.id, onBehalf: true, ip: req.ip }; },
+  respond: (req, v) => state(staffCtx(req).tenant, v.id),
+});
 
 /** Submit for approval on the supplier's behalf. The buyer confirms the supplier provided the details and saw the privacy notice. */
 assistRouter.post('/submit', requireStaff('vendors.create'), ah(async (req, res) => {

@@ -99,3 +99,12 @@ export interface AgreementView {
   current: { id: string; version: number; kind: 'TEXT' | 'PDF'; body: string | null; hasArabic: boolean; fileName: string | null; publishedAt: string; changeNote: string | null };
   accepted: { id: string; version: number; signerName: string; signerDesignation: string; acceptedAt: string; recordedByName: string | null } | null;
 }
+/** A questionnaire as the supplier, a buyer filling in for them, or a reviewer sees it. `result` is for staff only. */
+export interface QuestionnaireView {
+  id: string; title: string; description: string | null; required: boolean; outstanding: boolean; requested: boolean; dueOn: string | null;
+  status: 'NEW' | 'DRAFT' | 'SUBMITTED'; submittedAt: string | null; submittedByName: string | null;
+  questions: { id: string; type: 'yesno' | 'choice' | 'multi' | 'text' | 'number' | 'file'; required: boolean; text: string; help?: string; showIf?: { questionId: string; equals: string };
+    options?: { value: string; label: string; points?: number; knockout?: boolean }[] }[];
+  answers: Record<string, unknown>;
+  result?: { score: number | null; maxScore: number | null; percent: number | null; band: 'LOW' | 'MEDIUM' | 'HIGH' | null; knockouts: string[] | null };
+}

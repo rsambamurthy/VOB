@@ -49,6 +49,18 @@ export async function globexAdmin() {
   return login('admin@globex.test', 'globex');
 }
 
+/** Invite a supplier and sign them in to the portal with the privacy notice accepted (still onboarding). */
+export async function invitedSupplier(name: string, email: string, vendorType: 'DOMESTIC' | 'IMPORT' | 'GOVERNMENT' = 'DOMESTIC') {
+  const admin = await login('admin@acme.test');
+  const id = (await admin.post('/api/staff/vendors', { name, vendorType, contactFirstName: 'Test', contactLastName: 'Supplier', contactEmail: email, contactMobile: '9800033344' })).body.vendor.id;
+  const token = tokenOf((await lastLinkTo(email))!);
+  const v = client();
+  const { devOtp } = (await v.post('/api/vendor-auth/request-otp', { token })).body;
+  await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp });
+  await v.post('/api/vendor/consent', { version: (await v.get('/api/vendor')).body.privacy.version });
+  return { id, v, admin };
+}
+
 /** Onboard a vendor all the way to APPROVED and return a signed-in vendor session. `beforeSubmit` runs just before
  *  submitting (e.g. to accept agreements); `vendorType` defaults to DOMESTIC. */
 const PDF = '%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF';

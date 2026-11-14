@@ -186,5 +186,9 @@
   "Enter a valid email": "أدخلوا بريداً إلكترونياً صحيحاً",
   "First name is required": "الاسم الأول مطلوب",
   "Last name is required": "اسم العائلة مطلوب",
-  "Enter a mobile number": "أدخلوا رقم الجوال"
+  "Enter a mobile number": "أدخلوا رقم الجوال",
+  "{label} must be answered": "يجب الإجابة عن {label}",
+  "Answer every required question first": "أجيبوا أولاً عن جميع الأسئلة المطلوبة",
+  "Questionnaire not found": "لم يتم العثور على الاستبيان",
+  "{label} — please answer": "{label} — يرجى الإجابة"
 }

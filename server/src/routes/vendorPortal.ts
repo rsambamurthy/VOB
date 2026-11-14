@@ -22,6 +22,7 @@ import { arLabel, localizeConfig, supplierLanguages, translateMessage, vendorLan
 import { addDocument, applyExtractedValues, formState, isEditableStatus, saveSection, submitForReview, type Actor } from '../services/onboarding.js';
 import { upload } from '../lib/upload.js';
 import { acceptAgreement } from '../services/agreements.js';
+import { answerRoutes } from './questionnaires.js';
 
 export const vendorRouter = Router();
 vendorRouter.use(requireVendor);
@@ -33,7 +34,7 @@ const requireConsent = ah(async (req, _res, next) => {
   if (!v || needsConsent(tenant, v)) throw new HttpError(403, 'Please read and accept the privacy notice first', undefined, 'CONSENT_REQUIRED');
   next();
 });
-for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details', '/agreements']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
+for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details', '/agreements', '/questionnaires']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
 
 /** The supplier, as the one acting (their contact email is what the history shows). */
 const supplier = (req: { ip?: string }, v: { contactEmail: string }): Actor => ({ name: v.contactEmail, ip: req.ip });
@@ -92,6 +93,7 @@ vendorRouter.get('/', ah(async (req, res) => {
     checklist: form.checklist,
     docRequirements: form.docRequirements,
     agreements: form.agreements,
+    questionnaires: form.questionnaires,
     editable: isEditableStatus(v.status),
     lifecycle: v.status === 'APPROVED' ? {
       blocked: !!v.blockedAt,
@@ -199,6 +201,18 @@ vendorRouter.post('/agreements/:id/accept', ah(async (req, res) => {
   const form = await formState(vendorCtx(req).tenant, config, v, { lang });
   res.json({ checklist: form.checklist, agreements: form.agreements });
 }));
+
+// Questionnaires: the same answering routes as a buyer filling in for the supplier.
+answerRoutes(vendorRouter, {
+  vendor: loadMine,
+  actor: (req, v) => supplier(req, v),
+  respond: async (req, v) => {
+    const { config } = await getPublished(v.tenantId);
+    const fresh = await loadMine(req);
+    const { checklist, questionnaires } = await formState(vendorCtx(req).tenant, config, fresh, { lang: vendorLanguage(vendorCtx(req).tenant, fresh) });
+    return { checklist, questionnaires };
+  },
+});
 
 vendorRouter.post('/submit', ah(async (req, res) => {
   const v = await loadMine(req);

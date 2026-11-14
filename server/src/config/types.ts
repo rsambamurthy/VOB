@@ -113,11 +113,12 @@ export const vendorTypes = [
 
 const KEY = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/, 'Keys must start with a letter and use letters, digits or _ (max 40)');
 const DOC_KEY = z.string().regex(/^[A-Z][A-Z0-9_]{1,39}$/, 'Document codes must be UPPER_CASE letters, digits or _');
-const condition = z.object({
+export const conditionSchema = z.object({
   field: z.string().min(3),
   op: z.enum(OPS),
   value: z.union([z.string().max(200), z.number(), z.array(z.string().max(200)).max(50)]).optional(),
 });
+const condition = conditionSchema;
 const arText = z.object({
   label: z.string().max(200).optional(), help: z.string().max(400).optional(), placeholder: z.string().max(160).optional(),
   options: z.array(z.string().max(160)).max(200).optional(), title: z.string().max(160).optional(), body: z.string().max(3000).optional(),

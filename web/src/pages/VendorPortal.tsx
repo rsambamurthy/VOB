@@ -8,12 +8,13 @@ import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
-import type { AgreementView, Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Flag, Profile, SectionDef, VendorFull } from '../lib/types';
+import type { AgreementView, QuestionnaireView, Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Flag, Profile, SectionDef, VendorFull } from '../lib/types';
 import { ChangeDiff, CrHistory, diffProfiles, FlagBadges } from '../components/Lifecycle';
 import { fmtDate, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
 import { ExtractionList } from '../components/ExtractionCard';
 import { AgreementsPanel } from '../components/Agreements';
+import { QuestionnairesPanel } from '../components/Questionnaires';
 import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
 import { rememberWorkspace, saveLanguage, SupplierFrame, supplierSignOut } from '../orders/SupplierShell';
@@ -22,7 +23,7 @@ import { setLang, t, useLang, type Lang } from '../i18n';
 import { Rich } from '../i18n/Rich';
 import { TabStrip } from '../components/TabStrip';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode; agreements: AgreementView[] };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[] };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; hold: { reason: string | null } | null; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
@@ -103,7 +104,9 @@ export function VendorPortal() {
   const sectionTabs = cfg.sections.map((s) => ({ key: s.key, label: s.label }));
   const docTab = { key: 'documents', label: t('portal.documentsTab') };
   const agrTab = me.agreements.length ? { key: 'agreements', label: t('agr.tab') } : undefined;
-  const tabs = formTabs(sectionTabs, docTab, auto, agrTab);
+  const qnTab = me.questionnaires.length ? { key: 'questionnaires', label: t('qn.tab') } : undefined;
+  const tabs = formTabs(sectionTabs, docTab, auto, qnTab, agrTab);
+  const questionnairesDue = me.questionnaires.filter((q) => q.outstanding).length;
   const agreementsDue = me.agreements.filter((a) => a.required && a.outstanding).length;
   // Per field: filled in from which document, or read but waiting for the supplier (bank details, low confidence, different from what they typed).
   const { sources, filledCount, toConfirm } = auto
@@ -153,6 +156,13 @@ export function VendorPortal() {
     setFlash({ kind: 'success', text: t('agr.accepted') });
     await load();
   }
+  // Questionnaires: answers save as a draft until submitted.
+  async function saveQuestionnaire(q: QuestionnaireView, answers: Record<string, unknown>) { await api(`/vendor/questionnaires/${q.id}`, { method: 'PUT', body: { answers } }); setFlash({ kind: 'success', text: t('qn.saved') }); await load(); }
+  async function submitQuestionnaire(q: QuestionnaireView, answers: Record<string, unknown>) {
+    for (const sec of [...dirty]) if (!(await save(sec, true))) return;
+    await api(`/vendor/questionnaires/${q.id}/submit`, { body: { answers } }); setFlash({ kind: 'success', text: t('qn.sent') }); await load();
+  }
+  async function uploadForQuestionnaire(q: QuestionnaireView, file: File) { const fd = new FormData(); fd.append('file', file); return api<{ documentId: string; fileName: string }>(`/vendor/questionnaires/${q.id}/file`, { body: fd }); }
   async function applyExtraction(id: string, fieldIds: string[]) {
     for (const sec of [...dirty]) if (!(await save(sec, true))) return;
     try {
@@ -254,6 +264,7 @@ export function VendorPortal() {
             <button className="btn btn-primary btn-sm" onClick={confirmDetails}>{t('portal.theyAreCorrect')}</button>{' '}
             {canChange && <button className="btn btn-ghost btn-sm" onClick={() => setChangeMode(true)}>{t('portal.somethingChanged')}</button>}</Alert>
         )}
+        {approved && questionnairesDue > 0 && tab !== 'questionnaires' && <Alert kind="warning">{t('qn.pendingBanner', { buyer: me.buyer.name, count: questionnairesDue })} <button className="link-btn" onClick={() => goTo('questionnaires')}>{t('qn.open')}</button></Alert>}
         {approved && agreementsDue > 0 && tab !== 'agreements' && <Alert kind="warning">{t('agr.pendingBanner', { buyer: me.buyer.name, count: agreementsDue })} <button className="link-btn" onClick={() => goTo('agreements')}>{t('agr.review')}</button></Alert>}
         {approved && docFlags.length > 0 && <Alert kind="warning"><strong>{docFlags.map((f) => f.label).join(' · ')}.</strong> {t('portal.uploadRenewedA')} <button className="link-btn" onClick={() => goTo('documents')}>{t('portal.documentsTab')}</button> {t('portal.uploadRenewedB')}</Alert>}
         {approved && changeMode && <Alert kind="info"><strong>{t('portal.editing')}</strong> {t('portal.editingText')}</Alert>}
@@ -284,6 +295,7 @@ export function VendorPortal() {
               ))}
               {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={docsEditable} onUpload={upload} onDelete={remove}
                 canDelete={approved ? (d) => d.status === 'PENDING' && !d.changeRequestId : undefined} uploadLabel={approved ? t('portal.uploadRenewal') : undefined} />}
+              {tab === 'questionnaires' && <QuestionnairesPanel items={me.questionnaires} buyer={me.buyer.name} {...(me.editable || approved ? { onSave: saveQuestionnaire, onSubmit: submitQuestionnaire, onUpload: uploadForQuestionnaire } : {})} />}
               {tab === 'agreements' && <AgreementsPanel agreements={me.agreements} vendorName={v.name} buyer={me.buyer.name} defaultSigner={`${v.contactFirstName} ${v.contactLastName}`.trim()} onAccept={acceptAgreement} />}
               {tab === 'documents' && me.editable && <ExtractionList extractions={me.extractions} documents={v.documents} requirements={me.docRequirements} onApply={applyExtraction} />}
             </div>

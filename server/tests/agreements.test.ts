@@ -4,7 +4,7 @@
  */
 import { afterAll, describe, expect, test } from 'vitest';
 import { desc, eq } from 'drizzle-orm';
-import { approvedVendor, client, lastLinkTo, login, tokenOf } from './helpers.js';
+import { approvedVendor, client, invitedSupplier, login } from './helpers.js';
 import { db, schema } from '../src/lib/db.js';
 
 const PDF = '%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF';
@@ -12,16 +12,7 @@ const CODE = 'Suppliers must act honestly and lawfully, pay fair wages, respect 
 const created: string[] = [];
 type C = ReturnType<typeof client>;
 
-async function newSupplier(name: string, email: string) {
-  const admin = await login('admin@acme.test');
-  const id = (await admin.post('/api/staff/vendors', { name, vendorType: 'GOVERNMENT', contactFirstName: 'Gov', contactLastName: 'User', contactEmail: email, contactMobile: '9800033344' })).body.vendor.id;
-  const token = tokenOf((await lastLinkTo(email))!);
-  const v = client();
-  const { devOtp } = (await v.post('/api/vendor-auth/request-otp', { token })).body;
-  await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp });
-  await v.post('/api/vendor/consent', { version: (await v.get('/api/vendor')).body.privacy.version });
-  return { id, v, admin };
-}
+const newSupplier = (name: string, email: string) => invitedSupplier(name, email, 'GOVERNMENT');
 const acceptAll = async (v: C) => {
   for (const a of (await v.get('/api/vendor')).body.agreements.filter((x: any) => x.outstanding)) {
     expect((await v.post(`/api/vendor/agreements/${a.id}/accept`, { versionId: a.current.id, signerName: 'Gita Rao', signerDesignation: 'Director', agree: true })).status).toBe(200);

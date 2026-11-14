@@ -459,6 +459,27 @@ The **Approval flow** card on the right shows every level and its status. When a
 - **Decline** records a reason and, if you choose, emails the applicant.`,
   },
   {
+    id: 'questionnaires', title: 'Supplier questionnaires and risk scores', audience: ['staff'], perms: ['config.manage', 'vendors.view'],
+    summary: 'ESG, information security, quality, anti-bribery — asked by category, scored into Low / Medium / High risk.',
+    screens: ['^/staff/admin/questionnaires', '^/staff/vendors/[^/]+$'],
+    keywords: 'questionnaire questionnaires survey esg sustainability information security infosec quality iso anti-bribery category score risk band knock-out send yearly',
+    related: ['agreements', 'scorecards', 'review-decide'],
+    body: `Under **Administration → Questionnaires** (needs *Edit onboarding configuration*) build the questions suppliers answer in the portal. Start from a template — **ESG**, **Information security**, **Anti-bribery** or **Quality** — and change anything.
+
+- **Asked of**: all suppliers, or only when a form answer matches — e.g. *Category of Supply is Services*, or a vendor type. Add your own categories as a dropdown in Configuration.
+- **Required during onboarding**: suppliers can't submit for approval until they answer it.
+- **Question types**: Yes / No, one choice, several choices, text, number, file upload. A question can be a **follow-up**, shown only for a given answer (“If yes, upload your ISO certificate”). Questions and answers can have Arabic wording.
+- **Scoring**: each answer carries points (a file can too). The total as a % of the maximum gives the risk: **Low** at or above your Low threshold (75% by default), **Medium** at or above the Medium one (50%), **High** below. A **knock-out** answer (e.g. “Yes” to child labour) makes it High whatever the score.
+
+**Suppliers** find a **Questionnaires** tab before Agreements. They can save and come back, then submit. They never see points or scores. A buyer filling in for a supplier can answer for them.
+
+**Reviewers** see each questionnaire's answers with the score and risk on the supplier's page; knock-out answers are highlighted, and suppliers with a High result show **High-risk questionnaire answers** in the vendor list.
+
+**Sending one later** (needs *Edit vendors*): on the supplier's page, Questionnaires → *Send questionnaire…*, optionally with a date to answer by — for example a yearly ESG review. The supplier is emailed; it starts from their last answers; the list shows **Questionnaire to answer** until they submit. Earlier answers stay on the page.
+
+Editing a questionnaire only affects new answers — submitted ones keep the questions they answered.`,
+  },
+  {
     id: 'agreements', title: 'Agreements suppliers accept', audience: ['staff'], perms: ['config.manage', 'vendors.view'],
     summary: 'Code of conduct, NDA, supplier agreement: set them up, versions, accept again, certificates.',
     screens: ['^/staff/admin/agreements', '^/staff/vendors/[^/]+$'],

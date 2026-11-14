@@ -21,6 +21,7 @@ import { startReview } from './workflowEngine.js';
 import { withIdentity } from './duplicates.js';
 import type { OnboardingConfig } from '../config/types.js';
 import { agreementChecklist, agreementsFor, agreementView } from './agreements.js';
+import { questionnaireChecklist, questionnairesFor, questionnaireView } from './questionnaires.js';
 import { localizeConfig, translateMessage, type Lang } from '../i18n/index.js';
 import type { Tenant, Vendor } from '../db/schema.js';
 
@@ -46,15 +47,20 @@ const localItems = <T extends { label: string; message?: string }>(items: T[], l
  * The form state either side shows: checklist (fields, documents and agreements), which documents apply,
  * and the agreements to accept — in the reader's language.
  */
-export async function formState(tenant: Tenant, config: OnboardingConfig, vendor: VendorWithDocs, opts: { profile?: Profile; lang?: Lang } = {}) {
+export async function formState(tenant: Tenant, config: OnboardingConfig, vendor: VendorWithDocs, opts: { profile?: Profile; lang?: Lang; forStaff?: boolean } = {}) {
   const profile = opts.profile ?? (vendor.profile as Profile);
   const lang = opts.lang ?? 'en';
   const shown = localizeConfig(config, lang);
-  const ags = await agreementsFor(vendor);
+  const [ags, qs] = await Promise.all([agreementsFor(vendor), questionnairesFor({ ...vendor, profile })]);
   return {
-    checklist: [...localItems(buildChecklist(shown, profile, activeTypes(vendor.documents), vendor.vendorType), lang), ...localItems(agreementChecklist(ags, lang), lang)],
+    checklist: [
+      ...localItems(buildChecklist(shown, profile, activeTypes(vendor.documents), vendor.vendorType), lang),
+      ...localItems(agreementChecklist(ags, lang), lang),
+      ...localItems(questionnaireChecklist(qs, { ...vendor, profile }, lang), lang),
+    ],
     docRequirements: docRequirementsFor(tenant, shown, profile, vendor),
     agreements: ags.map((a) => agreementView(a, lang)),
+    questionnaires: qs.map((q) => questionnaireView(q, lang, { forStaff: opts.forStaff })),
   };
 }
 

@@ -67,6 +67,8 @@ export async function exportVendorData(v: Vendor, opts: { forStaff: boolean }) {
   const kyc = kycStatus(), ai = aiStatus();
   const accs = await db.select().from(schema.agreementAcceptances).where(eq(schema.agreementAcceptances.vendorId, v.id));
   const ags = await db.select({ id: schema.agreements.id, title: schema.agreements.title }).from(schema.agreements).where(eq(schema.agreements.tenantId, v.tenantId));
+  const qrs = await db.select().from(schema.questionnaireResponses).where(eq(schema.questionnaireResponses.vendorId, v.id));
+  const qTitles = await db.select({ id: schema.questionnaires.id, title: schema.questionnaires.title }).from(schema.questionnaires).where(eq(schema.questionnaires.tenantId, v.tenantId));
   const auditRows = opts.forStaff ? await db.select().from(auditLogs).where(eq(auditLogs.vendorId, v.id)) : [];
   return {
     exportedAt: new Date().toISOString(),
@@ -82,6 +84,7 @@ export async function exportVendorData(v: Vendor, opts: { forStaff: boolean }) {
     changeRequests: crs.map((c) => ({ status: c.status, changes: c.changes, note: c.note, requestedAt: c.createdAt, decidedAt: c.decidedAt, raisedBy: c.raisedById ? 'buyer staff' : 'you' })),
     approvals: steps.map((s) => ({ level: s.label, status: s.status, decidedAt: s.actedAt, ...(opts.forStaff ? { remarks: s.remarks } : {}) })),
     consent: { noticeVersion: v.consentVersion, givenAt: v.consentAt },
+    questionnaires: qrs.map((r) => ({ questionnaire: qTitles.find((q) => q.id === r.questionnaireId)?.title, status: r.status, answers: r.answers, submittedAt: r.submittedAt, ...(opts.forStaff ? { score: r.percent, risk: r.band } : {}) })),
     agreements: accs.map((a) => ({ agreement: ags.find((g) => g.id === a.agreementId)?.title, version: a.version, acceptedBy: `${a.signerName}, ${a.signerDesignation}`, acceptedAt: a.acceptedAt, from: a.ip, recordedBy: a.recordedByName ?? undefined })),
     erasure: { requestedAt: v.erasureRequestedAt, reason: v.erasureReason },
     sharedWith: [
@@ -137,6 +140,7 @@ export async function eraseVendor(tenantId: string, vendorId: string, reason: st
     await tx.delete(documentExtractions).where(eq(documentExtractions.vendorId, v.id));
     await tx.delete(documents).where(eq(documents.vendorId, v.id));
     await tx.delete(verifications).where(eq(verifications.vendorId, v.id));
+    await tx.delete(schema.questionnaireResponses).where(eq(schema.questionnaireResponses.vendorId, v.id));
     // Keep that an agreement version was accepted and when (evidence for the contract); drop who and from where.
     await tx.update(schema.agreementAcceptances).set({ signerName: 'Erased', signerDesignation: '', signerEmail: null, ip: null, userAgent: null, signedCopyDocumentId: null }).where(eq(schema.agreementAcceptances.vendorId, v.id));
     await tx.delete(otpCodes).where(eq(otpCodes.vendorId, v.id));

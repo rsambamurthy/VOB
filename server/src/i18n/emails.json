@@ -498,5 +498,15 @@
       "subject": "{buyer}: طلبكم للانضمام كمورد",
       "body": "مرحباً {first}،\n\nشكراً لاهتمامكم بالانضمام كمورد لدى {buyer}. بعد مراجعة طلب {vendor}، لا يمكننا المضي فيه في الوقت الحالي.\n\n{reason}"
     }
+  },
+  "questionnaireRequest": {
+    "en": {
+      "subject": "{buyer}: please complete the {questionnaire}",
+      "body": "Dear {first},\n\n{buyer} asks you to complete the {questionnaire}. Please sign in to the supplier portal and answer it under Questionnaires.\n\nPlease complete it by: {due}"
+    },
+    "ar": {
+      "subject": "{buyer}: يُرجى تعبئة {questionnaire}",
+      "body": "مرحباً {first}،\n\nيطلب منكم {buyer} تعبئة {questionnaire}. يُرجى تسجيل الدخول إلى بوابة الموردين والإجابة عنه من قسم الاستبيانات.\n\nيُرجى إكماله بحلول: {due}"
+    }
   }
 }

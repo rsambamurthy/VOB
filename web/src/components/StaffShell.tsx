@@ -51,6 +51,7 @@ export function StaffShell() {
       { to: '/staff/admin/roles', label: 'Roles', icon: 'roles', show: can('users.manage') },
       { to: '/staff/admin/config', label: 'Configuration', icon: 'config', show: can('config.manage') },
       { to: '/staff/admin/agreements', label: 'Agreements', icon: 'agreement', show: can('config.manage') },
+      { to: '/staff/admin/questionnaires', label: 'Questionnaires', icon: 'questionnaire', show: can('config.manage') },
       { to: '/staff/admin/workspace', label: 'Workspace', icon: 'workspace', show: can('tenant.settings') },
       { to: '/staff/admin/sign-in', label: 'Sign-in & SSO', icon: 'signin', show: can('tenant.settings') },
       { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },

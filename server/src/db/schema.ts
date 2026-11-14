@@ -852,6 +852,53 @@ export const agreementAcceptances = pgTable('agreement_acceptances', {
   acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('agreement_acceptances_vendor_idx').on(t.vendorId, t.agreementId)]);
 
+/**
+ * Questionnaires suppliers answer (ESG, information security, quality, anti-bribery…), targeted by any form
+ * answer. Questions live here; a response keeps a copy of the questions it answered (edits only affect new ones).
+ * See services/questionnaires.ts.
+ */
+export const questionnaires = pgTable('questionnaires', {
+  id: id(), tenantId: tenantId(),
+  title: text('title').notNull(),
+  titleAr: text('title_ar'),
+  description: text('description'),
+  descriptionAr: text('description_ar'),
+  /** Which suppliers it applies to (a condition on the form, like "show if"); null = everyone. */
+  appliesIf: jsonb('applies_if'),
+  /** Must be answered before submitting for approval (otherwise offered). */
+  required: boolean('required').notNull().default(true),
+  questions: jsonb('questions').notNull().default([]),
+  /** Risk bands by score (% of the maximum): at or above `low` = Low risk, at or above `medium` = Medium, below = High. */
+  bands: jsonb('bands').notNull().default({ low: 75, medium: 50 }),
+  sortOrder: integer('sort_order').notNull().default(0),
+  status: text('status').notNull().default('ACTIVE'),
+  updatedByName: text('updated_by_name').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
+});
+
+/** A supplier's answers to one questionnaire. DRAFT (being answered) · SUBMITTED. Requested ones were sent by a buyer (e.g. yearly). */
+export const questionnaireResponses = pgTable('questionnaire_responses', {
+  id: id(), tenantId: tenantId(),
+  questionnaireId: text('questionnaire_id').notNull().references(() => questionnaires.id, { onDelete: 'cascade' }),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('DRAFT'),
+  answers: jsonb('answers').notNull().default({}),
+  /** Copy of the questions answered, taken on submit. */
+  questions: jsonb('questions'),
+  score: integer('score'), maxScore: integer('max_score'), percent: integer('percent'),
+  /** LOW · MEDIUM · HIGH risk */
+  band: text('band'),
+  knockouts: jsonb('knockouts'),
+  requestedByName: text('requested_by_name'),
+  requestedAt: timestamp('requested_at', { withTimezone: true }),
+  dueOn: date('due_on', { mode: 'string' }),
+  submittedByName: text('submitted_by_name'),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('questionnaire_responses_vendor_idx').on(t.vendorId, t.questionnaireId)]);
+
 /** Public "Become a supplier" links (website, trade fair, QR code…). Applications from them are screened before an invitation. */
 export const registrationLinks = pgTable('registration_links', {
   id: id(), tenantId: tenantId(),

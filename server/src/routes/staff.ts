@@ -18,6 +18,7 @@ import { dataEntryMode, extractionsFor } from '../integrations/ai/index.js';
 import { publicCheck } from './vendorPortal.js';
 import { upload } from '../lib/upload.js';
 import { checkExpiry, formState, isEditableStatus } from '../services/onboarding.js';
+import { requestQuestionnaire, responseHistory } from '../services/questionnaires.js';
 import { getPublished } from '../services/config.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { cancelStaffChange, changeRequestsForVendor, decideChange, flagsForMany, openChangeRequest, reassignChangeStep, reviewVendor, setBlocked, submitChangeRequest } from '../services/lifecycle.js';
@@ -152,7 +153,9 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
   res.json({
     vendor: { ...rest, profile: maskProfile(rest.profile), steps: rest.steps.map(({ role, assignee, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
     // Fields, documents and agreements — the same rules the supplier sees.
-    ...(await formState(s.tenant, config, v)),
+    ...(await formState(s.tenant, config, v, { forStaff: true })),
+    questionnaireHistory: (await responseHistory(v.id)).map((r) => ({ id: r.id, questionnaireId: r.questionnaireId, submittedAt: r.submittedAt, submittedByName: r.submittedByName, percent: r.percent, band: r.band, requestedByName: r.requestedByName })),
+    canRequestQuestionnaire: s.permissions.has('vendors.edit'),
     /** How the form is filled in: 'automatic' means documents first (also when a buyer fills it in for the supplier). */
     dataEntry: dataEntryMode(s.tenant),
     canAct: !!pending && await canAct(pending, s.user.id),
@@ -250,6 +253,16 @@ staffRouter.post('/vendors/:id/verify/:kind', requireStaff('vendors.view'), ah(a
 }));
 
 /* ---------- Change requests (after approval) ---------- */
+
+/** Send a questionnaire to a supplier (e.g. a yearly ESG review). */
+staffRouter.post('/vendors/:id/questionnaires/:qid/request', requireStaff('vendors.edit'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const v = await findVendor(s.tenant.id, req.params.id);
+  if (!v || v.erasedAt) throw new HttpError(404, 'Vendor not found');
+  const { dueOn } = z.object({ dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional() }).parse(req.body);
+  await requestQuestionnaire(s.tenant, v, req.params.qid, dueOn ?? null, { name: s.user.name, ip: req.ip });
+  res.json({ ok: true });
+}));
 
 staffRouter.get('/change-requests', requireStaff('vendors.view'), ah(async (req, res) => {
   const s = staffCtx(req);

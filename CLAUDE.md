@@ -30,6 +30,12 @@ documents-first because the supplier portal had its own copy of that logic).
 - Checklist and submit go through `services/onboarding.ts` (`formState`).
 - Screens: one `AgreementsPanel` (`web/src/components/Agreements.tsx`) for the portal, the buyer's fill-in and reviewers.
 
+**Questionnaires** (ESG, information security…):
+- Rules: `server/src/services/questionnaires.ts`.
+- Answering routes come from one `answerRoutes()` (`routes/questionnaires.ts`), mounted in both the portal and the buyer's fill-in.
+- Screens: one `QuestionnairesPanel` (`web/src/components/Questionnaires.tsx`).
+- Conditions reuse `RulePicker` / `ConditionEditor` from `pages/admin/config/shared.tsx`.
+
 **Creating suppliers**: `server/src/services/vendors.ts` (`createVendor` with `prefill` / `approved`).
 - Used for invites, Excel invites, approved imports and accepted applications.
 

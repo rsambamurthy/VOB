@@ -909,3 +909,19 @@ ul.plain { list-style: none; margin: 0; padding: 0; } ul.plain li + li { margin-
 .application-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 .app-kv { grid-template-columns: 130px 1fr; margin: 0; }
 .qr-box { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px; }
+/* Questionnaires (portal, buyer fill-in, vendor page) */
+.questionnaire-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; background: var(--card); }
+.questionnaire-card.open { border-color: var(--warn); box-shadow: inset 3px 0 0 var(--warn); }
+.qn-title { font-size: 15px; color: var(--ink); text-decoration: none; }
+.qn-questions { margin: 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 14px; }
+.qn-q { display: flex; flex-direction: column; gap: 6px; }
+.qn-text { font-weight: 600; color: var(--ink); }
+.qn-q textarea, .qn-q input:not([type]) , .qn-q input[inputmode] { max-width: 560px; }
+.qn-knockout { background: var(--err-bg); border-radius: 8px; padding: 6px 8px; }
+.risk-low { background: var(--ok-bg); color: var(--ok); } .risk-medium { background: var(--warn-bg); color: var(--warn); } .risk-high { background: var(--err-bg); color: var(--err); }
+/* Questionnaire builder */
+.template-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; background: var(--info-bg); border-radius: 10px; margin-bottom: 12px; }
+.qb-list { padding-inline-start: 22px; display: flex; flex-direction: column; gap: 14px; }
+.qb-q { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.qb-opts input:not([type=checkbox]) { width: 100%; }
+.num-in { width: 70px !important; }
