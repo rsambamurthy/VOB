@@ -443,6 +443,22 @@ Click a row to open the vendor.`,
 The **Approval flow** card on the right shows every level and its status. When a level's deadline passes, the step shows as overdue and its approvers get an escalation email. Users with *Reassign approval steps* can hand a waiting step to a specific person.`,
   },
   {
+    id: 'duplicates', title: 'Possible duplicate suppliers', audience: ['staff'], perms: ['vendors.view'],
+    summary: 'Suppliers sharing a PAN, GSTIN, bank account, IBAN, CR or VAT number are flagged.',
+    screens: ['^/staff/vendors'],
+    keywords: 'duplicate duplicates same pan gstin bank account iban cr vat fraud not a duplicate group company possible duplicate',
+    related: ['review-decide', 'change-requests', 'invite-vendor'],
+    body: `VendorGate compares each supplier's identifiers with every other supplier in your workspace: **PAN** (including the PAN inside a GSTIN), **GSTIN**, **CIN**, **Udyam number**, **bank account** (with IFSC or SWIFT), **IBAN**, and in the Gulf the **CR**, **VAT / TRN** and trade licence numbers. Rejected suppliers are included, so a rejected supplier coming back under a new name is caught.
+
+- A match shows as **Possible duplicate** in the vendor list and as a warning on the supplier's page, with links to the other suppliers.
+- **Approving** a possible duplicate needs a tick: *I checked the possible duplicates and this is a separate supplier*. Each approver ticks it; it is kept in the history.
+- **Change requests** that bring in another supplier's bank account or tax number are shown in red, and approving one needs confirmation that you checked with the supplier. This is the most common bank-detail fraud.
+- **Not a duplicate…** (needs *Edit vendors*): when two suppliers really are different — group companies with one PAN, say — record why. The flag goes away for that pair and the reason is kept on both suppliers.
+- **Import from Excel** stops on a row with the same GSTIN, bank account or other number as an existing supplier or another row. A shared PAN alone is a warning, since one company can have a GSTIN in several states.
+
+Suppliers never see this — they aren't told that another supplier has the same details.`,
+  },
+  {
     id: 'verification-checks', title: 'Verification checks (GSTIN, PAN, bank, CIN)', audience: ['staff'], perms: ['vendors.view'], feature: 'kyc',
     summary: 'Check identifiers against official records, and read the name match.',
     screens: ['^/staff/vendors/[^/]+$'],

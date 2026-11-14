@@ -22,6 +22,7 @@ import { addWorkingHours, calendarFor } from '../lib/calendar.js';
 import type { OnboardingConfig } from '../config/types.js';
 import { langForVendor, mailDate, mailSupplier, snippet } from '../i18n/emails.js';
 import { arLabel } from '../i18n/index.js';
+import { vendorsWithDuplicates, withIdentity } from './duplicates.js';
 
 const { vendors, documents, changeRequests, changeRequestSteps, roles, tenants, users, userRoles } = schema;
 const DAY = 86_400_000;
@@ -178,7 +179,7 @@ async function applyChange(cr: ChangeRequest, vendor: Vendor) {
   const profile = structuredClone((fresh ?? vendor).profile as Profile);
   for (const c of cr.changes) { const [s, k] = c.fieldId.split('.'); profile[s] = { ...(profile[s] ?? {}), [k]: c.new }; }
   const name = cr.changes.find((c) => c.fieldId === 'basic.vendorName')?.new;
-  await db.update(vendors).set({ profile, ...(name ? { name } : {}) }).where(eq(vendors.id, vendor.id));
+  await db.update(vendors).set({ ...withIdentity(profile), ...(name ? { name } : {}) }).where(eq(vendors.id, vendor.id));
   // New documents replace older ACTIVE ones of the same type.
   const newDocs = await db.select().from(documents).where(eq(documents.changeRequestId, cr.id));
   for (const d of newDocs) {
@@ -398,7 +399,7 @@ export async function runPeriodicReviews(now = new Date(), limit = 200) {
 
 /* ======================= "Needs attention" flags ======================= */
 
-export interface Flag { code: 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
+export interface Flag { code: 'POSSIBLE_DUPLICATE' | 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
 
 export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null; emailBouncedAt?: Date | null; emailBounceReason?: string | null }, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
   const flags: Flag[] = [];
@@ -418,12 +419,14 @@ export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus'
 }
 
 export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, 'id' | 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null; emailBouncedAt?: Date | null; emailBounceReason?: string | null })[]) {
+  const dups = await vendorsWithDuplicates(tenantId, vendorRows.map((v) => v.id));
+  const withDup = (id: string, f: Flag[]) => (dups.has(id) ? [{ code: 'POSSIBLE_DUPLICATE', label: 'Possible duplicate', severity: 'high' } as Flag, ...f] : f);
   const ids = vendorRows.filter((v) => v.status === 'APPROVED').map((v) => v.id);
-  if (!ids.length) return new Map(vendorRows.map((v) => [v.id, flagsFor(v, [], false)]));
+  if (!ids.length) return new Map(vendorRows.map((v) => [v.id, withDup(v.id, flagsFor(v, [], false))]));
   const docs = await db.select({ vendorId: documents.vendorId, status: documents.status, expiresOn: documents.expiresOn, docType: documents.docType }).from(documents)
     .where(and(eq(documents.tenantId, tenantId), inArray(documents.vendorId, ids), isNotNull(documents.expiresOn), eq(documents.status, 'ACTIVE')));
   const open = new Set((await db.select({ v: changeRequests.vendorId }).from(changeRequests).where(and(eq(changeRequests.tenantId, tenantId), eq(changeRequests.status, 'PENDING'), inArray(changeRequests.vendorId, ids)))).map((r) => r.v));
-  return new Map(vendorRows.map((v) => [v.id, flagsFor(v, docs.filter((d) => d.vendorId === v.id), open.has(v.id))]));
+  return new Map(vendorRows.map((v) => [v.id, withDup(v.id, flagsFor(v, docs.filter((d) => d.vendorId === v.id), open.has(v.id)))]));
 }
 
 /* Daily: expiry reminders + periodic re-verification. */

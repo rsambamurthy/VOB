@@ -22,6 +22,7 @@ import { runKyc } from '../integrations/kyc/index.js';
 import { checkInputs, checksForVendor, inputsComplete } from '../countries/registry.js';
 import { noticeFor } from '../services/privacy.js';
 import { checkExpiry, upload } from './vendorPortal.js';
+import { withIdentity } from '../services/duplicates.js';
 
 export const assistRouter = Router({ mergeParams: true });
 const EDITABLE = ['INVITED', 'IN_PROGRESS', 'SENT_BACK'];
@@ -53,7 +54,7 @@ assistRouter.put('/profile/:section', requireStaff('vendors.create'), ah(async (
   for (const [f, val] of Object.entries(raw)) if (isSensitive(`${key}.${f}`) && current[f] && val === maskField(`${key}.${f}`, current[f])) delete raw[f];
   const data = sanitizeSection(config, key, raw);
   const profile = { ...(v.profile as Profile), [key]: { ...current, ...data } };
-  await db.update(vendors).set({ profile, status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status, name: key === 'basic' && data.vendorName ? String(data.vendorName) : v.name }).where(eq(vendors.id, v.id));
+  await db.update(vendors).set({ ...withIdentity(profile), status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status, name: key === 'basic' && data.vendorName ? String(data.vendorName) : v.name }).where(eq(vendors.id, v.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: s.user.name, action: 'SECTION_SAVED', detail: { section: key, onBehalf: 'yes' }, ip: req.ip });
   res.json(await state(s.tenant.id, v.id));
 }));

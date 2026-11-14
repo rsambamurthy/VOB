@@ -9,7 +9,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import ExcelJS from 'exceljs';
-import { and, count, eq, ne } from 'drizzle-orm';
+import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
@@ -21,6 +21,7 @@ import { assertCanAddVendor } from '../services/limits.js';
 import { supplierLanguages } from '../i18n/index.js';
 import { packFor } from '../countries/registry.js';
 import { basicProblems, createSchema, createVendor, type CreateInput } from '../services/vendors.js';
+import { identityKeys, KIND_LABEL } from '../services/duplicates.js';
 import type { FieldDef, OnboardingConfig } from '../config/types.js';
 import type { Tenant } from '../db/schema.js';
 
@@ -121,7 +122,7 @@ vendorImportRouter.post('/', requireStaff('vendors.create'), fileUpload.single('
   if (missing.length) throw new HttpError(400, `Missing column(s): ${missing.join(', ')}. Start from the template.`);
   const fields = formFields(config).map((x) => ({ ...x, col: [...header.entries()].find(([h]) => h.endsWith(`[${x.id.toLowerCase()}]`))?.[1] }));
 
-  const rows: { result: RowResult; input: CreateInput; profile: Profile; erpCode?: string }[] = [];
+  const rows: { result: RowResult; input: CreateInput; profile: Profile; erpCode?: string; keys: string[] }[] = [];
   const seenNames = new Map<string, number>(); const seenCodes = new Map<string, number>();
   const existingCodes = new Set((await db.select({ code: schema.supplierCodes.code }).from(schema.supplierCodes).where(eq(schema.supplierCodes.tenantId, s.tenant.id))).map((r) => r.code.toLowerCase()));
   ws.eachRow((row, n) => {
@@ -144,7 +145,7 @@ vendorImportRouter.post('/', requireStaff('vendors.create'), fileUpload.single('
     const key = result.name.toLowerCase();
     if (key && seenNames.has(key)) result.errors.push(`Same supplier name as row ${seenNames.get(key)}`); else if (key) seenNames.set(key, n);
     // Approved import: the form answers, checked like the form.
-    let profile: Profile = {}; let erpCode: string | undefined;
+    let profile: Profile = {}; let erpCode: string | undefined; let keys: string[] = [];
     if (mode === 'approved') {
       erpCode = get('ERP supplier code') || undefined;
       if (erpCode) {
@@ -178,15 +179,32 @@ vendorImportRouter.post('/', requireStaff('vendors.create'), fileUpload.single('
         }
         if (missingFields.length) result.warnings.push(`Not filled: ${missingFields.slice(0, 5).join(', ')}${missingFields.length > 5 ? ` and ${missingFields.length - 5} more` : ''}`);
         if (missingDocs) result.warnings.push(`${missingDocs} required document${missingDocs > 1 ? 's' : ''} to be uploaded by the supplier`);
+        keys = identityKeys(full);
       }
     }
-    rows.push({ result, input, profile, erpCode });
+    rows.push({ result, input, profile, erpCode, keys });
   });
   if (!rows.length) throw new HttpError(400, 'The file has no supplier rows.');
   if (rows.length > MAX_ROWS) throw new HttpError(400, `Up to ${MAX_ROWS} suppliers per file. Split the list.`);
   // Names already in the workspace.
   const names = new Set((await db.select({ name: schema.vendors.name }).from(schema.vendors).where(and(eq(schema.vendors.tenantId, s.tenant.id), ne(schema.vendors.status, 'REJECTED')))).map((v) => v.name.toLowerCase()));
   for (const r of rows) if (names.has(r.result.name.toLowerCase())) r.result.errors.push('A supplier with this name already exists');
+  // Same tax / registration number or bank account as another row or an existing supplier. Only a shared PAN is a
+  // warning (one company can have a GSTIN per state); anything else stops the import.
+  const allKeys = [...new Set(rows.flatMap((r) => r.keys))];
+  const existing = allKeys.length ? await db.select({ code: schema.vendors.code, name: schema.vendors.name, keys: schema.vendors.identityKeys }).from(schema.vendors)
+    .where(and(eq(schema.vendors.tenantId, s.tenant.id), isNull(schema.vendors.erasedAt), sql`${schema.vendors.identityKeys} && ARRAY[${sql.join(allKeys.map((k) => sql`${k}`), sql`, `)}]::text[]`)) : [];
+  const seenKeys = new Map<string, number>();
+  for (const r of rows) {
+    const push = (kind: string, msg: string) => (kind === 'pan' ? r.result.warnings : r.result.errors).push(msg);
+    for (const k of r.keys) {
+      const kind = k.split(':')[0];
+      const label = KIND_LABEL[kind as keyof typeof KIND_LABEL];
+      const other = existing.find((e) => e.keys?.includes(k));
+      if (other) push(kind, `Same ${label} as ${other.code} ${other.name}`);
+      if (seenKeys.has(k)) push(kind, `Same ${label} as row ${seenKeys.get(k)}`); else seenKeys.set(k, r.result.row);
+    }
+  }
   // Plan limit for the whole file.
   const max = effectiveLimits(s.tenant).maxVendors;
   const [{ n: have }] = await db.select({ n: count() }).from(schema.vendors).where(eq(schema.vendors.tenantId, s.tenant.id));

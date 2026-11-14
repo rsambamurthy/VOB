@@ -16,6 +16,7 @@ import { mailSupplier } from '../i18n/emails.js';
 import { supplierLanguages, vendorLanguage } from '../i18n/index.js';
 import type { Profile } from '../lib/profileEngine.js';
 import type { Tenant } from '../db/schema.js';
+import { withIdentity } from './duplicates.js';
 
 const { vendors } = schema;
 
@@ -78,7 +79,7 @@ export async function createVendor(tenant: Tenant, input: CreateInput, actor: { 
   const now = new Date();
   const [vendor] = await db.insert(vendors).values({
     ...data, tenantId: tenant.id, contactEmail: email, language: language && supplierLanguages(tenant).includes(language) ? language : null,
-    code: await nextVendorCode(tenant.id), inviteToken: crypto.randomBytes(24).toString('base64url'), createdById: actor.id, profile,
+    code: await nextVendorCode(tenant.id), inviteToken: crypto.randomBytes(24).toString('base64url'), createdById: actor.id, ...withIdentity(profile),
     ...(opts.approved ? { status: 'APPROVED' as const, decidedAt: now, submittedAt: now, erpVendorId: opts.approved.erpCode || null } : {}),
   }).returning();
   if (opts.approved?.erpCode) await db.insert(schema.supplierCodes).values({ tenantId: tenant.id, vendorId: vendor.id, code: opts.approved.erpCode }).onConflictDoNothing();

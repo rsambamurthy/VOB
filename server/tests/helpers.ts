@@ -59,10 +59,12 @@ export async function approvedVendor(name: string, email: string) {
   const { devOtp } = (await v.post('/api/vendor-auth/request-otp', { token })).body;
   await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp });
   await v.post('/api/vendor/consent', { version: (await v.get('/api/vendor')).body.privacy.version });
-  const pan = 'AAFCL1234Q'; const g = `27${pan}1Z`;
+  // Each test supplier gets its own PAN, GSTIN, CIN and bank account, so they aren't flagged as duplicates of each other.
+  const n = String(Math.floor(Math.random() * 10000)).padStart(4, '0'); const L = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+  const pan = `AAFC${L}${n}Q`; const g = `27${pan}1Z`;
   await v.put('/api/vendor/profile/basic', { entityType: 'Company (Pvt / Public Ltd)', address: '1 Main Rd', region: 'Maharashtra', district: 'Pune', postalCode: '411001', msmeRegistered: 'No', supplyCategory: 'Goods' });
-  await v.put('/api/vendor/profile/bank', { bankName: 'HDFC Bank', accountHolderName: name, accountNumber: '501000123456', bankBranch: 'Pune', ifsc: 'HDFC0000001' });
-  await v.put('/api/vendor/profile/tax', { hasGst: 'Yes', gstin: g + gstinCheckChar(g), gstClassification: 'Regular', pan, cin: 'U74999MH2015PTC123456' });
+  await v.put('/api/vendor/profile/bank', { bankName: 'HDFC Bank', accountHolderName: name, accountNumber: `5010${L.charCodeAt(0)}12${n}`, bankBranch: 'Pune', ifsc: 'HDFC0000001' });
+  await v.put('/api/vendor/profile/tax', { hasGst: 'Yes', gstin: g + gstinCheckChar(g), gstClassification: 'Regular', pan, cin: `U74999MH2015PTC12${n}` });
   await v.put('/api/vendor/profile/risk', { fiscalYearEnd: 'March', currency: 'INR', turnoverYear: 'FY 2024-25', annualTurnover: '9000000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' });
   for (const t of ['PAN_CARD', 'GST_CERT', 'CANCELLED_CHEQUE', 'INCORPORATION_CERT']) expect((await v.upload('/api/vendor/documents', t, PDF)).status).toBe(201);
   expect((await v.post('/api/vendor/submit')).status).toBe(200);

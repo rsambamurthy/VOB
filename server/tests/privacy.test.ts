@@ -31,7 +31,7 @@ describe('DPDP', () => {
   test('data export: vendor gets their data; staff export includes the audit trail', async () => {
     const { v, id, admin } = await approvedVendor('Export Me Co', 'exp@privacy.test');
     const mine = (await v.get('/api/vendor/my-data')).body;
-    expect(mine.profile.bank.accountNumber).toBe('501000123456'); // their own data, in full
+    expect(mine.profile.bank.accountNumber).toMatch(/^5010\d{2}12\d{4}$/); // their own data, in full
     expect(mine.documents.length).toBeGreaterThan(0);
     expect(mine.sharedWith.map((x: any) => x.recipient)).toContain('Verification provider');
     expect(mine.auditTrail).toBeUndefined();

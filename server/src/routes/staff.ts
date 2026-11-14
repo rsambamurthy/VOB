@@ -33,6 +33,7 @@ import { mailSupplier } from '../i18n/emails.js';
 import type { Tenant } from '../db/schema.js';
 import { vendorLanguage } from '../i18n/index.js';
 import { createSchema, createVendor, sendInvite } from '../services/vendors.js';
+import { changeDuplicates, dismissDuplicate, duplicatesOf, duplicateText, withIdentity } from '../services/duplicates.js';
 
 /** Staff views get PAN / bank numbers masked; the full value needs an explicit, logged reveal. */
 const maskChanges = <T extends { fieldId: string; old: string; new: string }>(cs: T[]) => cs.map((c) => (isSensitive(c.fieldId) ? { ...c, old: maskField(c.fieldId, c.old), new: maskField(c.fieldId, c.new) } : c));
@@ -126,7 +127,7 @@ staffRouter.post('/vendors/:id/contact', requireStaff('vendors.edit'), ah(async 
   if (email === old.toLowerCase()) throw new HttpError(400, 'That is already the contact email');
   const profile = v.profile as Profile;
   const basic = profile.basic && String(profile.basic.contactEmail ?? '').toLowerCase() === old.toLowerCase() ? { ...profile.basic, contactEmail: email } : profile.basic;
-  await db.update(vendors).set({ contactEmail: email, emailBouncedAt: null, emailBounceReason: null, profile: { ...profile, ...(basic ? { basic } : {}) }, updatedAt: new Date() }).where(eq(vendors.id, v.id));
+  await db.update(vendors).set({ contactEmail: email, emailBouncedAt: null, emailBounceReason: null, ...withIdentity({ ...profile, ...(basic ? { basic } : {}) }), updatedAt: new Date() }).where(eq(vendors.id, v.id));
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'CONTACT_EMAIL_CHANGED', detail: { from: old.replace(/^(.).*(@.*)$/, '$1***$2'), to: email.replace(/^(.).*(@.*)$/, '$1***$2'), reason }, ip: req.ip });
   await mailSupplier(vendorLanguage(s.tenant, v), { tenantId: s.tenant.id, to: old }, 'contactChanged', { vendor: v.name, buyer: s.tenant.name, by: s.user.name });
   if (['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status)) await sendInvite(s.tenant, { ...v, contactEmail: email });
@@ -167,11 +168,14 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
       canErase: s.permissions.has('tenant.settings'), canExport: s.permissions.has('vendors.export') },
     me: s.user.id,
     flags: (await flagsForMany(s.tenant.id, [v])).get(v.id) ?? [],
+    duplicates: await duplicatesOf(v),
+    canDismissDuplicate: s.permissions.has('vendors.edit'),
     changeRequests: await Promise.all((await changeRequestsForVendor(v.id)).map(async (cr) => {
       const cur = cr.steps.find((st) => st.status === 'PENDING');
       return {
         ...cr,
         changes: maskChanges(cr.changes),
+        duplicates: cr.status === 'PENDING' ? await changeDuplicates(s.tenant.id, v, cr.changes) : [],
         raisedBy: cr.raisedBy ? { id: cr.raisedBy.id, name: cr.raisedBy.name } : null,
         canWithdraw: cr.status === 'PENDING' && !!cr.raisedById && (cr.raisedById === s.user.id || s.permissions.has('approvals.manage')),
         steps: cr.steps.map(({ role, assignee, actedBy, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, actedBy: actedBy ? { name: actedBy.name } : null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })),
@@ -184,8 +188,26 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
 
 staffRouter.post('/vendors/:id/decision', requireStaff(), ah(async (req, res) => {
   const s = staffCtx(req);
-  const { action, remarks } = z.object({ action: z.enum(['APPROVE', 'SEND_BACK', 'REJECT']), remarks: z.string().max(2000).default('') }).parse(req.body);
-  res.json(await decide(s.tenant.id, req.params.id, { id: s.user.id, name: s.user.name }, action, remarks, req.ip));
+  const { action, remarks, duplicatesChecked } = z.object({ action: z.enum(['APPROVE', 'SEND_BACK', 'REJECT']), remarks: z.string().max(2000).default(''), duplicatesChecked: z.boolean().optional() }).parse(req.body);
+  // Approving a possible duplicate needs an explicit "I checked" from each approver.
+  const v = action === 'APPROVE' ? await findVendor(s.tenant.id, req.params.id) : undefined;
+  const dups = v ? await duplicatesOf(v) : [];
+  if (dups.length && !duplicatesChecked) throw new HttpError(409, `Possible duplicate of ${duplicateText(dups)}. Check it before approving.`, dups, 'POSSIBLE_DUPLICATE');
+  const result = await decide(s.tenant.id, req.params.id, { id: s.user.id, name: s.user.name }, action, remarks, req.ip);
+  if (dups.length) await audit({ tenantId: s.tenant.id, vendorId: req.params.id, actor: s.user.name, action: 'DUPLICATE_CHECKED', detail: { with: duplicateText(dups) }, ip: req.ip });
+  res.json(result);
+}));
+
+/** "Not a duplicate": the two suppliers share an identifier but are different businesses (e.g. group companies). */
+staffRouter.post('/vendors/:id/duplicates/:otherId/dismiss', requireStaff('vendors.edit'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { note } = z.object({ note: z.string().trim().min(3, 'Say why they are different suppliers').max(500) }).parse(req.body);
+  if (!(await dismissDuplicate(s.tenant.id, req.params.id, req.params.otherId, note, s.user.name))) throw new HttpError(404, 'Vendor not found');
+  const other = await findVendor(s.tenant.id, req.params.otherId);
+  for (const [a, b] of [[req.params.id, other!], [req.params.otherId, await findVendor(s.tenant.id, req.params.id)]] as const) {
+    await audit({ tenantId: s.tenant.id, vendorId: a, actor: s.user.name, action: 'DUPLICATE_DISMISSED', detail: { with: `${b!.code} ${b!.name}`, note }, ip: req.ip });
+  }
+  res.json({ ok: true });
 }));
 
 staffRouter.get('/vendors/:id/assignable', requireStaff('approvals.manage'), ah(async (req, res) => {
@@ -244,8 +266,14 @@ staffRouter.get('/change-requests', requireStaff('vendors.view'), ah(async (req,
 
 staffRouter.post('/change-requests/:id/decision', requireStaff('vendors.view'), ah(async (req, res) => {
   const s = staffCtx(req);
-  const { action, remarks } = z.object({ action: z.enum(['APPROVE', 'REJECT']), remarks: z.string().max(2000).default('') }).parse(req.body);
-  res.json(await decideChange(s.tenant.id, req.params.id, { id: s.user.id, name: s.user.name }, action, remarks, req.ip));
+  const { action, remarks, duplicatesChecked } = z.object({ action: z.enum(['APPROVE', 'REJECT']), remarks: z.string().max(2000).default(''), duplicatesChecked: z.boolean().optional() }).parse(req.body);
+  // A change that brings in another supplier's bank account or tax number (the classic bank-change fraud) needs an explicit check.
+  const cr = action === 'APPROVE' ? await db.query.changeRequests.findFirst({ where: and(eq(changeRequests.tenantId, s.tenant.id), eq(changeRequests.id, req.params.id)), with: { vendor: true } }) : undefined;
+  const dups = cr ? await changeDuplicates(s.tenant.id, cr.vendor, cr.changes) : [];
+  if (dups.length && !duplicatesChecked) throw new HttpError(409, `This change matches ${duplicateText(dups)}. Check it before approving.`, dups, 'POSSIBLE_DUPLICATE');
+  const result = await decideChange(s.tenant.id, req.params.id, { id: s.user.id, name: s.user.name }, action, remarks, req.ip);
+  if (dups.length) await audit({ tenantId: s.tenant.id, vendorId: cr!.vendorId, actor: s.user.name, action: 'DUPLICATE_CHECKED', detail: { with: duplicateText(dups), change: 'yes' }, ip: req.ip });
+  res.json(result);
 }));
 
 staffRouter.get('/change-requests/:id/assignable', requireStaff('approvals.manage'), ah(async (req, res) => {

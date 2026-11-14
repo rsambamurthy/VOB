@@ -285,7 +285,10 @@ export const vendors = pgTable('vendors', {
   erasureReason: text('erasure_reason'),
   /** Personal data removed (on request or by the retention policy); the row stays for statistics and the audit trail. */
   erasedAt: timestamp('erased_at', { withTimezone: true }),
-}, (t) => [uniqueIndex('vendors_tenant_code_uq').on(t.tenantId, t.code), index('vendors_tenant_status_idx').on(t.tenantId, t.status)]);
+  /** Keyed hashes of the supplier's identifiers (PAN, GSTIN, bank account, IBAN, CR, VAT…) for spotting duplicates
+   *  without decrypting anything. Null = not computed yet (filled at startup). See services/duplicates.ts. */
+  identityKeys: text('identity_keys').array(),
+}, (t) => [uniqueIndex('vendors_tenant_code_uq').on(t.tenantId, t.code), index('vendors_tenant_status_idx').on(t.tenantId, t.status), index('vendors_identity_keys_idx').using('gin', t.identityKeys)]);
 
 export const otpCodes = pgTable('otp_codes', {
   id: id(),
@@ -792,6 +795,16 @@ export const supplierRatings = pgTable('supplier_ratings', {
   ratedByName: text('rated_by_name').notNull(),
   createdAt: createdAt(),
 }, (t) => [index('supplier_ratings_vendor_idx').on(t.tenantId, t.vendorId, t.createdAt)]);
+
+/** "Not a duplicate": a person checked two suppliers that share an identifier and confirmed they are different. Pair stored with vendorA < vendorB. */
+export const duplicateDismissals = pgTable('duplicate_dismissals', {
+  id: id(), tenantId: tenantId(),
+  vendorA: text('vendor_a').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  vendorB: text('vendor_b').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  note: text('note').notNull(),
+  byName: text('by_name').notNull(),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('duplicate_dismissals_pair_uq').on(t.tenantId, t.vendorA, t.vendorB)]);
 
 /** Keys an ERP or middleware uses to call the VendorGate API (stored hashed). */
 export const apiKeys = pgTable('api_keys', {

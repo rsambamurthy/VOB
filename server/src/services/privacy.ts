@@ -146,7 +146,7 @@ export async function eraseVendor(tenantId: string, vendorId: string, reason: st
     await tx.update(auditLogs).set({ detail: null }).where(eq(auditLogs.vendorId, v.id));
     await tx.update(vendors).set({
       name: `Erased vendor ${v.code}`, contactFirstName: 'Erased', contactLastName: '', contactEmail: `erased+${v.id}@invalid.local`, contactMobile: '',
-      profile: {}, inviteToken: crypto.randomBytes(24).toString('base64url'), blockedReason: v.blockedAt ? 'Erased' : null, reviewNote: null,
+      profile: {}, identityKeys: [], inviteToken: crypto.randomBytes(24).toString('base64url'), blockedReason: v.blockedAt ? 'Erased' : null, reviewNote: null,
       erasedAt: new Date(), erasureRequestedAt: null, erasureReason: null, consentIp: null,
     }).where(eq(vendors.id, v.id));
   });

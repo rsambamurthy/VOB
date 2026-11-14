@@ -47,5 +47,9 @@ export async function sealExistingData(force = false) {
     if (legacy || force) { await db.update(schema.erpSyncs).set({ request: openJson(r.request) }).where(eq(schema.erpSyncs.id, r.id as string)); n++; }
   }
   if (n) logger.info({ rows: n, force }, 'sensitive data encrypted');
+  // Duplicate-check keys: fill any missing; after a key rotation (force) recompute all, since they are keyed on ENCRYPTION_KEY.
+  const { refreshIdentityKeys } = await import('../services/duplicates.js');
+  const k = await refreshIdentityKeys(force);
+  if (k) logger.info({ vendors: k }, 'duplicate-check keys computed');
   return n;
 }

@@ -16,6 +16,7 @@ import { addWorkingHours, calendarFor, formatDeadline } from '../lib/calendar.js
 import type { WorkflowLevel } from '../config/types.js';
 import { langForVendor, mailSupplier } from '../i18n/emails.js';
 import { arLabel } from '../i18n/index.js';
+import { duplicatesOf, duplicateText } from './duplicates.js';
 
 const { vendors, approvalSteps, roles, users, userRoles, tenants } = schema;
 const setVendor = (tenantId: string, id: string, data: Partial<Vendor>) =>
@@ -68,6 +69,10 @@ export async function startReview(vendor: Vendor) {
     await tx.update(vendors).set({ status: 'UNDER_REVIEW', reviewCycle: cycle, submittedAt: new Date(), configVersion: version }).where(eq(vendors.id, vendor.id));
     return rows;
   });
+  // Shown to approvers on the vendor page; recorded so the history shows it was there at submission.
+  const fresh = await db.query.vendors.findFirst({ where: eq(vendors.id, vendor.id) });
+  const dups = fresh ? await duplicatesOf(fresh) : [];
+  if (dups.length) await audit({ tenantId: vendor.tenantId, vendorId: vendor.id, actor: 'system', action: 'POSSIBLE_DUPLICATE', detail: { with: duplicateText(dups) } });
   await activate(steps[0], vendor);
 }
 

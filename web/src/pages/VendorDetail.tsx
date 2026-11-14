@@ -8,7 +8,7 @@ import { ApprovalTimeline } from '../components/Timeline';
 import { Checklist } from '../components/Checklist';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
-import type { ChangeRequest, Check, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
+import type { ChangeRequest, Check, Duplicate, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
 import { ChangeDiff, CrBadge, diffProfiles, FlagBadges, isMasked, MASKED_FIELDS } from '../components/Lifecycle';
 import { ErpCard } from '../components/Erp';
 import { SupplierAccessCard } from '../components/SupplierAccess';
@@ -18,7 +18,7 @@ import { ExtractionCard } from '../components/ExtractionCard';
 import { TabStrip } from '../components/TabStrip';
 
 type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
-  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[] };
+  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
@@ -47,6 +47,7 @@ export function VendorDetail() {
   const [assist, setAssist] = useState<Profile>();
   const [assistDirty, setAssistDirty] = useState<Set<string>>(new Set());
   const [assistSubmit, setAssistSubmit] = useState(false);
+  const [dismissing, setDismissing] = useState<Duplicate>();
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
   useEffect(() => { load(); }, [load]);
@@ -164,6 +165,7 @@ export function VendorDetail() {
         <Alert kind="warning"><strong>The vendor asked for their data to be deleted</strong> on {fmtDateTime(d.privacy.erasureRequestedAt)}{d.privacy.erasureReason ? ` — “${d.privacy.erasureReason}”` : ''}. Under DPDP, respond without undue delay.
           {d.privacy.canErase && <div className="btn-row" style={{ marginTop: 8 }}><button className="btn btn-danger btn-sm" onClick={() => setPrivacyAction('erase')}>Erase data…</button><button className="btn btn-secondary btn-sm" onClick={() => setPrivacyAction('decline')}>Decline with reason…</button></div>}</Alert>
       )}
+      {d.duplicates.length > 0 && <DuplicatesAlert dups={d.duplicates} canDismiss={d.canDismissDuplicate} onDismiss={setDismissing} />}
       {approved && v.blockedAt && <Alert kind="error"><strong>Blocked</strong> since {fmtDateTime(v.blockedAt)}{v.blockedReason ? ` — “${v.blockedReason}”` : ''}. Payments and new POs are on hold in the ERP export.</Alert>}
       {approved && v.reviewStatus === 'ATTENTION' && <Alert kind="warning"><strong>Re-check needs attention:</strong> {v.reviewNote}</Alert>}
       {proposing && (
@@ -227,6 +229,7 @@ export function VendorDetail() {
                     <button className="btn btn-danger-ghost btn-sm" onClick={() => setCrAction({ cr, action: 'REJECT' })}>Reject</button>
                     <button className="btn btn-primary btn-sm" onClick={() => setCrAction({ cr, action: 'APPROVE' })}>Approve</button></div>}
                 </div>
+                {!!cr.duplicates?.length && <Alert kind="error"><strong>This change matches another supplier:</strong> {cr.duplicates.map((x, i) => <span key={x.id}>{i ? '; ' : ''}<Link to={`/staff/vendors/${x.id}`}>{x.code} {x.name}</Link> (same {x.matches.join(', ')})</span>)}. A bank account or tax number that belongs to another supplier is a common sign of fraud — confirm with the supplier on their registered number before approving.</Alert>}
                 {cr.sensitive && cr.status === 'PENDING' && <Alert kind="warning">Includes sensitive fields. For bank changes, confirm the account holder name on the bank check under Verifications and, if in doubt, call the vendor on their registered number before approving.</Alert>}
                 {cr.note && <p className="small">{cr.raisedBy ? 'Reason' : 'Vendor’s note'}: “{cr.note}”</p>}
                 {cr.status === 'PENDING' && cr.raisedBy?.id === d.me && <p className="small muted">You proposed this change, so another approver has to decide each step. An approvals manager can reassign a step if you’re the only one in that role.</p>}
@@ -302,6 +305,7 @@ export function VendorDetail() {
       {privacyAction && <PrivacyModal mode={privacyAction} vendor={v} onClose={() => setPrivacyAction(undefined)} onDone={(m) => { setPrivacyAction(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {blockMode && <BlockModal mode={blockMode} vendorId={v.id} onClose={() => setBlockMode(undefined)} onDone={(m) => { setBlockMode(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {proposeOpen && <ProposeModal changes={proposedChanges} docCount={myStaged.length} onClose={() => setProposeOpen(false)} onSubmit={submitProposal} />}
+      {dismissing && <DismissDuplicateModal vendorId={v.id} other={dismissing} onClose={() => setDismissing(undefined)} onDone={() => { setDismissing(undefined); setFlash({ kind: 'success', text: `Marked as not a duplicate of ${dismissing.code}.` }); load(); }} />}
       {crAction && <CrDecisionModal {...crAction} onClose={() => setCrAction(undefined)} onDone={(m) => { setCrAction(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {crReassign && <ReassignModal listUrl={`/staff/change-requests/${crReassign.id}/assignable`} assignUrl={`/staff/change-requests/${crReassign.id}/steps/${crReassign.steps.find((s) => s.status === 'PENDING')!.id}/assign`}
         step={crReassign.steps.find((s) => s.status === 'PENDING')!} onClose={() => setCrReassign(undefined)} onDone={(m) => { setCrReassign(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
@@ -310,7 +314,7 @@ export function VendorDetail() {
         try { await api(`/staff/vendors/${id}/assist/submit`, { body: { confirm: true } }); setAssistSubmit(false); setAssist(undefined); setFlash({ kind: 'success', text: `Submitted for approval on behalf of ${v.name}. The approval flow has started.` }); await load(); }
         catch (e: any) { setAssistSubmit(false); setFlash({ kind: 'error', text: e.message }); await load(); }
       }} />}
-      {action && <DecisionModal action={action} vendorId={v.id} onClose={() => setAction(undefined)} onDone={(msg) => { setAction(undefined); setFlash({ kind: 'success', text: msg }); load(); }} />}
+      {action && <DecisionModal action={action} vendorId={v.id} duplicates={d.duplicates} onClose={() => setAction(undefined)} onDone={(msg) => { setAction(undefined); setFlash({ kind: 'success', text: msg }); load(); }} />}
       {erp !== undefined && (
         <Modal title="ERP export — Oracle supplier payload" wide onClose={() => setErp(undefined)}
           footer={<><button className="btn btn-ghost" onClick={() => navigator.clipboard?.writeText(JSON.stringify(erp, null, 2))}>Copy</button>
@@ -323,8 +327,10 @@ export function VendorDetail() {
   );
 }
 
-function DecisionModal({ action, vendorId, onClose, onDone }: { action: Action; vendorId: string; onClose: () => void; onDone: (msg: string) => void }) {
+function DecisionModal({ action, vendorId, duplicates, onClose, onDone }: { action: Action; vendorId: string; duplicates: Duplicate[]; onClose: () => void; onDone: (msg: string) => void }) {
   const [remarks, setRemarks] = useState('');
+  const needCheck = action === 'APPROVE' && duplicates.length > 0;
+  const [checked, setChecked] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const cfg = {
@@ -335,13 +341,17 @@ function DecisionModal({ action, vendorId, onClose, onDone }: { action: Action; 
   async function submit() {
     setBusy(true); setError(undefined);
     try {
-      const r = await api(`/staff/vendors/${vendorId}/decision`, { body: { action, remarks } });
+      const r = await api(`/staff/vendors/${vendorId}/decision`, { body: { action, remarks, ...(needCheck ? { duplicatesChecked: checked } : {}) } });
       onDone(r.status === 'APPROVED' ? 'Final approval done — vendor is active.' : r.nextLevel ? `Approved. Moved to ${r.nextLevel}.` : action === 'SEND_BACK' ? 'Sent back to the vendor.' : 'Vendor rejected.');
     } catch (e: any) { setError(e.message); setBusy(false); }
   }
   return (
-    <Modal title={cfg.title} onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className={`btn ${cfg.cls}`} disabled={busy} onClick={submit}>{busy ? 'Saving…' : cfg.btn}</button></>}>
+    <Modal title={cfg.title} onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className={`btn ${cfg.cls}`} disabled={busy || (needCheck && !checked)} onClick={submit}>{busy ? 'Saving…' : cfg.btn}</button></>}>
       {error && <Alert kind="error">{error}</Alert>}
+      {needCheck && (<>
+        <Alert kind="warning">Possible duplicate of {duplicates.map((x) => `${x.code} ${x.name} (same ${x.matches.join(', ')})`).join('; ')}.</Alert>
+        <label className="check-item"><input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
+          <span className="small">I checked the possible duplicate{duplicates.length > 1 ? 's' : ''} and this is a separate supplier that should be approved.</span></label></>)}
       <div className="field"><label htmlFor="remarks">Remarks{action !== 'APPROVE' && <span className="req"> *</span>}</label>
         <textarea id="remarks" rows={4} value={remarks} onChange={(e) => setRemarks(e.target.value)} autoFocus /><div className="field-help">{cfg.hint}</div></div>
     </Modal>
@@ -424,17 +434,23 @@ function CrDecisionModal({ cr, action, onClose, onDone }: { cr: ChangeRequest; a
   const [remarks, setRemarks] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const needCheck = action === 'APPROVE' && !!cr.duplicates?.length;
+  const [checked, setChecked] = useState(false);
   async function submit() {
     setBusy(true); setError(undefined);
     try {
-      const r = await api(`/staff/change-requests/${cr.id}/decision`, { body: { action, remarks } });
+      const r = await api(`/staff/change-requests/${cr.id}/decision`, { body: { action, remarks, ...(needCheck ? { duplicatesChecked: checked } : {}) } });
       onDone(r.status === 'APPROVED' ? 'Change approved and applied to the vendor record.' : r.nextLevel ? `Approved. Moved to ${r.nextLevel}.` : 'Change request rejected. The vendor has been told why.');
     } catch (e: any) { setError(e.message); setBusy(false); }
   }
   return (
     <Modal title={action === 'APPROVE' ? 'Approve change' : 'Reject change'} wide onClose={onClose}
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className={`btn ${action === 'APPROVE' ? 'btn-primary' : 'btn-danger'}`} disabled={busy} onClick={submit}>{busy ? 'Saving…' : action === 'APPROVE' ? 'Approve' : 'Reject'}</button></>}>
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className={`btn ${action === 'APPROVE' ? 'btn-primary' : 'btn-danger'}`} disabled={busy || (needCheck && !checked)} onClick={submit}>{busy ? 'Saving…' : action === 'APPROVE' ? 'Approve' : 'Reject'}</button></>}>
       {error && <Alert kind="error">{error}</Alert>}
+      {needCheck && (<>
+        <Alert kind="error">This change matches {cr.duplicates!.map((x) => `${x.code} ${x.name} (same ${x.matches.join(', ')})`).join('; ')}.</Alert>
+        <label className="check-item"><input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
+          <span className="small">I confirmed this change with the supplier on their registered contact details.</span></label></>)}
       <ChangeDiff changes={cr.changes} docCount={cr.documentIds.length} />
       <div className="field"><label htmlFor="cr-remarks">Remarks{action === 'REJECT' && <span className="req"> *</span>}</label>
         <textarea id="cr-remarks" rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} autoFocus />
@@ -512,6 +528,38 @@ function AssistSubmitModal({ name, missing, onClose, onSubmit }: { name: string;
         <label className="check-item"><input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} />
           <span className="small">The supplier gave us these details and documents, and was shown our privacy notice for suppliers.</span></label>
       </>)}
+    </Modal>
+  );
+}
+
+function DuplicatesAlert({ dups, canDismiss, onDismiss }: { dups: Duplicate[]; canDismiss: boolean; onDismiss: (d: Duplicate) => void }) {
+  return (
+    <Alert kind="warning"><strong>Possible duplicate supplier.</strong> These suppliers share a tax or registration number or bank account with this one:
+      <ul className="plain dup-list">{dups.map((x) => (
+        <li key={x.id}><Link to={`/staff/vendors/${x.id}`}><span className="mono">{x.code}</span> {x.name}</Link> <StatusBadge status={x.status as any} /> <span className="small">same {x.matches.join(', ')}</span>
+          {canDismiss && <button className="link-btn small" onClick={() => onDismiss(x)}>Not a duplicate…</button>}</li>
+      ))}</ul>
+      <span className="small">Approvers have to confirm they checked before approving.</span>
+    </Alert>
+  );
+}
+
+function DismissDuplicateModal({ vendorId, other, onClose, onDone }: { vendorId: string; other: Duplicate; onClose: () => void; onDone: () => void }) {
+  const [note, setNote] = useState('');
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    setBusy(true); setError(undefined);
+    try { await api(`/staff/vendors/${vendorId}/duplicates/${other.id}/dismiss`, { body: { note } }); onDone(); }
+    catch (e: any) { setError(e.message); setBusy(false); }
+  }
+  return (
+    <Modal title={`Not a duplicate of ${other.code}`} onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || note.trim().length < 3} onClick={submit}>{busy ? 'Saving…' : 'Mark as different suppliers'}</button></>}>
+      {error && <Alert kind="error">{error}</Alert>}
+      <p className="small muted">Both suppliers share the same {other.matches.join(', ')}. Use this only when they really are different businesses — for example group companies with one PAN, or a proprietor with two firms. The reason is kept on both suppliers’ history.</p>
+      <div className="field"><label htmlFor="dup-note">Why they are different<span className="req"> *</span></label>
+        <input id="dup-note" value={note} maxLength={500} placeholder="e.g. sister company, separate GST registration; confirmed with procurement" onChange={(e) => setNote(e.target.value)} autoFocus /></div>
     </Modal>
   );
 }

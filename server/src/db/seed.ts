@@ -63,12 +63,12 @@ function fullProfile(name: string, pan: string, state: '27' | '29', city: string
     basic: {
       vendorName: name, tradingName: name.split(' ')[0], entityType: 'Company (Pvt / Public Ltd)', supplierCountry: 'India',
       address: 'Plot 14, MIDC Industrial Area', region: state === '27' ? 'Maharashtra' : 'Karnataka', district: city, postalCode: pin,
-      websiteUrl: `www.${slug}.in`, yearEstablished: '2012', msmeRegistered: 'Yes', udyamNumber: `UDYAM-${st}-01-0012345`, msmeCategory: 'Small',
+      websiteUrl: `www.${slug}.in`, yearEstablished: '2012', msmeRegistered: 'Yes', udyamNumber: `UDYAM-${st}-01-001${pan.slice(5, 9)}`, msmeCategory: 'Small',
       contactName: 'Rahul Deshmukh', contactEmail: `accounts@${slug}.in`, contactMobile: '9876543210', accountsEmail: `ap@${slug}.in`,
       supplyCategory: 'Goods', itemsSupplied: 'Industrial valves and fittings', paymentTerms: 'Net 45',
     },
-    bank: { bankCountry: 'India', bankName: 'HDFC Bank', accountHolderName: name, accountNumber: '50200012345671', bankBranch: `${city} Main`, ifsc: 'HDFC0001234', upiId: `${slug}@hdfcbank`, bankCity: city },
-    tax: { hasGst: 'Yes', gstin: gstin(state, pan), gstClassification: 'Regular', pan, tan: 'PNEA12345B', cin: `U29120${st}2012PTC123456`, concessionalTds: 'No' },
+    bank: { bankCountry: 'India', bankName: 'HDFC Bank', accountHolderName: name, accountNumber: `5020001${pan.slice(5, 9)}671`, bankBranch: `${city} Main`, ifsc: 'HDFC0001234', upiId: `${slug}@hdfcbank`, bankCity: city },
+    tax: { hasGst: 'Yes', gstin: gstin(state, pan), gstClassification: 'Regular', pan, tan: 'PNEA12345B', cin: `U29120${st}2012PTC12${pan.slice(5, 9)}`, concessionalTds: 'No' },
     risk: { fiscalYearEnd: 'March', currency: 'INR', turnoverYear: 'FY 2024-25', annualTurnover: '185000000', netWorth: '42000000', sourceOfInfo: 'Audited financial statements', hasRating: 'Yes', ratingAgency: 'CRISIL', rating: 'BBB+', bankruptcy5y: 'No', litigation: 'No' },
   };
 }
@@ -241,6 +241,7 @@ export async function seed() {
 
   // Platform console (/platform): the SaaS operator. 2FA is set up at first sign-in.
   await db.insert(schema.platformAdmins).values({ email: 'owner@vendorgate.test', name: 'Platform Owner', status: 'ACTIVE', passwordHash: hash });
+  await (await import('./dataMigrations.js')).sealExistingData();
   console.log(`\nDemo workspaces ready. Password for every demo user: ${DEMO_PASSWORD}`);
   console.log('  Platform console /platform: owner@vendorgate.test (sets up 2FA at first sign-in)');
   console.log('  Workspace "acme":   admin@acme.test, vendoradmin@acme.test, tax@acme.test, finance@acme.test, mdm@acme.test, mdm2@acme.test, compliance@acme.test');

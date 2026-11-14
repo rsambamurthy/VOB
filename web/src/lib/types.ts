@@ -81,7 +81,10 @@ export interface ChangeRequest {
   sensitive?: boolean; createdAt: string; decidedAt: string | null; steps: Step[]; canAct?: boolean; canReassign?: boolean;
   /** staff view */ raisedBy?: { id: string; name: string } | null; canWithdraw?: boolean;
   /** vendor view: proposed by the buyer's staff */ byBuyer?: boolean;
+  /** staff view: other suppliers this change would match (e.g. their bank account) */ duplicates?: Duplicate[];
 }
+/** Another supplier sharing a tax / registration number or bank account. */
+export interface Duplicate { id: string; code: string; name: string; status: string; matches: string[] }
 export interface ChangeQueueRow {
   id: string; status: CrStatus; changes: FieldChange[]; documentIds: string[]; sensitive: boolean; createdAt: string; mine: boolean;
   vendor: { id: string; name: string; code: string }; raisedBy: { name: string } | null;

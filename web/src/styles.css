@@ -895,3 +895,4 @@ h1, h2, .page-head h1, .group > legend, .card-title, .af-product, .stat-n { font
 
 .import-steps { padding-left: 20px; display: grid; gap: 10px; margin: 0; }
 ul.plain { list-style: none; margin: 0; padding: 0; } ul.plain li + li { margin-top: 3px; }
+.dup-list { margin: 6px 0; } .dup-list li { margin: 3px 0; } .dup-list .link-btn { margin-left: 8px; }

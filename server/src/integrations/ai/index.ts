@@ -25,6 +25,7 @@ import { getPublished } from '../../services/config.js';
 import { answerImpliedBy, fillImpliedAnswers, fitToField, sanitizeSection, type Profile } from '../../lib/profileEngine.js';
 import { isSensitive } from '../../lib/fieldCrypto.js';
 import { audit } from '../../lib/audit.js';
+import { withIdentity } from '../../services/duplicates.js';
 
 /** How suppliers enter their details: typed by hand, AI suggestions to accept, or filled from documents. */
 export type DataEntryMode = 'manual' | 'assisted' | 'automatic';
@@ -57,7 +58,7 @@ export async function answerFromDocument(vendorId: string, docType: string) {
   const implied = answerImpliedBy(config, docType, vendor.profile as Profile, vendor.vendorType);
   if (!implied) return;
   const profile = { ...(vendor.profile as Profile), [implied.section]: { ...((vendor.profile as Profile)[implied.section] ?? {}), [implied.field]: implied.value } };
-  await db.update(schema.vendors).set({ profile, status: vendor.status === 'INVITED' ? 'IN_PROGRESS' : vendor.status }).where(eq(schema.vendors.id, vendor.id));
+  await db.update(schema.vendors).set({ ...withIdentity(profile), status: vendor.status === 'INVITED' ? 'IN_PROGRESS' : vendor.status }).where(eq(schema.vendors.id, vendor.id));
   await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: 'AI (from document)', action: 'ANSWER_FROM_DOCUMENT', detail: { field: `${implied.section}.${implied.field}`, value: implied.value, docType } });
 }
 
@@ -161,7 +162,7 @@ async function autoFill(extractionId: string, vendorId: string, fields: { fieldI
   // A filled GSTIN answers "Do you hold a GST number?", a Udyam number answers "Registered as MSME?"…
   const answered = fillImpliedAnswers(config, profile, filled, vendor.vendorType).filter((f) => !filled.includes(f));
   const name = filled.includes('basic.vendorName') ? String(profile.basic.vendorName) : vendor.name;
-  await db.update(schema.vendors).set({ profile, name, status: vendor.status === 'INVITED' ? 'IN_PROGRESS' : vendor.status }).where(eq(schema.vendors.id, vendor.id));
+  await db.update(schema.vendors).set({ ...withIdentity(profile), name, status: vendor.status === 'INVITED' ? 'IN_PROGRESS' : vendor.status }).where(eq(schema.vendors.id, vendor.id));
   await db.update(schema.documentExtractions).set({ autoApplied: filled }).where(eq(schema.documentExtractions.id, extractionId));
   await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: 'AI (from document)', action: 'AI_VALUES_AUTOFILLED', detail: { fields: filled.join(', '), ...(answered.length ? { answered: answered.join(', ') } : {}) } });
 }

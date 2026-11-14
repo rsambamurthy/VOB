@@ -21,6 +21,7 @@ import { queueExtraction, extractionsFor, getExtraction, dataEntryMode, answerFr
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
 import { arLabel, localizeConfig, supplierLanguages, translateMessage, vendorLanguage, type Lang } from '../i18n/index.js';
+import { withIdentity } from '../services/duplicates.js';
 
 export const vendorRouter = Router();
 vendorRouter.use(requireVendor);
@@ -155,7 +156,7 @@ vendorRouter.put('/profile/:section', ah(async (req, res) => {
   const lang = vendorLanguage(vendorCtx(req).tenant, v);
   const profile = { ...(v.profile as Profile), [key]: { ...((v.profile as Profile)[key] ?? {}), ...data } };
   await db.update(vendors).set({
-    profile, status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status, name: key === 'basic' && data.vendorName ? String(data.vendorName) : v.name,
+    ...withIdentity(profile), status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status, name: key === 'basic' && data.vendorName ? String(data.vendorName) : v.name,
   }).where(eq(vendors.id, v.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'SECTION_SAVED', detail: { section: key }, ip: req.ip });
   const shown = localizeConfig(config, lang);
@@ -229,7 +230,7 @@ vendorRouter.post('/extractions/:id/apply', ah(async (req, res) => {
   }
   // Applying a GSTIN also answers "Do you hold a GST number?" when it's still blank.
   fillImpliedAnswers(config, profile, applied, v.vendorType);
-  await db.update(vendors).set({ profile }).where(eq(vendors.id, v.id));
+  await db.update(vendors).set(withIdentity(profile)).where(eq(vendors.id, v.id));
   await db.update(schema.documentExtractions).set({ appliedAt: new Date() }).where(eq(schema.documentExtractions.id, ex.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'AI_VALUES_APPLIED', detail: { fields: applied.join(', ') }, ip: req.ip });
   const lang = vendorLanguage(vendorCtx(req).tenant, v);
