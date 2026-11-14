@@ -90,3 +90,6 @@ export interface ChangeQueueRow {
   vendor: { id: string; name: string; code: string }; raisedBy: { name: string } | null;
   pendingStep: { label: string; dueAt: string | null; overdue: boolean; assignee: string | null } | null;
 }
+/** Onboarding statuses in which the form can still be filled in (same list as the server's lib/onboardingStatus.ts). */
+export const EDITABLE_STATUSES: readonly VendorStatus[] = ['INVITED', 'IN_PROGRESS', 'SENT_BACK'];
+export const isEditableStatus = (s: string) => (EDITABLE_STATUSES as readonly string[]).includes(s);

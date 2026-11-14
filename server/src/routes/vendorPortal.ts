@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import multer from 'multer';
 import { z } from 'zod';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
@@ -9,19 +8,19 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireVendor, vendorCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { getPublished } from '../services/config.js';
-import { answerImpliedBy, buildChecklist, fillImpliedAnswers, fitToField, isSubmittable, sanitizeSection, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
-import { startReview } from '../services/workflowEngine.js';
-import { storeUpload, removeStored } from '../integrations/storage/index.js';
+import { buildChecklist, type Profile } from '../lib/profileEngine.js';
+import { removeStored } from '../integrations/storage/index.js';
 import { runKyc, latestChecks } from '../integrations/kyc/index.js';
-import { checkDef, checkInputs, checkList, checkOffered, checksForVendor, localeFor, inputsComplete } from '../countries/registry.js';
+import { checkDef, checkList, checkOffered, localeFor } from '../countries/registry.js';
 import { hasFeature } from '../services/limits.js';
 import { pendingOrderCount } from '../services/orders/queries.js';
 import { scorecardFor } from '../services/scorecards.js';
-import { queueExtraction, extractionsFor, getExtraction, dataEntryMode, answerFromDocument, willReadLive } from '../integrations/ai/index.js';
+import { extractionsFor, dataEntryMode } from '../integrations/ai/index.js';
 import { exportVendorData, needsConsent, noticeFor, recordConsent, requestErasure } from '../services/privacy.js';
 import { cancelChangeRequest, changeRequestsForVendor, flagsFor, openChangeRequest, submitChangeRequest } from '../services/lifecycle.js';
 import { arLabel, localizeConfig, supplierLanguages, translateMessage, vendorLanguage, type Lang } from '../i18n/index.js';
-import { withIdentity } from '../services/duplicates.js';
+import { activeTypes, addDocument, applyExtractedValues, docRequirementsFor, formState, isEditableStatus, saveSection, submitForReview, type Actor } from '../services/onboarding.js';
+import { upload } from '../lib/upload.js';
 
 export const vendorRouter = Router();
 vendorRouter.use(requireVendor);
@@ -35,15 +34,8 @@ const requireConsent = ah(async (req, _res, next) => {
 });
 for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
 
-const EDITABLE = ['INVITED', 'IN_PROGRESS', 'SENT_BACK'];
-const ALLOWED_MIME = ['application/pdf', 'image/png', 'image/jpeg'];
-
-// Files are held in memory (max 5 MB), checked and scanned, then written to the configured storage.
-export const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
-  fileFilter: (_req, file, cb) => (ALLOWED_MIME.includes(file.mimetype) ? cb(null, true) : cb(new HttpError(400, 'Only PDF, PNG or JPG files are allowed'))),
-});
+/** The supplier, as the one acting (their contact email is what the history shows). */
+const supplier = (req: { ip?: string }, v: { contactEmail: string }): Actor => ({ name: v.contactEmail, ip: req.ip });
 
 async function loadMine(req: Parameters<typeof vendorCtx>[0]) {
   const { vendorId, tenant } = vendorCtx(req);
@@ -60,19 +52,8 @@ export function publicCheck(c: { id: string; kind: string; status: string; messa
   return { id: c.id, kind: c.kind, status: c.status, message: c.message, inputMasked: c.inputMasked, nameOnRecord: c.nameOnRecord, nameMatch: c.nameMatch, test: c.test, checkedAt: c.createdAt, data: c.data };
 }
 
-const activeTypes = (docs: { status: string; docType: string }[]) => docs.filter((d) => d.status === 'ACTIVE').map((d) => d.docType);
-
-/** Validate a "valid until" date for a document type that expires. Returns the date or null. */
-export function checkExpiry(req_: { label: string; hasExpiry?: boolean }, raw: unknown) {
-  const expiresOn = typeof raw === 'string' && raw ? raw : null;
-  if (req_.hasExpiry && !expiresOn) throw new HttpError(400, `Enter the date this ${req_.label} is valid until`);
-  if (expiresOn && (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn) || Number.isNaN(Date.parse(expiresOn)))) throw new HttpError(400, 'Valid-until date is not a valid date');
-  if (expiresOn && expiresOn < new Date().toISOString().slice(0, 10)) throw new HttpError(400, 'This document has already expired. Upload a current one.');
-  return expiresOn;
-}
-
 function assertEditable(status: string) {
-  if (!EDITABLE.includes(status)) throw new HttpError(409, 'Your registration has been submitted and can no longer be edited');
+  if (!isEditableStatus(status)) throw new HttpError(409, 'Your registration has been submitted and can no longer be edited');
 }
 
 /** Checklist items in the supplier's language (labels come from the localized form; messages are translated). */
@@ -110,8 +91,8 @@ vendorRouter.get('/', ah(async (req, res) => {
     config: { sections: config.sections, guide: config.guide, levels: config.workflow.levels.map((l) => l.label) },
     checklist: localChecklist(buildChecklist(config, profile, activeTypes(v.documents), v.vendorType), lang),
     // Documents first: documents that depend on answers not yet given are offered "if it applies".
-    docRequirements: visibleDocRequirements(config, profile, v.vendorType, { undecided: dataEntryMode(tenant) === 'automatic' && EDITABLE.includes(v.status) }),
-    editable: EDITABLE.includes(v.status),
+    docRequirements: docRequirementsFor(tenant, config, profile, v),
+    editable: isEditableStatus(v.status),
     lifecycle: v.status === 'APPROVED' ? {
       blocked: !!v.blockedAt,
       // Held because a required document lapsed: the supplier can upload the renewal; the reason is shown.
@@ -149,18 +130,11 @@ vendorRouter.get('/scorecard', ah(async (req, res) => {
 vendorRouter.put('/profile/:section', ah(async (req, res) => {
   const v = await loadMine(req);
   assertEditable(v.status);
-  const key = req.params.section;
   const { config } = await getPublished(v.tenantId);
-  if (!config.sections.some((s) => s.key === key)) throw new HttpError(400, 'Unknown section');
-  const data = sanitizeSection(config, key, z.record(z.unknown()).parse(req.body));
+  const profile = await saveSection(config, v, req.params.section, z.record(z.unknown()).parse(req.body), supplier(req, v));
   const lang = vendorLanguage(vendorCtx(req).tenant, v);
-  const profile = { ...(v.profile as Profile), [key]: { ...((v.profile as Profile)[key] ?? {}), ...data } };
-  await db.update(vendors).set({
-    ...withIdentity(profile), status: v.status === 'INVITED' ? 'IN_PROGRESS' : v.status, name: key === 'basic' && data.vendorName ? String(data.vendorName) : v.name,
-  }).where(eq(vendors.id, v.id));
-  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'SECTION_SAVED', detail: { section: key }, ip: req.ip });
-  const shown = localizeConfig(config, lang);
-  res.json({ checklist: localChecklist(buildChecklist(shown, profile, activeTypes(v.documents), v.vendorType), lang), docRequirements: visibleDocRequirements(shown, profile, v.vendorType, { undecided: dataEntryMode(vendorCtx(req).tenant) === 'automatic' }) });
+  const shown = formState(vendorCtx(req).tenant, localizeConfig(config, lang), v, profile);
+  res.json({ ...shown, checklist: localChecklist(shown.checklist, lang) });
 }));
 
 vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
@@ -169,20 +143,9 @@ vendorRouter.post('/documents', upload.single('file'), ah(async (req, res) => {
   const approved = v.status === 'APPROVED';
   if (!approved) assertEditable(v.status);
   if (approved && await openChangeRequest(v.id)) throw new HttpError(409, 'Wait for your open change request to be decided (or cancel it) before uploading more documents.');
-  const docType = String(req.body.docType ?? '');
   const { config } = await getPublished(v.tenantId);
-  const req_ = config.documents.find((d) => d.type === docType);
-  if (!req_) throw new HttpError(400, 'Unknown document type');
-  const expiresOn = checkExpiry(req_, req.body.expiresOn);
-  const stored = await storeUpload(v.tenantId, v.id, req.file);
   // Approved vendors' uploads wait in a change request; during onboarding they count straight away.
-  const [doc] = await db.insert(documents).values({ tenantId: v.tenantId, vendorId: v.id, docType, ...stored, expiresOn, status: approved ? 'PENDING' : 'ACTIVE' }).returning();
-  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'DOCUMENT_UPLOADED', detail: { docType, fileName: stored.fileName, scan: stored.scanStatus }, ip: req.ip });
-  const aiAllowed = !!vendorCtx(req).tenant.settings.aiExtraction && hasFeature(vendorCtx(req).tenant, 'ai');
-  // Documents first: uploading a document offered "if it applies" answers its question. When a live AI reads
-  // the document, that waits until the AI has confirmed it really is that document.
-  if (!approved && !willReadLive(docType, aiAllowed)) await answerFromDocument(v.id, docType);
-  await queueExtraction(doc, aiAllowed);
+  const doc = await addDocument(vendorCtx(req).tenant, config, v, req.file, String(req.body.docType ?? ''), req.body.expiresOn, supplier(req, v), { pending: approved });
   const { storagePath: _p, ...safe } = doc;
   res.status(201).json(safe);
 }));
@@ -216,23 +179,8 @@ vendorRouter.post('/extractions/:id/apply', ah(async (req, res) => {
   const v = await loadMine(req);
   assertEditable(v.status);
   const { fieldIds } = z.object({ fieldIds: z.array(z.string()).min(1).max(30) }).parse(req.body);
-  const ex = await getExtraction(v.tenantId, v.id, req.params.id);
-  if (!ex || ex.status !== 'DONE') throw new HttpError(404, 'Nothing to apply');
   const { config } = await getPublished(v.tenantId);
-  const profile = structuredClone(v.profile as Profile);
-  const applied: string[] = [];
-  for (const f of ex.fields.filter((x) => fieldIds.includes(x.fieldId))) {
-    const [sec, key] = f.fieldId.split('.');
-    const fitted = fitToField(config, f.fieldId, f.value);
-    if (!fitted) continue;
-    const clean = sanitizeSection(config, sec, { [key]: fitted });
-    if (key in clean) { profile[sec] = { ...(profile[sec] ?? {}), ...clean }; applied.push(f.fieldId); }
-  }
-  // Applying a GSTIN also answers "Do you hold a GST number?" when it's still blank.
-  fillImpliedAnswers(config, profile, applied, v.vendorType);
-  await db.update(vendors).set(withIdentity(profile)).where(eq(vendors.id, v.id));
-  await db.update(schema.documentExtractions).set({ appliedAt: new Date() }).where(eq(schema.documentExtractions.id, ex.id));
-  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: 'AI_VALUES_APPLIED', detail: { fields: applied.join(', ') }, ip: req.ip });
+  const { applied, profile } = await applyExtractedValues(config, v, req.params.id, fieldIds, supplier(req, v));
   const lang = vendorLanguage(vendorCtx(req).tenant, v);
   res.json({ applied, checklist: localChecklist(buildChecklist(localizeConfig(config, lang), profile, activeTypes(v.documents), v.vendorType), lang), profile });
 }));
@@ -241,19 +189,9 @@ vendorRouter.post('/submit', ah(async (req, res) => {
   const v = await loadMine(req);
   assertEditable(v.status);
   const { config } = await getPublished(v.tenantId);
-  const checklist = buildChecklist(config, v.profile as Profile, activeTypes(v.documents), v.vendorType);
-  if (!isSubmittable(checklist)) {
-    const lang = vendorLanguage(vendorCtx(req).tenant, v);
-    throw new HttpError(422, 'Please complete all required fields before submitting', localChecklist(buildChecklist(localizeConfig(config, lang), v.profile as Profile, activeTypes(v.documents), v.vendorType), lang).filter((c) => !c.ok && c.severity === 'error'));
-  }
-  const resubmission = v.status === 'SENT_BACK';
-  // Automatic checks on submission (e.g. sanctions screening in Gulf workspaces), so reviewers see the result.
-  for (const { def } of checksForVendor(vendorCtx(req).tenant.country, v.profile as Profile).filter((c) => c.def.runOnSubmit)) {
-    const input = checkInputs(def, v.profile as Profile);
-    if (inputsComplete(def, input)) await runKyc(v, def.kind, input, 'system (on submit)').catch(() => {});
-  }
-  await startReview(v);
-  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: v.contactEmail, action: resubmission ? 'RESUBMITTED' : 'SUBMITTED', ip: req.ip });
+  const lang = vendorLanguage(vendorCtx(req).tenant, v);
+  await submitForReview(vendorCtx(req).tenant, config, v, supplier(req, v),
+    () => localChecklist(buildChecklist(localizeConfig(config, lang), v.profile as Profile, activeTypes(v.documents), v.vendorType), lang).filter((c) => !c.ok && c.severity === 'error'));
   res.json({ ok: true });
 }));
 

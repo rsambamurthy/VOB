@@ -60,7 +60,8 @@ export async function approvedVendor(name: string, email: string) {
   await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp });
   await v.post('/api/vendor/consent', { version: (await v.get('/api/vendor')).body.privacy.version });
   // Each test supplier gets its own PAN, GSTIN, CIN and bank account, so they aren't flagged as duplicates of each other.
-  const n = String(Math.floor(Math.random() * 10000)).padStart(4, '0'); const L = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+  const n = String(Math.floor(Math.random() * 1000)).padStart(3, '0') + (1 + Math.floor(Math.random() * 9)); // never ending in 0: the test checks treat that as "not found"
+  const L = String.fromCharCode(65 + Math.floor(Math.random() * 26));
   const pan = `AAFC${L}${n}Q`; const g = `27${pan}1Z`;
   await v.put('/api/vendor/profile/basic', { entityType: 'Company (Pvt / Public Ltd)', address: '1 Main Rd', region: 'Maharashtra', district: 'Pune', postalCode: '411001', msmeRegistered: 'No', supplyCategory: 'Goods' });
   await v.put('/api/vendor/profile/bank', { bankName: 'HDFC Bank', accountHolderName: name, accountNumber: `5010${L.charCodeAt(0)}12${n}`, bankBranch: 'Pune', ifsc: 'HDFC0000001' });

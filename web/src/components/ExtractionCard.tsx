@@ -41,3 +41,19 @@ export function ExtractionCard({ ex, docLabel, onApply, readOnly }: { ex: Extrac
     </div>
   );
 }
+
+/**
+ * The "We read …" cards for a supplier's documents. Editable (supplier portal, or a buyer filling in for the
+ * supplier): every card incl. ones still being read, with Use. Read-only (reviewers): finished reads only.
+ */
+export function ExtractionList({ extractions, documents, requirements, onApply }: { extractions: Extraction[]; documents: { id: string; docType: string }[]; requirements: { type: string; label: string }[]; onApply?: (extractionId: string, fieldIds: string[]) => Promise<void> }) {
+  const shown = extractions.filter((e) => (onApply ? e.status !== 'SKIPPED' : e.status === 'DONE' || e.status === 'FAILED'));
+  return <>{shown.map((e) => {
+    const doc = documents.find((x) => x.id === e.documentId);
+    if (!doc) return null;
+    const label = requirements.find((r) => r.type === doc.docType)?.label ?? doc.docType;
+    return onApply
+      ? <ExtractionCard key={`${e.id}-${e.status}`} ex={e} docLabel={label} onApply={(ids) => onApply(e.id, ids)} />
+      : <ExtractionCard key={`${e.id}-${e.status}`} ex={e} readOnly docLabel={label} />;
+  })}</>;
+}

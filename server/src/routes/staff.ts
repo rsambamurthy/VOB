@@ -1,6 +1,5 @@
 /** Buyer-side vendor management. Every query is scoped by the signed-in user's tenant. */
 import { Router } from 'express';
-import crypto from 'node:crypto';
 import { z } from 'zod';
 import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
@@ -8,16 +7,17 @@ import type { VendorStatus } from '../db/schema.js';
 import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
-import { sendMail } from '../lib/mailer.js';
 import { env } from '../lib/env.js';
-import { buildChecklist, visibleDocRequirements, type Profile } from '../lib/profileEngine.js';
+import { buildChecklist, type Profile } from '../lib/profileEngine.js';
 import { assignableUsers, decide, reassign } from '../services/workflowEngine.js';
 import { canAct, coveringFor } from '../services/approvers.js';
 import { getConfig } from '../services/config.js';
 import { latestChecks, runKyc } from '../integrations/kyc/index.js';
-import { checkDef, checkInputs, checkOffered, packFor, inputsComplete } from '../countries/registry.js';
-import { extractionsFor } from '../integrations/ai/index.js';
-import { checkExpiry, publicCheck, upload } from './vendorPortal.js';
+import { checkDef, checkInputs, checkOffered, inputsComplete } from '../countries/registry.js';
+import { dataEntryMode, extractionsFor } from '../integrations/ai/index.js';
+import { publicCheck } from './vendorPortal.js';
+import { upload } from '../lib/upload.js';
+import { checkExpiry, docRequirementsFor, isEditableStatus } from '../services/onboarding.js';
 import { getPublished } from '../services/config.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { cancelStaffChange, changeRequestsForVendor, decideChange, flagsForMany, openChangeRequest, reassignChangeStep, reviewVendor, setBlocked, submitChangeRequest } from '../services/lifecycle.js';
@@ -25,12 +25,10 @@ import { approverIds } from '../services/approvers.js';
 import { CSV_COLUMNS, toCsv, toCsvRow, toOracleSupplier } from '../lib/erpMapper.js';
 import { queueErpPush, recentSyncs, retrySync, syncsForVendor, syncSummary } from '../integrations/erp/index.js';
 import { actionFor } from '../integrations/erp/drivers.js';
-import { validators } from '../lib/validators.js';
 import { isSensitive, maskField, maskProfile } from '../lib/fieldCrypto.js';
 import { assertCanAddVendor, assertFeature } from '../services/limits.js';
 import { declineErasure, eraseVendor, exportVendorData, noticeFor } from '../services/privacy.js';
 import { mailSupplier } from '../i18n/emails.js';
-import type { Tenant } from '../db/schema.js';
 import { vendorLanguage } from '../i18n/index.js';
 import { createSchema, createVendor, sendInvite } from '../services/vendors.js';
 import { changeDuplicates, dismissDuplicate, duplicatesOf, duplicateText, withIdentity } from '../services/duplicates.js';
@@ -111,7 +109,7 @@ staffRouter.post('/vendors/:id/invite', requireStaff('vendors.create'), ah(async
   const s = staffCtx(req);
   const v = await findVendor(s.tenant.id, req.params.id);
   if (!v) throw new HttpError(404, 'Vendor not found');
-  if (!['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status)) throw new HttpError(409, 'Vendor has already submitted');
+  if (!isEditableStatus(v.status)) throw new HttpError(409, 'Vendor has already submitted');
   await sendInvite(s.tenant, v);
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'INVITE_SENT', detail: { to: v.contactEmail }, ip: req.ip });
   res.json({ ok: true });
@@ -130,7 +128,7 @@ staffRouter.post('/vendors/:id/contact', requireStaff('vendors.edit'), ah(async 
   await db.update(vendors).set({ contactEmail: email, emailBouncedAt: null, emailBounceReason: null, ...withIdentity({ ...profile, ...(basic ? { basic } : {}) }), updatedAt: new Date() }).where(eq(vendors.id, v.id));
   await audit({ tenantId: s.tenant.id, vendorId: v.id, actor: s.user.name, action: 'CONTACT_EMAIL_CHANGED', detail: { from: old.replace(/^(.).*(@.*)$/, '$1***$2'), to: email.replace(/^(.).*(@.*)$/, '$1***$2'), reason }, ip: req.ip });
   await mailSupplier(vendorLanguage(s.tenant, v), { tenantId: s.tenant.id, to: old }, 'contactChanged', { vendor: v.name, buyer: s.tenant.name, by: s.user.name });
-  if (['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status)) await sendInvite(s.tenant, { ...v, contactEmail: email });
+  if (isEditableStatus(v.status)) await sendInvite(s.tenant, { ...v, contactEmail: email });
   res.json({ ok: true });
 }));
 
@@ -154,7 +152,9 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
   res.json({
     vendor: { ...rest, profile: maskProfile(rest.profile), steps: rest.steps.map(({ role, assignee, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
     checklist: buildChecklist(config, profile, v.documents.filter((d) => d.status === 'ACTIVE').map((d) => d.docType), v.vendorType),
-    docRequirements: visibleDocRequirements(config, profile, v.vendorType),
+    docRequirements: docRequirementsFor(s.tenant, config, profile, v),
+    /** How the form is filled in: 'automatic' means documents first (also when a buyer fills it in for the supplier). */
+    dataEntry: dataEntryMode(s.tenant),
     canAct: !!pending && await canAct(pending, s.user.id),
     canReassign: !!pending && s.permissions.has('approvals.manage'),
     checks: (await latestChecks(v.id)).map((c) => ({ ...publicCheck(c), requestedBy: c.requestedBy, provider: c.provider })),

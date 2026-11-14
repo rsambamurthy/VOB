@@ -425,3 +425,43 @@ describe('integrations admin', () => {
     expect((await (await login('tax@acme.test')).get('/api/admin/integrations')).status).toBe(403);
   });
 });
+
+describe('buyer fills in for the supplier in automatic data entry', () => {
+  test('documents first for the buyer too: "if it applies", answers from documents, form filled, bank details confirmed with Use', async () => {
+    const g = `29AABCB4321F1Z`; const gstin = g + gstinCheckChar(g);
+    let calls = 0;
+    const create = vi.fn(async () => {
+      const cheque = ++calls > 1; // the GST certificate is uploaded first, then the cheque
+      return { content: [{ type: 'tool_use', id: 't', name: 'record_document', input: cheque
+        ? { documentType: 'CANCELLED_CHEQUE', values: { accountNumber: '50100077788899', ifsc: 'HDFC0000123', bankName: 'HDFC Bank' }, confidence: { accountNumber: 0.97, ifsc: 0.97, bankName: 0.95 }, notes: '' }
+        : { documentType: 'GST_CERT', values: { gstin, legalName: 'BUYER FILLED PRIVATE LIMITED', registrationType: 'Regular', constitution: 'Private Limited Company' }, confidence: { gstin: 0.97, legalName: 0.95, registrationType: 0.95, constitution: 0.95 }, notes: '' } }] };
+    });
+    setExtractor(anthropicExtractor({ apiKey: 'x', model: 'claude-sonnet-5-5' }, { messages: { create } } as any));
+    const admin = await login('admin@acme.test');
+    await admin.patch('/api/admin/tenant', { settings: { aiExtraction: true, dataEntry: 'automatic' } });
+    try {
+      const id = (await admin.post('/api/staff/vendors', { name: 'Buyer Filled Pvt Ltd', vendorType: 'DOMESTIC', contactFirstName: 'B', contactLastName: 'F', contactEmail: 'bf@auto.test', contactMobile: '9811100099', notify: false })).body.vendor.id;
+      const page = (await admin.get(`/api/staff/vendors/${id}`)).body;
+      expect(page.dataEntry).toBe('automatic');
+      expect(page.docRequirements.find((d: any) => d.type === 'GST_CERT')).toMatchObject({ isRequired: false, appliesIf: { values: ['Yes'] } });
+      const up = async (t: string) => (await admin.agent.post(`/api/staff/vendors/${id}/assist/documents`).set('X-Requested-With', 'fetch').field('docType', t).attach('file', Buffer.from(PDF), { filename: 'd.pdf', contentType: 'application/pdf' }));
+      expect((await up('GST_CERT')).status).toBe(201);
+      expect((await up('CANCELLED_CHEQUE')).status).toBe(201);
+      const after = (await admin.get(`/api/staff/vendors/${id}`)).body;
+      const p = (await db.query.vendors.findFirst({ where: eq(schema.vendors.id, id) }))!.profile as any;
+      expect(p.tax).toMatchObject({ hasGst: 'Yes', gstin, gstClassification: 'Regular' });
+      expect(p.basic.region).toBe('Karnataka');
+      expect(p.bank.accountNumber ?? '').toBe(''); // bank details wait for confirmation…
+      const cheque = after.extractions.find((e: any) => e.suggestions.some((s: any) => s.fieldId === 'bank.accountNumber'));
+      expect(cheque.suggestions.find((s: any) => s.fieldId === 'bank.accountNumber').value).not.toBe('50100077788899'); // masked for staff
+      // …which the buyer gives with Use.
+      const r = await admin.post(`/api/staff/vendors/${id}/assist/extractions/${cheque.id}/apply`, { fieldIds: ['bank.accountNumber', 'bank.ifsc'] });
+      expect(r.status).toBe(200);
+      expect(r.body.applied.sort()).toEqual(['bank.accountNumber', 'bank.ifsc']);
+      expect(((await db.query.vendors.findFirst({ where: eq(schema.vendors.id, id) }))!.profile as any).bank).toMatchObject({ accountNumber: '50100077788899', ifsc: 'HDFC0000123' });
+      expect((await db.select().from(schema.auditLogs).where(eq(schema.auditLogs.vendorId, id))).map((a) => a.action)).toEqual(expect.arrayContaining(['AI_VALUES_AUTOFILLED', 'AI_VALUES_APPLIED']));
+    } finally {
+      await admin.patch('/api/admin/tenant', { settings: { aiExtraction: false, dataEntry: 'assisted' } });
+    }
+  });
+});

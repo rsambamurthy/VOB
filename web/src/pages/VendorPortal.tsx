@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { applyBranding } from '../lib/session';
 import { monogram } from '../lib/format';
-import { DynamicSection, type FieldSource } from '../components/DynamicSection';
+import { DynamicSection } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { ApprovalTimeline } from '../components/Timeline';
@@ -12,7 +12,8 @@ import type { Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Ext
 import { ChangeDiff, CrHistory, diffProfiles, FlagBadges } from '../components/Lifecycle';
 import { fmtDate, setLocaleInfo, type LocaleInfo } from '../lib/format';
 import { CheckBadge } from '../components/Checks';
-import { ExtractionCard } from '../components/ExtractionCard';
+import { ExtractionList } from '../components/ExtractionCard';
+import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
 import { rememberWorkspace, saveLanguage, SupplierFrame, supplierSignOut } from '../orders/SupplierShell';
 import { PoweredBy } from '../components/Brand';
@@ -20,7 +21,7 @@ import { setLang, t, useLang, type Lang } from '../i18n';
 import { Rich } from '../i18n/Rich';
 import { TabStrip } from '../components/TabStrip';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: 'manual' | 'assisted' | 'automatic' };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; hold: { reason: string | null } | null; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
@@ -66,8 +67,7 @@ export function VendorPortal() {
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);
   useEffect(() => { load(); }, [load, lang]);
-  const pending = me?.extractions.some((e) => e.status === 'PENDING');
-  useEffect(() => { if (!pending) return; const iv = setInterval(load, 3000); return () => clearInterval(iv); }, [pending, load]);
+  const pending = useRefreshWhileReading(me?.extractions, true, load);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
@@ -101,22 +101,11 @@ export function VendorPortal() {
   const auto = me.dataEntry === 'automatic' && me.editable;
   const sectionTabs = cfg.sections.map((s) => ({ key: s.key, label: s.label }));
   const docTab = { key: 'documents', label: t('portal.documentsTab') };
-  const tabs = auto ? [docTab, ...sectionTabs] : [...sectionTabs, docTab];
-  const docLabelOf = (documentId: string) => { const d = v.documents.find((x) => x.id === documentId); return d ? (me.docRequirements.find((r) => r.type === d.docType)?.label ?? me.extractions.find((x) => x.documentId === documentId)?.docLabel ?? d.docType).replace(/ \(.*\)$/, '') : ''; };
-  const same = (a: unknown, b: string) => String(a ?? '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]/g, '') === b.toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+  const tabs = formTabs(sectionTabs, docTab, auto);
   // Per field: filled in from which document, or read but waiting for the supplier (bank details, low confidence, different from what they typed).
-  const sources: Record<string, FieldSource> = {};
-  if (auto) for (const e of me.extractions.filter((x) => x.status === 'DONE' && v.documents.some((d) => d.id === x.documentId))) {
-    for (const sg of e.suggestions) {
-      const [sec, key] = sg.fieldId.split('.');
-      const now = profile[sec]?.[key];
-      if (sources[sg.fieldId]?.kind === 'filled') continue;
-      if (sg.autoFilled && same(now, sg.value)) sources[sg.fieldId] = { doc: docLabelOf(e.documentId), kind: 'filled' };
-      else if (!same(now, sg.value) && !sources[sg.fieldId]) sources[sg.fieldId] = { doc: docLabelOf(e.documentId), kind: 'check', value: sg.value, onUse: () => applyExtraction(e.id, [sg.fieldId]) };
-    }
-  }
-  const filledCount = Object.values(sources).filter((x) => x.kind === 'filled').length;
-  const toConfirm = Object.values(sources).filter((x) => x.kind === 'check').length;
+  const { sources, filledCount, toConfirm } = auto
+    ? fieldSources({ extractions: me.extractions, documents: v.documents, requirements: me.docRequirements, profile, onUse: (exId, fieldId) => applyExtraction(exId, [fieldId]) })
+    : { sources: {}, filledCount: 0, toConfirm: 0 };
   const sectionErrors = (k: string) => me.checklist.filter((c) => c.section === k && !c.ok && c.severity === 'error').length;
 
   function change(section: string, field: string, value: string) {
@@ -285,11 +274,7 @@ export function VendorPortal() {
               ))}
               {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={docsEditable} onUpload={upload} onDelete={remove}
                 canDelete={approved ? (d) => d.status === 'PENDING' && !d.changeRequestId : undefined} uploadLabel={approved ? t('portal.uploadRenewal') : undefined} />}
-              {tab === 'documents' && me.editable && me.extractions.filter((e) => e.status !== 'SKIPPED' && v.documents.some((d) => d.id === e.documentId)).map((e) => {
-                const doc = v.documents.find((d) => d.id === e.documentId)!;
-                const label = me.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType;
-                return <ExtractionCard key={`${e.id}-${e.status}`} ex={e} docLabel={label} onApply={(ids) => applyExtraction(e.id, ids)} />;
-              })}
+              {tab === 'documents' && me.editable && <ExtractionList extractions={me.extractions} documents={v.documents} requirements={me.docRequirements} onApply={applyExtraction} />}
             </div>
             {approved && (changeMode || newDocs.length > 0) && (
               <div className="form-foot">

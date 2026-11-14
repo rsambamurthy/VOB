@@ -11,7 +11,7 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, requireVendor, staffCtx, vendorCtx } from '../auth/session.js';
 import { hasFeature } from '../services/limits.js';
 import { asnRequiredFor, cancelShipment, createShipment, shippableLines, shipmentsFor } from '../services/collab/shipments.js';
-import { upload } from './vendorPortal.js';
+import { upload } from '../lib/upload.js';
 import { storeUpload } from '../integrations/storage/index.js';
 import { cancelInvoice, decideInvoice, invoiceCounts, invoiceDetail, invoiceableLines, listInvoices, listPayments, matchInvoice, submitInvoice } from '../services/collab/invoices.js';
 import { translateMessage } from '../i18n/index.js';

@@ -8,17 +8,19 @@ import { ApprovalTimeline } from '../components/Timeline';
 import { Checklist } from '../components/Checklist';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
+import { isEditableStatus } from '../lib/types';
 import type { ChangeRequest, Check, Duplicate, Profile, ChecklistItem, DocRequirement, Extraction, Flag, Step, VendorFull } from '../lib/types';
 import { ChangeDiff, CrBadge, diffProfiles, FlagBadges, isMasked, MASKED_FIELDS } from '../components/Lifecycle';
 import { ErpCard } from '../components/Erp';
 import { SupplierAccessCard } from '../components/SupplierAccess';
 import { useSession } from '../lib/session';
 import { ChecksPanel } from '../components/Checks';
-import { ExtractionCard } from '../components/ExtractionCard';
+import { ExtractionList } from '../components/ExtractionCard';
+import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { TabStrip } from '../components/TabStrip';
 
 type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
-  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean };
+  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
@@ -51,11 +53,22 @@ export function VendorDetail() {
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
   useEffect(() => { load(); }, [load]);
+  // Filling in for the supplier: while documents are being read, refresh; values filled in from them appear in
+  // the tabs not being edited (a tab with unsaved typing is left alone).
+  const readingDocs = useRefreshWhileReading(d?.extractions, !!assist, load);
+  useEffect(() => {
+    if (!d) return;
+    setAssist((p) => p && Object.fromEntries([...new Set([...Object.keys(p), ...Object.keys(d.vendor.profile)])].map((sec) => [sec, assistDirty.has(sec) ? p[sec] : (d.vendor.profile[sec] ?? p[sec])])));
+  }, [d, assistDirty]);
   if (!d || !config) return <div className="page"><div className="spinner" /></div>;
   const v = d.vendor;
   const openCrs = d.changeRequests.filter((c) => c.status === 'PENDING');
   const myCr = openCrs.find((c) => c.canAct);
-  const tabs = [...config.sections.map((s) => ({ key: s.key, label: s.label })), { key: 'documents', label: 'Documents' },
+  // Automatic data entry (documents first): a buyer filling in for the supplier starts with the documents too, as the supplier would.
+  const autoAssist = !!assist && d.dataEntry === 'automatic';
+  const sectionTabs = config.sections.map((s) => ({ key: s.key, label: s.label }));
+  const docTab = { key: 'documents', label: 'Documents' };
+  const tabs = [...formTabs(sectionTabs, docTab, autoAssist),
     ...(d.changeRequests.length ? [{ key: 'changes', label: `Changes${openCrs.length ? ` (${openCrs.length})` : ''}` }] : []), { key: 'history', label: 'History' }];
   const approved = v.status === 'APPROVED';
   const shownProfile = Object.keys(revealed).length ? Object.fromEntries(Object.entries(v.profile).map(([sec, vals]) => [sec, { ...vals, ...Object.fromEntries(Object.entries(revealed).filter(([k]) => k.startsWith(`${sec}.`)).map(([k, x]) => [k.split('.')[1], x])) }])) : v.profile;
@@ -70,7 +83,15 @@ export function VendorDetail() {
   };
   const proposing = !!draft;
   const assisting = !!assist;
-  const canAssist = d.canInvite && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && !assisting;
+  async function assistApply(exId: string, fieldIds: string[]) {
+    if (assistDirty.size && !(await assistSave())) return;
+    try { await api(`/staff/vendors/${id}/assist/extractions/${exId}/apply`, { body: { fieldIds } }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+  }
+  // Per field: filled in from which document, or read but waiting to be confirmed (bank details, PAN, low confidence).
+  const { sources, filledCount, toConfirm } = autoAssist
+    ? fieldSources({ extractions: d.extractions, documents: v.documents, requirements: d.docRequirements, profile: assist!, onUse: (exId, fieldId) => assistApply(exId, [fieldId]) })
+    : { sources: {}, filledCount: 0, toConfirm: 0 };
+  const canAssist = d.canInvite && isEditableStatus(v.status) && !assisting;
   const assistErrors = assisting ? Object.fromEntries(d.checklist.filter((c) => !c.ok && c.message && c.section !== 'documents').map((c) => [c.id.replace(/^cross\./, ''), c.message!])) : {};
   async function assistSave() {
     for (const sec of [...assistDirty]) {
@@ -149,8 +170,8 @@ export function VendorDetail() {
         </div>
         <div className="head-actions">
           {approved && <Link className="btn btn-secondary" to={`/staff/scorecards/${v.id}`}>Scorecard</Link>}
-          {d.canInvite && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && <button className="btn btn-secondary" onClick={resend}>Resend invite</button>}
-          {canAssist && <button className="btn btn-secondary" onClick={() => { setAssist(structuredClone(v.profile)); setFlash(undefined); }} title="Enter the details and documents yourself, e.g. for a supplier who sent them by email">Fill in for supplier</button>}
+          {d.canInvite && isEditableStatus(v.status) && <button className="btn btn-secondary" onClick={resend}>Resend invite</button>}
+          {canAssist && <button className="btn btn-secondary" onClick={() => { setAssist(structuredClone(v.profile)); setFlash(undefined); if (d.dataEntry === 'automatic') setTab('documents'); }} title="Enter the details and documents yourself, e.g. for a supplier who sent them by email">Fill in for supplier</button>}
           {canStartProposal && <button className="btn btn-secondary" onClick={startProposal} title="Update details or documents on the vendor’s behalf (needs approval)">Propose change</button>}
           {approved && d.canBlock && <button className="btn btn-secondary" disabled={reviewing} onClick={runReview}>{reviewing ? 'Checking…' : 'Run re-check'}</button>}
           {approved && d.canBlock && (v.blockedAt
@@ -187,6 +208,9 @@ export function VendorDetail() {
           </div>
         </div>
       )}
+      {autoAssist && tab === 'documents' && <Alert kind="info"><strong>Start with the documents.</strong> Upload what the supplier sent you; the form is filled in from them. Bank details and tax numbers are read but wait for you to confirm them (<em>Use</em> on the field or below). Documents marked <em>if it applies</em> answer their question when uploaded.</Alert>}
+      {autoAssist && readingDocs && <Alert kind="info">Reading the documents… the form fills in as each one is read.</Alert>}
+      {autoAssist && tab !== 'documents' && (filledCount > 0 || toConfirm > 0) && <Alert kind="success">{filledCount} field{filledCount === 1 ? '' : 's'} filled in from the documents{toConfirm ? ` · ${toConfirm} to confirm` : ''}. Check them before submitting.</Alert>}
       {myCr && (
         <div className="action-bar">
           <div><strong>A change request needs your review.</strong> <span className="muted">{myCr.steps.find((s) => s.status === 'PENDING')?.label} · {myCr.changes.length} field{myCr.changes.length === 1 ? '' : 's'}{myCr.documentIds.length ? `, ${myCr.documentIds.length} document(s)` : ''} · {fmtDateTime(myCr.createdAt)}</span></div>
@@ -212,7 +236,7 @@ export function VendorDetail() {
             {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'active' : ''} onClick={() => setTab(t.key)}>{t.label}</button>)}
           </TabStrip>
           <div className="pad">
-            {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={draft ?? assist ?? shownProfile} vendorType={v.vendorType} readOnly={!proposing && !assisting} errors={assisting ? assistErrors : propErrors} extra={assisting ? undefined : revealExtra(s.key)}
+            {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={draft ?? assist ?? shownProfile} vendorType={v.vendorType} readOnly={!proposing && !assisting} errors={assisting ? assistErrors : propErrors} extra={assisting ? undefined : revealExtra(s.key)} sources={autoAssist ? sources : undefined}
               onChange={(f, val) => assisting
                 ? (setAssist((p) => p && ({ ...p, [s.key]: { ...(p[s.key] ?? {}), [f]: val } })), setAssistDirty((x) => new Set(x).add(s.key)))
                 : setDraft((p) => p && ({ ...p, [s.key]: { ...(p[s.key] ?? {}), [f]: val } }))} />)}
@@ -242,11 +266,7 @@ export function VendorDetail() {
                 {cr.remarks && cr.status !== 'PENDING' && <p className="small muted">Decision remarks: “{cr.remarks}”</p>}
               </div>
             ))}
-            {tab === 'documents' && d.extractions.filter((e) => e.status === 'DONE' || e.status === 'FAILED').map((e) => {
-              const doc = v.documents.find((x) => x.id === e.documentId);
-              if (!doc) return null;
-              return <ExtractionCard key={`${e.id}-${e.status}`} ex={e} readOnly docLabel={d.docRequirements.find((r) => r.type === doc.docType)?.label ?? doc.docType} />;
-            })}
+            {tab === 'documents' && <ExtractionList extractions={d.extractions} documents={v.documents} requirements={d.docRequirements} onApply={assisting ? assistApply : undefined} />}
             {tab === 'history' && (
               <ul className="audit">
                 {v.audit?.map((a) => (

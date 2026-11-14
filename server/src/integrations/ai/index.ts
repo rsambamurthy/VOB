@@ -35,7 +35,7 @@ export function dataEntryMode(t: Tenant): DataEntryMode {
 }
 /** Below this the value is shown as a suggestion to check, not filled in. */
 export const AUTO_FILL_CONFIDENCE = 0.8;
-const EDITABLE_STATUSES = ['INVITED', 'IN_PROGRESS', 'SENT_BACK'];
+import { isEditableStatus } from '../../lib/onboardingStatus.js';
 
 const i = env.int;
 let extractor: Extractor = i.AI_PROVIDER === 'anthropic' ? anthropicExtractor({ apiKey: i.ANTHROPIC_API_KEY!, model: i.AI_MODEL }) : mockExtractor;
@@ -51,7 +51,7 @@ export const willReadLive = (docType: string, aiAllowed: boolean) => !!EXTRACTAB
  */
 export async function answerFromDocument(vendorId: string, docType: string) {
   const vendor = await db.query.vendors.findFirst({ where: eq(schema.vendors.id, vendorId) });
-  if (!vendor || !EDITABLE_STATUSES.includes(vendor.status)) return;
+  if (!vendor || !isEditableStatus(vendor.status)) return;
   const tenant = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, vendor.tenantId) });
   if (!tenant || dataEntryMode(tenant) !== 'automatic') return;
   const { config } = await getPublished(tenant.id);
@@ -72,7 +72,7 @@ async function refile(doc: { id: string; tenantId: string; vendorId: string; doc
   const reads = await db.select({ id: schema.documentExtractions.id }).from(schema.documentExtractions).where(eq(schema.documentExtractions.documentId, doc.id));
   if (reads.length > 1) return false;
   const vendor = await db.query.vendors.findFirst({ where: eq(schema.vendors.id, doc.vendorId) });
-  if (!vendor || !EDITABLE_STATUSES.includes(vendor.status)) return false;
+  if (!vendor || !isEditableStatus(vendor.status)) return false;
   const tenant = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, doc.tenantId) });
   if (!tenant || dataEntryMode(tenant) !== 'automatic') return false;
   const { config } = await getPublished(tenant.id);
@@ -143,7 +143,7 @@ defineJob<{ id: string }>('document.extract', async ({ id }) => {
  */
 async function autoFill(extractionId: string, vendorId: string, fields: { fieldId: string; value: string; confidence: number }[], confirmOnly = new Set<string>()) {
   const vendor = await db.query.vendors.findFirst({ where: eq(schema.vendors.id, vendorId) });
-  if (!vendor || !EDITABLE_STATUSES.includes(vendor.status)) return;
+  if (!vendor || !isEditableStatus(vendor.status)) return;
   const tenant = await db.query.tenants.findFirst({ where: eq(schema.tenants.id, vendor.tenantId) });
   if (!tenant || dataEntryMode(tenant) !== 'automatic') return;
   const { config } = await getPublished(tenant.id);
