@@ -852,6 +852,52 @@ export const agreementAcceptances = pgTable('agreement_acceptances', {
   acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('agreement_acceptances_vendor_idx').on(t.vendorId, t.agreementId)]);
 
+/** Public "Become a supplier" links (website, trade fair, QR code…). Applications from them are screened before an invitation. */
+export const registrationLinks = pgTable('registration_links', {
+  id: id(), tenantId: tenantId(),
+  /** In the public URL /apply/<slug>; random, so links can't be guessed. */
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  /** Pre-set vendor type for applicants (null = they choose). */
+  vendorType: text('vendor_type'),
+  /** Short message shown at the top of the page (optional). */
+  intro: text('intro'),
+  /** Who is emailed about new applications (comma-separated). */
+  notifyEmails: text('notify_emails'),
+  active: boolean('active').notNull().default(true),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: createdAt(),
+});
+
+/** An application through a registration link. UNVERIFIED (email not confirmed) · PENDING · ACCEPTED (vendor created and invited) · DECLINED */
+export const supplierApplications = pgTable('supplier_applications', {
+  id: id(), tenantId: tenantId(),
+  linkId: text('link_id').notNull().references(() => registrationLinks.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('UNVERIFIED'),
+  companyName: text('company_name').notNull(),
+  vendorType: text('vendor_type').notNull(),
+  contactFirstName: text('contact_first_name').notNull(),
+  contactLastName: text('contact_last_name').notNull(),
+  email: text('email').notNull(),
+  mobile: text('mobile').notNull(),
+  /** The home country's main registration number (GSTIN, CR…), as in the vendor register. */
+  registrationId: text('registration_id'),
+  website: text('website'),
+  supplies: text('supplies'),
+  message: text('message'),
+  language: text('language'),
+  codeHash: text('code_hash'),
+  codeExpiresAt: timestamp('code_expires_at', { withTimezone: true }),
+  codeAttempts: integer('code_attempts').notNull().default(0),
+  ip: text('ip'), userAgent: text('user_agent'),
+  verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedByName: text('decided_by_name'),
+  declineReason: text('decline_reason'),
+  vendorId: text('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+}, (t) => [index('supplier_applications_tenant_idx').on(t.tenantId, t.status, t.createdAt)]);
+
 /** "Not a duplicate": a person checked two suppliers that share an identifier and confirmed they are different. Pair stored with vendorA < vendorB. */
 export const duplicateDismissals = pgTable('duplicate_dismissals', {
   id: id(), tenantId: tenantId(),

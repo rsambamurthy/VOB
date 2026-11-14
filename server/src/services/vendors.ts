@@ -53,9 +53,9 @@ export async function nextVendorCode(tenantId: string) {
 
 export const portalLink = (v: { inviteToken: string }) => `${env.appBaseUrl}/onboard/${v.inviteToken}`;
 
-export async function sendInvite(tenant: Tenant, v: { tenantId: string; name: string; contactEmail: string; contactFirstName: string; inviteToken: string; language: string | null }) {
+export async function sendInvite(tenant: Tenant, v: { tenantId: string; name: string; contactEmail: string; contactFirstName: string; inviteToken: string; language: string | null }, template: 'invite' | 'applicationAccepted' = 'invite') {
   const link = portalLink(v);
-  await mailSupplier(vendorLanguage(tenant, v), { tenantId: v.tenantId, to: v.contactEmail, link }, 'invite', { first: v.contactFirstName, buyer: tenant.name, vendor: v.name });
+  await mailSupplier(vendorLanguage(tenant, v), { tenantId: v.tenantId, to: v.contactEmail, link }, template, { first: v.contactFirstName, buyer: tenant.name, vendor: v.name });
   return link;
 }
 
@@ -63,7 +63,7 @@ export async function sendInvite(tenant: Tenant, v: { tenantId: string; name: st
  * Creates the supplier. `approved` imports an existing supplier as already approved (no onboarding, no
  * approval steps), with the profile answers given; otherwise it starts onboarding (status INVITED).
  */
-export async function createVendor(tenant: Tenant, input: CreateInput, actor: { id: string; name: string }, opts: { ip?: string; approved?: { profile: Profile; erpCode?: string } } = {}) {
+export async function createVendor(tenant: Tenant, input: CreateInput, actor: { id: string; name: string }, opts: { ip?: string; approved?: { profile: Profile; erpCode?: string }; prefill?: Profile; source?: string; inviteTemplate?: 'invite' | 'applicationAccepted' } = {}) {
   const problems = basicProblems(tenant, input);
   if (problems.length) throw new HttpError(400, problems[0], [{ path: ['contactMobile'], message: problems[0] }]);
   const dup = await nameTaken(tenant.id, input.name);
@@ -75,7 +75,7 @@ export async function createVendor(tenant: Tenant, input: CreateInput, actor: { 
     basic: { vendorName: data.name, supplierCountry: data.vendorType === 'IMPORT' ? '' : home, contactName: `${data.contactFirstName} ${data.contactLastName}`, contactEmail: email, contactMobile: data.contactMobile },
     bank: { bankCountry: data.vendorType === 'IMPORT' ? '' : home },
   };
-  const profile = opts.approved ? mergeProfile(base, opts.approved.profile) : base;
+  const profile = opts.approved ? mergeProfile(base, opts.approved.profile) : opts.prefill ? mergeProfile(base, opts.prefill) : base;
   const now = new Date();
   const [vendor] = await db.insert(vendors).values({
     ...data, tenantId: tenant.id, contactEmail: email, language: language && supplierLanguages(tenant).includes(language) ? language : null,
@@ -83,9 +83,9 @@ export async function createVendor(tenant: Tenant, input: CreateInput, actor: { 
     ...(opts.approved ? { status: 'APPROVED' as const, decidedAt: now, submittedAt: now, erpVendorId: opts.approved.erpCode || null } : {}),
   }).returning();
   if (opts.approved?.erpCode) await db.insert(schema.supplierCodes).values({ tenantId: tenant.id, vendorId: vendor.id, code: opts.approved.erpCode }).onConflictDoNothing();
-  await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: actor.name, action: opts.approved ? 'VENDOR_IMPORTED' : 'VENDOR_CREATED', detail: { vendorType: data.vendorType, ...(opts.approved?.erpCode ? { erpCode: opts.approved.erpCode } : {}) }, ip: opts.ip });
+  await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: actor.name, action: opts.approved ? 'VENDOR_IMPORTED' : 'VENDOR_CREATED', detail: { vendorType: data.vendorType, ...(opts.approved?.erpCode ? { erpCode: opts.approved.erpCode } : {}), ...(opts.source ? { source: opts.source } : {}) }, ip: opts.ip });
   if (notify && !opts.approved) {
-    await sendInvite(tenant, vendor);
+    await sendInvite(tenant, vendor, opts.inviteTemplate);
     await audit({ tenantId: tenant.id, vendorId: vendor.id, actor: actor.name, action: 'INVITE_SENT', detail: { to: vendor.contactEmail }, ip: opts.ip });
   }
   if (notify && opts.approved) {

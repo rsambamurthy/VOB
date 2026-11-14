@@ -1,4 +1,6 @@
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
 import { NavIcon } from './NavIcon';
 import { useSession } from '../lib/session';
 import { loc } from '../lib/format';
@@ -13,6 +15,11 @@ export function StaffShell() {
   const { me, can, signOut } = useSession();
   const nav = useNavigate();
   const { openHelp } = useHelp();
+  const { pathname } = useLocation();
+  // Supplier applications waiting for review (from "Become a supplier" links).
+  const [applications, setApplications] = useState<number>();
+  const canScreen = !!me && can('vendors.create');
+  useEffect(() => { if (canScreen) api<{ pending: number }>('/staff/applications/count').then((r) => setApplications(r.pending)).catch(() => {}); }, [canScreen, pathname]);
   if (!me) return null;
   const product = me.tenant.branding.productName ?? 'VendorGate';
   const initials = me.user.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
@@ -27,6 +34,7 @@ export function StaffShell() {
     ]),
     group('vendors', 'Vendors', 'vendors', [
       { to: '/staff/vendors', label: 'All vendors', icon: 'vendors', end: true, show: can('vendors.view') },
+      { to: '/staff/applications', label: 'Applications', icon: 'apply', count: applications || undefined, countLabel: 'waiting for review', show: can('vendors.create') },
       { to: '/staff/queue', label: 'My approvals', icon: 'approvals', show: can('vendors.view') },
       { to: '/staff/changes', label: 'Change requests', icon: 'changes', show: can('vendors.view') },
       { to: '/staff/scorecards', label: 'Scorecards', icon: 'scorecard', show: can('vendors.view') },

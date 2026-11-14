@@ -468,5 +468,35 @@
       "subject": "{buyer}: يُرجى قبول {agreement}",
       "body": "مرحباً {first}،\n\nيطلب {buyer} من موردّيه قبول {agreement}. يُرجى تسجيل الدخول إلى بوابة الموردين وقراءتها وقبولها من قسم الاتفاقيات. لن يستغرق ذلك سوى دقيقة."
     }
+  },
+  "applicationCode": {
+    "en": {
+      "subject": "{buyer}: your verification code",
+      "body": "Hello {first},\n\nThank you for applying to become a supplier to {buyer}. Your verification code is:\n\n{code}\n\nEnter it on the application page to send your application. The code is valid for 30 minutes. If you didn't apply, you can ignore this email."
+    },
+    "ar": {
+      "subject": "{buyer}: رمز التحقق",
+      "body": "مرحباً {first}،\n\nشكراً لتقديمكم طلب الانضمام كمورد لدى {buyer}. رمز التحقق الخاص بكم هو:\n\n{code}\n\nأدخلوه في صفحة الطلب لإرسال طلبكم. الرمز صالح لمدة 30 دقيقة. إذا لم تتقدموا بطلب، يمكنكم تجاهل هذه الرسالة."
+    }
+  },
+  "applicationAccepted": {
+    "en": {
+      "subject": "{buyer}: your supplier application was accepted",
+      "body": "Dear {first},\n\nGood news: {buyer} has accepted {vendor}'s application to become a supplier. Open the link below to complete your registration — sign in with the one-time code sent to this email address."
+    },
+    "ar": {
+      "subject": "{buyer}: تم قبول طلبكم كمورد",
+      "body": "مرحباً {first}،\n\nيسعدنا إبلاغكم بأن {buyer} قد قبل طلب {vendor} للانضمام كمورد. افتحوا الرابط أدناه لإكمال التسجيل، وسجّلوا الدخول برمز التحقق الذي سيُرسل إلى هذا البريد الإلكتروني."
+    }
+  },
+  "applicationDeclined": {
+    "en": {
+      "subject": "{buyer}: your supplier application",
+      "body": "Dear {first},\n\nThank you for your interest in becoming a supplier to {buyer}. After reviewing {vendor}'s application, we are not able to take it forward at this time.\n\n{reason}"
+    },
+    "ar": {
+      "subject": "{buyer}: طلبكم للانضمام كمورد",
+      "body": "مرحباً {first}،\n\nشكراً لاهتمامكم بالانضمام كمورد لدى {buyer}. بعد مراجعة طلب {vendor}، لا يمكننا المضي فيه في الوقت الحالي.\n\n{reason}"
+    }
   }
 }

@@ -176,5 +176,15 @@
   "Agreement not found": "لم يتم العثور على الاتفاقية",
   "Type your full name": "اكتبوا اسمكم الكامل",
   "Type your designation": "اكتبوا مسماكم الوظيفي",
-  "Tick “I agree” to accept": "ضعوا علامة على «أوافق» للقبول"
+  "Tick “I agree” to accept": "ضعوا علامة على «أوافق» للقبول",
+  "This registration link is no longer open": "رابط التسجيل هذا لم يعد متاحاً",
+  "This code has expired. Ask for a new one.": "انتهت صلاحية هذا الرمز. اطلبوا رمزاً جديداً.",
+  "Too many wrong codes. Ask for a new one.": "محاولات خاطئة كثيرة. اطلبوا رمزاً جديداً.",
+  "That code is not right. Check the email and try again.": "الرمز غير صحيح. تحققوا من البريد الإلكتروني وحاولوا مرة أخرى.",
+  "Application not found": "لم يتم العثور على الطلب",
+  "Vendor name is required": "اسم المورد مطلوب",
+  "Enter a valid email": "أدخلوا بريداً إلكترونياً صحيحاً",
+  "First name is required": "الاسم الأول مطلوب",
+  "Last name is required": "اسم العائلة مطلوب",
+  "Enter a mobile number": "أدخلوا رقم الجوال"
 }

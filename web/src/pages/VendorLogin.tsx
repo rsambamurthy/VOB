@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { applyBranding } from '../lib/session';
-import { monogram } from '../lib/format';
 import type { Branding } from '../lib/types';
+import { SupplierPublicCard } from '../components/SupplierPublicCard';
 import { Alert } from '../components/ui';
-import { PoweredBy, PRODUCT, ProductName } from '../components/Brand';
 import { getLang, preferredLang, setLang, t, useLang, type Lang } from '../i18n';
 import { LangSwitch } from '../i18n/LangSwitch';
 import { Rich } from '../i18n/Rich';
@@ -38,18 +37,7 @@ export function VendorLogin() {
   }
 
   return (
-    <div className="center-page login-bg">
-      <div className="card login-card split">
-        <div className="login-side">
-          <div className="brand brand-lg light">
-            {invite?.buyer.branding.logoUrl ? <img src={invite.buyer.branding.logoUrl} alt="" className="brand-logo" /> : (invite?.buyer.branding.productName ?? PRODUCT) !== PRODUCT && <span className="brand-mark">{monogram(invite?.buyer.branding.productName)}</span>}
-            <ProductName name={invite?.buyer.branding.productName} light />
-          </div>
-          <h2>{invite ? t('login.registrationFor', { buyer: invite.buyer.name }) : t('login.registration')}</h2>
-          <p>{t('login.registrationPitch')}</p>
-          <PoweredBy light />
-        </div>
-        <div className="login-main">
+    <SupplierPublicCard branding={invite?.buyer.branding} title={invite ? t('login.registrationFor', { buyer: invite.buyer.name }) : t('login.registration')} pitch={t('login.registrationPitch')}>
           {!invite && !error && <div className="spinner" />}
           {error && !invite && <Alert kind="error">{error}</Alert>}
           {invite && (
@@ -76,8 +64,6 @@ export function VendorLogin() {
               )}
             </>
           )}
-        </div>
-      </div>
-    </div>
+    </SupplierPublicCard>
   );
 }

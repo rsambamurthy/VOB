@@ -443,6 +443,22 @@ Click a row to open the vendor.`,
 The **Approval flow** card on the right shows every level and its status. When a level's deadline passes, the step shows as overdue and its approvers get an escalation email. Users with *Reassign approval steps* can hand a waiting step to a specific person.`,
   },
   {
+    id: 'self-registration', title: 'Become a supplier links (self-registration)', audience: ['staff'], perms: ['vendors.create', 'config.manage'],
+    summary: 'Public links and QR codes suppliers use to apply; screening applications (accept or decline).',
+    screens: ['^/staff/applications'],
+    keywords: 'self registration register apply application applications become a supplier public link qr code website trade fair screen accept decline',
+    related: ['invite-vendor', 'duplicates'],
+    body: `Suppliers can apply without an invitation through a **“Become a supplier” link**.
+
+**Links** (Vendors → Applications → *Registration links*, needs *Edit onboarding configuration*): make one per place you share it — your website, an email signature, a trade fair. Each has its own **QR code** (PNG, or SVG for print), an optional message for the page, an optional fixed vendor type, and who to email about new applications. *Turn off* closes a link; its page then says it is closed.
+
+**What applicants do**: they give their company name, contact, mobile, the main registration number for your country (GSTIN, CR…), website and what they supply, then confirm their email with a 6-digit code. Nothing reaches you until the email is confirmed, and nothing becomes a supplier until you accept.
+
+**Screening** (Vendors → **Applications**, needs *Invite vendors*): each application shows the link it came from, and warns about a supplier with the same name, contact email or registration number (the duplicate check), or an earlier application.
+- **Accept** creates the supplier with what they gave and emails them a link to complete registration — then your normal onboarding and approval follow. You can correct the name or vendor type first.
+- **Decline** records a reason and, if you choose, emails the applicant.`,
+  },
+  {
     id: 'agreements', title: 'Agreements suppliers accept', audience: ['staff'], perms: ['config.manage', 'vendors.view'],
     summary: 'Code of conduct, NDA, supplier agreement: set them up, versions, accept again, certificates.',
     screens: ['^/staff/admin/agreements', '^/staff/vendors/[^/]+$'],

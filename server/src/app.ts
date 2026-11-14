@@ -35,6 +35,7 @@ import { adminRouter } from './routes/admin.js';
 import { vendorRouter } from './routes/vendorPortal.js';
 import { documentsRouter } from './routes/documents.js';
 import { agreementsRouter } from './routes/agreements.js';
+import { applicationsRouter, applyRouter, registrationLinksRouter } from './routes/applications.js';
 import { configRouter } from './routes/config.js';
 
 import { handleResendEvent, verifySvix } from './integrations/email/resend.js';
@@ -95,9 +96,12 @@ export function createApp() {
   app.use('/api/scim/v2', scimRouter);
   app.use('/api/auth', staffAuthRouter);
   app.use('/api/vendor-auth', vendorAuthRouter);
+  app.use('/api/apply', applyRouter);
   app.use('/api/meta', metaRouter);
   app.use('/api/staff/vendors/:id/assist', assistRouter);
   app.use('/api/staff/vendor-import', vendorImportRouter);
+  app.use('/api/staff/applications', applicationsRouter);
+  app.use('/api/staff/registration-links', registrationLinksRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/scorecards', scorecardsRouter);
@@ -125,7 +129,7 @@ export function createApp() {
 
   app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
     // Supplier screens in Arabic send X-Lang: ar; their error messages come back in Arabic.
-    const lang = req.get('x-lang') === 'ar' && /^\/api\/(vendor|vendor-auth|help|documents)(\/|$)/.test(req.originalUrl) ? 'ar' : 'en';
+    const lang = req.get('x-lang') === 'ar' && /^\/api\/(vendor|vendor-auth|help|documents|agreements|apply)(\/|$)/.test(req.originalUrl) ? 'ar' : 'en';
     const tx = (s: string) => translateMessage(s, lang);
     const txDetails = (d: unknown) => (lang === 'en' || !Array.isArray(d) ? d : d.map((x) => (x && typeof x === 'object' ? { ...x, ...('message' in x && typeof x.message === 'string' ? { message: tx(x.message) } : {}), ...('label' in x && typeof x.label === 'string' ? { label: tx(x.label) } : {}) } : x)));
     if (err instanceof ZodError) return res.status(400).json({ error: tx(err.issues[0]?.message ?? 'Invalid input'), details: txDetails(err.issues) });

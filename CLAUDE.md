@@ -30,7 +30,12 @@ documents-first because the supplier portal had its own copy of that logic).
 - Checklist and submit go through `services/onboarding.ts` (`formState`).
 - Screens: one `AgreementsPanel` (`web/src/components/Agreements.tsx`) for the portal, the buyer's fill-in and reviewers.
 
-**Creating suppliers** (invite, Excel invite, approved import): `server/src/services/vendors.ts`.
+**Creating suppliers**: `server/src/services/vendors.ts` (`createVendor` with `prefill` / `approved`).
+- Used for invites, Excel invites, approved imports and accepted applications.
+
+**Self-registration** ("Become a supplier" links):
+- Rules: `server/src/services/applications.ts`.
+- Public pages share `SupplierPublicCard` with the invitation sign-in.
 
 **Duplicate check:** `server/src/services/duplicates.ts`.
 - Every profile write uses `withIdentity(profile)`.

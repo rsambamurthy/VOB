@@ -162,6 +162,13 @@
       "when": 1794674487262,
       "tag": "0022_agreements",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794677991741,
+      "tag": "0023_registration_links",
+      "breakpoints": true
     }
   ]
 }

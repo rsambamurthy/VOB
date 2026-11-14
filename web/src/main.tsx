@@ -49,6 +49,8 @@ import './styles.css';
 import { Billing } from './pages/admin/Billing';
 import { HelpTopics } from './pages/admin/HelpTopics';
 import { Agreements } from './pages/admin/Agreements';
+import { Apply } from './pages/Apply';
+import { Applications } from './pages/Applications';
 import { LangGate } from './i18n/LangGate';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -85,6 +87,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/audit" element={<Audit />} />
               <Route path="admin/config" element={<ConfigEditor />} />
               <Route path="admin/agreements" element={<Agreements />} />
+              <Route path="applications" element={<Applications />} />
               <Route path="admin/integrations" element={<Integrations />} />
               <Route path="admin/sign-in" element={<SignIn />} />
               <Route path="mailbox" element={<Mailbox />} />
@@ -116,6 +119,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               </Route>
             </Routes></PlatformProvider>} />
             <Route path="/onboard/:token" element={<VendorLogin />} />
+            <Route path="/apply/:slug" element={<Apply />} />
             <Route path="/vendor" element={<VendorPortal />} />
             <Route path="/vendor/expired" element={<VendorSignedOut />} />
             <Route path="/vendor/orders" element={<SupplierShell><SupplierOrderList /></SupplierShell>} />
