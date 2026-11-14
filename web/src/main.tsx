@@ -5,6 +5,7 @@ import { ConfigProvider } from './lib/meta';
 import { ConfigEditor } from './pages/admin/config/ConfigEditor';
 import { Integrations } from './pages/admin/Integrations';
 import { SignIn } from './pages/admin/SignIn';
+import { VendorImport } from './pages/VendorImport';
 import { ScorecardDetail, Scorecards } from './scorecards/Scorecards';
 import { SupplierPerformance } from './scorecards/SupplierPerformance';
 import { RequireStaff, SessionProvider } from './lib/session';
@@ -65,6 +66,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route index element={<Navigate to="vendors" replace />} />
               <Route path="vendors" element={<VendorList />} />
               <Route path="queue" element={<VendorList mine />} />
+              <Route path="vendors/import" element={<VendorImport />} />
               <Route path="vendors/:id" element={<VendorDetail />} />
               <Route path="scorecards" element={<Scorecards />} />
               <Route path="scorecards/:vendorId" element={<ScorecardDetail />} />

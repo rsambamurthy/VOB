@@ -448,5 +448,15 @@
       "subject": "",
       "body": "\n\nإجمالي الضريبة المستقطعة: {amount}"
     }
+  },
+  "importedConfirm": {
+    "en": {
+      "subject": "{buyer}: please check your supplier details",
+      "body": "Dear {first},\n\n{buyer} now manages its suppliers in an online portal, and {vendor}'s details have been brought across from its records. Please sign in, check that everything is still correct (address, bank account, tax registrations), upload any documents that are missing, and confirm."
+    },
+    "ar": {
+      "subject": "{buyer}: يُرجى مراجعة بيانات المورد",
+      "body": "مرحباً {first}،\n\nأصبح {buyer} يدير موردّيه عبر بوابة إلكترونية، وقد نُقلت بيانات {vendor} من سجلاته. يُرجى تسجيل الدخول والتأكد من صحة البيانات (العنوان، الحساب المصرفي، التسجيلات الضريبية)، ورفع أي مستندات ناقصة، ثم التأكيد."
+    }
   }
 }

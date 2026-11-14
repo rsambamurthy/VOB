@@ -31,7 +31,8 @@ import { assertCanAddVendor, assertFeature } from '../services/limits.js';
 import { declineErasure, eraseVendor, exportVendorData, noticeFor } from '../services/privacy.js';
 import { mailSupplier } from '../i18n/emails.js';
 import type { Tenant } from '../db/schema.js';
-import { supplierLanguages, vendorLanguage } from '../i18n/index.js';
+import { vendorLanguage } from '../i18n/index.js';
+import { createSchema, createVendor, sendInvite } from '../services/vendors.js';
 
 /** Staff views get PAN / bank numbers masked; the full value needs an explicit, logged reveal. */
 const maskChanges = <T extends { fieldId: string; old: string; new: string }>(cs: T[]) => cs.map((c) => (isSensitive(c.fieldId) ? { ...c, old: maskField(c.fieldId, c.old), new: maskField(c.fieldId, c.new) } : c));
@@ -65,18 +66,6 @@ export const staffRouter = Router();
 
 const findVendor = (tenantId: string, id: string) => db.query.vendors.findFirst({ where: and(eq(vendors.tenantId, tenantId), eq(vendors.id, id)) });
 
-async function nextVendorCode(tenantId: string) {
-  // Only VND-<digits> codes count; codes set another way (e.g. VND-ORD-1) must not break numbering.
-  const [{ max }] = await db.select({ max: sql<number>`coalesce(max(substring(${vendors.code} from 5)::bigint) filter (where ${vendors.code} ~ '^VND-[0-9]{1,15}$'), 0)` }).from(vendors).where(eq(vendors.tenantId, tenantId));
-  return `VND-${String(Number(max) + 1).padStart(5, '0')}`;
-}
-
-async function sendInvite(tenant: Tenant, v: { tenantId: string; name: string; contactEmail: string; contactFirstName: string; inviteToken: string; language: string | null }) {
-  const link = `${env.appBaseUrl}/onboard/${v.inviteToken}`;
-  await mailSupplier(vendorLanguage(tenant, v), { tenantId: v.tenantId, to: v.contactEmail, link }, 'invite', { first: v.contactFirstName, buyer: tenant.name, vendor: v.name });
-  return link;
-}
-
 staffRouter.get('/vendors', requireStaff('vendors.view'), ah(async (req, res) => {
   const s = staffCtx(req);
   const { q, status, mine, attention } = req.query as Record<string, string | undefined>;
@@ -109,44 +98,11 @@ staffRouter.get('/vendors', requireStaff('vendors.view'), ah(async (req, res) =>
   });
 }));
 
-const createSchema = z.object({
-  name: z.string().trim().min(2, 'Vendor name is required').max(200),
-  vendorType: z.enum(['DOMESTIC', 'IMPORT', 'GOVERNMENT']),
-  contactFirstName: z.string().trim().min(1, 'First name is required').max(100),
-  contactLastName: z.string().trim().min(1, 'Last name is required').max(100),
-  contactEmail: z.string().trim().email('Enter a valid email'),
-  contactMobile: z.string().trim().min(1, 'Enter a mobile number'),
-  notify: z.boolean().default(true),
-  /** Portal and email language for this supplier (where the country offers a choice). */
-  language: z.enum(['en', 'ar']).optional(),
-});
-
 staffRouter.post('/vendors', requireStaff('vendors.create'), ah(async (req, res) => {
   const s = staffCtx(req);
   const input = createSchema.parse(req.body);
-  // Domestic and government vendors: the workspace's own national format (05x… in Saudi Arabia); foreign ones need a country code.
-  const mobileErr = validators.phone(input.contactMobile, { country: input.vendorType === 'IMPORT' ? '' : packFor(s.tenant.country).name });
-  if (mobileErr) throw new HttpError(400, mobileErr, [{ path: ['contactMobile'], message: mobileErr }]);
   await assertCanAddVendor(s.tenant);
-  const dup = await db.query.vendors.findFirst({ where: and(eq(vendors.tenantId, s.tenant.id), sql`lower(${vendors.name}) = lower(${input.name})`, ne(vendors.status, 'REJECTED')) });
-  if (dup) throw new HttpError(409, `A vendor named "${dup.name}" already exists (${dup.code})`);
-  const { notify, language, ...data } = input;
-  const email = data.contactEmail.toLowerCase();
-  const [vendor] = await db.insert(vendors).values({
-    ...data, tenantId: s.tenant.id, contactEmail: email, language: language && supplierLanguages(s.tenant).includes(language) ? language : null,
-    code: await nextVendorCode(s.tenant.id),
-    inviteToken: crypto.randomBytes(24).toString('base64url'),
-    createdById: s.user.id,
-    profile: {
-      basic: { vendorName: data.name, supplierCountry: data.vendorType === 'IMPORT' ? '' : packFor(s.tenant.country).name, contactName: `${data.contactFirstName} ${data.contactLastName}`, contactEmail: email, contactMobile: data.contactMobile },
-      bank: { bankCountry: data.vendorType === 'IMPORT' ? '' : packFor(s.tenant.country).name },
-    },
-  }).returning();
-  await audit({ tenantId: s.tenant.id, vendorId: vendor.id, actor: s.user.name, action: 'VENDOR_CREATED', detail: { vendorType: data.vendorType }, ip: req.ip });
-  if (notify) {
-    await sendInvite(s.tenant, vendor);
-    await audit({ tenantId: s.tenant.id, vendorId: vendor.id, actor: s.user.name, action: 'INVITE_SENT', detail: { to: vendor.contactEmail }, ip: req.ip });
-  }
+  const vendor = await createVendor(s.tenant, input, { id: s.user.id, name: s.user.name }, { ip: req.ip });
   res.status(201).json({ vendor: { id: vendor.id, code: vendor.code } });
 }));
 

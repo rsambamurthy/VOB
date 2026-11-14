@@ -43,6 +43,10 @@ export function VendorDetail() {
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [privacyAction, setPrivacyAction] = useState<'erase' | 'decline'>();
   const [flash, setFlash] = useState<{ kind: 'success' | 'error'; text: string }>();
+  // A buyer filling in the form for a supplier who is still onboarding (vendors.create).
+  const [assist, setAssist] = useState<Profile>();
+  const [assistDirty, setAssistDirty] = useState<Set<string>>(new Set());
+  const [assistSubmit, setAssistSubmit] = useState(false);
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
   useEffect(() => { load(); }, [load]);
@@ -64,6 +68,27 @@ export function VendorDetail() {
     return <button type="button" className="link-btn small" title="Shows the full value. Each reveal is recorded in the audit log." onClick={async () => { const r = await reveal(fid); setRevealed((x) => ({ ...x, [fid]: r.value ?? '' })); }}>Reveal</button>;
   };
   const proposing = !!draft;
+  const assisting = !!assist;
+  const canAssist = d.canInvite && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && !assisting;
+  const assistErrors = assisting ? Object.fromEntries(d.checklist.filter((c) => !c.ok && c.message && c.section !== 'documents').map((c) => [c.id.replace(/^cross\./, ''), c.message!])) : {};
+  async function assistSave() {
+    for (const sec of [...assistDirty]) {
+      try { await api(`/staff/vendors/${id}/assist/profile/${sec}`, { method: 'PUT', body: assist![sec] ?? {} }); }
+      catch (e: any) { setFlash({ kind: 'error', text: e.message }); return false; }
+    }
+    setAssistDirty(new Set()); await load(); return true;
+  }
+  async function assistUpload(docType: string, file: File, expiresOn?: string) {
+    const fd = new FormData(); fd.append('docType', docType); if (expiresOn) fd.append('expiresOn', expiresOn); fd.append('file', file);
+    try { await api(`/staff/vendors/${id}/assist/documents`, { body: fd }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+  }
+  async function assistRemove(docId: string) {
+    try { await api(`/staff/vendors/${id}/assist/documents/${docId}`, { method: 'DELETE' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); }
+  }
+  async function assistDone() {
+    if (assistDirty.size && !(await assistSave())) return;
+    setAssist(undefined); setFlash({ kind: 'success', text: 'Saved. The supplier sees these details when they open their invitation, and can check them and submit.' });
+  }
   const myStaged = v.documents.filter((x) => x.status === 'PENDING' && !x.changeRequestId && x.uploadedById === d.me);
   const proposedChanges = draft ? diffProfiles(config.sections, v.profile, draft) : [];
   const canStartProposal = d.canPropose && !openCrs.length && !proposing;
@@ -124,6 +149,7 @@ export function VendorDetail() {
         <div className="head-actions">
           {approved && <Link className="btn btn-secondary" to={`/staff/scorecards/${v.id}`}>Scorecard</Link>}
           {d.canInvite && ['INVITED', 'IN_PROGRESS', 'SENT_BACK'].includes(v.status) && <button className="btn btn-secondary" onClick={resend}>Resend invite</button>}
+          {canAssist && <button className="btn btn-secondary" onClick={() => { setAssist(structuredClone(v.profile)); setFlash(undefined); }} title="Enter the details and documents yourself, e.g. for a supplier who sent them by email">Fill in for supplier</button>}
           {canStartProposal && <button className="btn btn-secondary" onClick={startProposal} title="Update details or documents on the vendor’s behalf (needs approval)">Propose change</button>}
           {approved && d.canBlock && <button className="btn btn-secondary" disabled={reviewing} onClick={runReview}>{reviewing ? 'Checking…' : 'Run re-check'}</button>}
           {approved && d.canBlock && (v.blockedAt
@@ -146,6 +172,16 @@ export function VendorDetail() {
           <div className="btn-row">
             <button className="btn btn-ghost" onClick={discardProposal}>Discard</button>
             <button className="btn btn-primary" disabled={!proposedChanges.length && !myStaged.length} onClick={() => setProposeOpen(true)}>Review & submit</button>
+          </div>
+        </div>
+      )}
+      {assisting && (
+        <div className="action-bar">
+          <div><strong>Filling in for {v.name}.</strong> <span className="muted">Edit any tab and upload documents · {d.checklist.filter((c) => !c.ok && c.severity === 'error').length} required item(s) left{assistDirty.size ? ' · unsaved changes' : ''}</span></div>
+          <div className="btn-row">
+            <button className="btn btn-ghost" onClick={assistDone}>Save &amp; close</button>
+            <button className="btn btn-secondary" disabled={!assistDirty.size} onClick={assistSave}>Save</button>
+            <button className="btn btn-primary" onClick={async () => { if (!assistDirty.size || await assistSave()) setAssistSubmit(true); }}>Submit for approval…</button>
           </div>
         </div>
       )}
@@ -174,10 +210,14 @@ export function VendorDetail() {
             {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'active' : ''} onClick={() => setTab(t.key)}>{t.label}</button>)}
           </TabStrip>
           <div className="pad">
-            {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={draft ?? shownProfile} vendorType={v.vendorType} readOnly={!proposing} errors={propErrors} extra={revealExtra(s.key)}
-              onChange={(f, val) => setDraft((p) => p && ({ ...p, [s.key]: { ...(p[s.key] ?? {}), [f]: val } }))} />)}
-            {tab === 'documents' && <DocumentsPanel requirements={d.docRequirements} documents={v.documents} showHistory editable={proposing} onUpload={stageUpload} onDelete={unstage}
-              canDelete={(x) => x.status === 'PENDING' && !x.changeRequestId && x.uploadedById === d.me} uploadLabel="Attach replacement" />}
+            {config.sections.filter((s) => s.key === tab).map((s) => <DynamicSection key={s.key} section={s} profile={draft ?? assist ?? shownProfile} vendorType={v.vendorType} readOnly={!proposing && !assisting} errors={assisting ? assistErrors : propErrors} extra={assisting ? undefined : revealExtra(s.key)}
+              onChange={(f, val) => assisting
+                ? (setAssist((p) => p && ({ ...p, [s.key]: { ...(p[s.key] ?? {}), [f]: val } })), setAssistDirty((x) => new Set(x).add(s.key)))
+                : setDraft((p) => p && ({ ...p, [s.key]: { ...(p[s.key] ?? {}), [f]: val } }))} />)}
+            {tab === 'documents' && (assisting
+              ? <DocumentsPanel requirements={d.docRequirements} documents={v.documents} editable onUpload={assistUpload} onDelete={assistRemove} />
+              : <DocumentsPanel requirements={d.docRequirements} documents={v.documents} showHistory editable={proposing} onUpload={stageUpload} onDelete={unstage}
+                canDelete={(x) => x.status === 'PENDING' && !x.changeRequestId && x.uploadedById === d.me} uploadLabel="Attach replacement" />)}
             {tab === 'changes' && d.changeRequests.map((cr) => (
               <div key={cr.id} className={`cr-card ${cr.status === 'PENDING' ? 'cr-open' : ''}`}>
                 <div className="row-between">
@@ -266,6 +306,10 @@ export function VendorDetail() {
       {crReassign && <ReassignModal listUrl={`/staff/change-requests/${crReassign.id}/assignable`} assignUrl={`/staff/change-requests/${crReassign.id}/steps/${crReassign.steps.find((s) => s.status === 'PENDING')!.id}/assign`}
         step={crReassign.steps.find((s) => s.status === 'PENDING')!} onClose={() => setCrReassign(undefined)} onDone={(m) => { setCrReassign(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {reassigning && <ReassignModal listUrl={`/staff/vendors/${v.id}/assignable`} assignUrl={`/staff/vendors/${v.id}/steps/${v.steps.find((s) => s.status === 'PENDING')!.id}/assign`} step={v.steps.find((s) => s.status === 'PENDING')!} onClose={() => setReassigning(false)} onDone={(m) => { setReassigning(false); setFlash({ kind: 'success', text: m }); load(); }} />}
+      {assistSubmit && <AssistSubmitModal name={v.name} missing={d.checklist.filter((c) => !c.ok && c.severity === 'error')} onClose={() => setAssistSubmit(false)} onSubmit={async () => {
+        try { await api(`/staff/vendors/${id}/assist/submit`, { body: { confirm: true } }); setAssistSubmit(false); setAssist(undefined); setFlash({ kind: 'success', text: `Submitted for approval on behalf of ${v.name}. The approval flow has started.` }); await load(); }
+        catch (e: any) { setAssistSubmit(false); setFlash({ kind: 'error', text: e.message }); await load(); }
+      }} />}
       {action && <DecisionModal action={action} vendorId={v.id} onClose={() => setAction(undefined)} onDone={(msg) => { setAction(undefined); setFlash({ kind: 'success', text: msg }); load(); }} />}
       {erp !== undefined && (
         <Modal title="ERP export — Oracle supplier payload" wide onClose={() => setErp(undefined)}
@@ -446,6 +490,28 @@ function PrivacyModal({ mode, vendor, onClose, onDone }: { mode: 'erase' | 'decl
       ) : (
         <div className="field"><label htmlFor="pv-reason">Reason (sent to the vendor)<span className="req"> *</span></label><textarea id="pv-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. You are an active supplier; invoices and payment records must be kept for 8 years under the GST and Income-tax Acts." /></div>
       )}
+    </Modal>
+  );
+}
+
+/** Buyer submits for the supplier: lists what's missing, or asks for the confirmation. */
+function AssistSubmitModal({ name, missing, onClose, onSubmit }: { name: string; missing: ChecklistItem[]; onClose: () => void; onSubmit: () => Promise<void> }) {
+  const [ok, setOk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal title={`Submit ${name} for approval`} onClose={onClose} footer={<>
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" disabled={!!missing.length || !ok || busy} onClick={async () => { setBusy(true); await onSubmit(); setBusy(false); }}>{busy ? 'Submitting…' : 'Submit for approval'}</button>
+    </>}>
+      {missing.length ? (<>
+        <Alert kind="error">{missing.length} required item(s) still missing:</Alert>
+        <ul className="small">{missing.slice(0, 12).map((m) => <li key={m.id}>{m.label}{m.message && !m.message.startsWith(`${m.label} is required`) ? ` — ${m.message}` : ''}</li>)}
+          {missing.length > 12 && <li className="muted">and {missing.length - 12} more — see Required fields on the right</li>}</ul>
+      </>) : (<>
+        <p className="small">The approval flow starts as if the supplier had submitted. The supplier is not asked to sign in; the audit log records that you submitted for them.</p>
+        <label className="check-item"><input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} />
+          <span className="small">The supplier gave us these details and documents, and was shown our privacy notice for suppliers.</span></label>
+      </>)}
     </Modal>
   );
 }

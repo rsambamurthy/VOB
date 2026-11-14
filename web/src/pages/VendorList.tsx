@@ -40,7 +40,7 @@ export function VendorList({ mine = false }: { mine?: boolean }) {
           <h1>{mine ? 'My approvals' : 'Vendors'}</h1>
           <p className="muted">{mine ? `Waiting for you as ${me!.roles.map((r) => r.name).join(' / ')}` : 'Every vendor invited, in progress or reviewed'}</p>
         </div>
-        {can('vendors.create') && !mine && <button className="btn btn-primary" onClick={() => setCreating(true)}>+ New vendor</button>}
+        {can('vendors.create') && !mine && <div className="head-actions"><Link className="btn btn-secondary" to="/staff/vendors/import">Import from Excel</Link><button className="btn btn-primary" onClick={() => setCreating(true)}>+ New vendor</button></div>}
       </header>
       {error && <Alert kind="error">{error}</Alert>}
 

@@ -25,6 +25,8 @@ import { staffAuthRouter } from './routes/staffAuth.js';
 import { ssoRouter } from './routes/sso.js';
 import { scimRouter } from './routes/scim.js';
 import { scorecardsRouter } from './routes/scorecards.js';
+import { assistRouter } from './routes/assist.js';
+import { vendorImportRouter } from './routes/vendorImport.js';
 import { vendorAuthRouter } from './routes/vendorAuth.js';
 import { metaRouter } from './routes/meta.js';
 import { reportsRouter } from './routes/reports.js';
@@ -93,6 +95,8 @@ export function createApp() {
   app.use('/api/auth', staffAuthRouter);
   app.use('/api/vendor-auth', vendorAuthRouter);
   app.use('/api/meta', metaRouter);
+  app.use('/api/staff/vendors/:id/assist', assistRouter);
+  app.use('/api/staff/vendor-import', vendorImportRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/scorecards', scorecardsRouter);

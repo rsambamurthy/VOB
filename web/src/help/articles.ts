@@ -380,7 +380,17 @@ Every sign-in, refused sign-in and settings change is recorded in the audit log.
 
 @video(/help/a-invite.mp4 | Inviting a vendor)
 
-The vendor appears as **Invited** with a code such as VND-00012. If the email didn't arrive, open the vendor and click **Resend invite** (possible until they submit). VendorGate warns you if a vendor with the same name already exists.`,
+The vendor appears as **Invited** with a code such as VND-00012. If the email didn't arrive, open the vendor and click **Resend invite** (possible until they submit). VendorGate warns you if a vendor with the same name already exists.
+
+## Filling in for the supplier
+For a supplier who sends their details by email or can't use the portal, open their page and click **Fill in for supplier** (while they're Invited, In progress or Sent back). Edit any tab, upload documents on the Documents tab and **Save**. Then either:
+- **Save & close** — the supplier sees what you entered when they open their invitation, checks it and submits; or
+- **Submit for approval…** — once everything required is there, tick that the supplier gave you these details and was shown the privacy notice. The approval flow starts as if they had submitted. The audit log shows you did it for them.
+
+## Suppliers from Excel
+**Vendors → Import from Excel** has two tabs:
+- **Invite suppliers**: download the template, add one row per supplier (name, type, contact, and whether to send the invitation now), upload. Every row is checked first; nothing is created until the whole file is clean.
+- **Import approved suppliers**: for your existing supplier master. The template has a column for every field on your form, plus the ERP supplier code. Rows become **approved** suppliers straight away, with no approval steps. Wrong values (an invalid GSTIN, a choice that isn't on the list) stop the import with their row number; missing details and documents are shown as warnings. Optionally email each supplier to sign in, check their details and upload what's missing.`,
   },
   {
     id: 'vendor-list', title: 'Finding vendors', audience: ['staff'], perms: ['vendors.view'],
