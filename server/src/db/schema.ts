@@ -109,6 +109,8 @@ export interface TenantSettings {
   aiPreReview?: boolean;
   /** Privacy mode: amounts (turnover, company age) go to the AI as ranges (default) or exact — never with names. */
   aiPrecision?: 'ranges' | 'exact';
+  /** Supplier guide: turn a buyer's send-back remarks into a to-do list with AI (privacy mode; values replaced by placeholders). Default on; otherwise by rules. */
+  aiGuide?: boolean;
   /** Ongoing risk monitoring: days between re-checks of registration status and sanctions (0 = off; default 30), who is alerted, and whether a serious hit puts the supplier on hold. */
   risk?: { monitorDays?: number; alertEmails?: string; autoHold?: boolean };
   /** Days after which vendor data is anonymised: rejected registrations, and ones abandoned before submitting (0 = keep). */
@@ -452,6 +454,8 @@ export const approvalSteps = pgTable('approval_steps', {
   dueAt: timestamp('due_at', { withTimezone: true }),
   remindedAt: timestamp('reminded_at', { withTimezone: true }),
   remarks: text('remarks'),
+  /** Send-back: the remarks as a to-do list for the supplier (supplier guide), in the language it was written for. */
+  todo: jsonb('todo').$type<{ lang: string; by: 'ai' | 'rules'; items: { text: string; tab?: string }[] }>(),
   actedById: text('acted_by_id').references(() => users.id),
   actedAt: timestamp('acted_at', { withTimezone: true }),
   createdAt: createdAt(),

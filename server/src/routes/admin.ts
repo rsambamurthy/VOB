@@ -1,4 +1,5 @@
 /** Workspace administration: users, roles, workspace settings, audit log. */
+import { guideWriter } from '../integrations/ai/guideWriter.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { and, asc, count, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
@@ -188,7 +189,7 @@ adminRouter.patch('/tenant', requireStaff('tenant.settings'), ah(async (req, res
       logoUrl: z.string().url().max(500).optional().or(z.literal('')),
     }).optional(),
     email: z.object({ fromName: z.string().trim().max(80).optional(), replyTo: z.string().trim().email('Enter a valid reply-to address').max(200).optional().or(z.literal('')) }).optional(),
-    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), dataEntry: z.enum(['assisted', 'automatic']).optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), helpAi: z.boolean().optional(), askAi: z.boolean().optional(), aiPreReview: z.boolean().optional(), aiPrecision: z.enum(['ranges', 'exact']).optional(), supplierLanguage: z.enum(['en', 'ar']).optional(), priceTolerancePct: z.number().min(0).max(50).optional(), einvoiceRequired: z.boolean().optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
+    settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), dataEntry: z.enum(['assisted', 'automatic']).optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), helpAi: z.boolean().optional(), askAi: z.boolean().optional(), aiPreReview: z.boolean().optional(), aiPrecision: z.enum(['ranges', 'exact']).optional(), aiGuide: z.boolean().optional(), supplierLanguage: z.enum(['en', 'ar']).optional(), priceTolerancePct: z.number().min(0).max(50).optional(), einvoiceRequired: z.boolean().optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),
   }).parse(req.body);
   if (input.settings?.dataEntry === 'automatic') assertFeature(s.tenant, 'ai');
   if (input.settings?.requireMfa === false && s.tenant.settings.mfaEnforcedByPlatform) throw new HttpError(409, 'Two-factor authentication is required for this workspace by VendorGate and can’t be turned off here');
@@ -403,7 +404,7 @@ adminRouter.get('/integrations', requireStaff('tenant.settings'), ah(async (req,
     sms: { ...smsStatus(), counts: Object.fromEntries(recentSms.map((r) => [r.status, r.n])) },
     storage: storageStatus(),
     kyc: kycStatus(tenant.country),
-    ai: { ...aiStatus(), enabledForWorkspace: !!tenant.settings.aiExtraction, dataEntry: dataEntryMode(tenant), aiPlan: hasFeature(tenant, 'ai'), helpAnswers: tenant.settings.helpAi !== false, helpLive: helpAnswerer().live, ask: tenant.settings.askAi !== false, askLive: askPlanner().live, preReview: !!tenant.settings.aiPreReview, preReviewPrecision: tenant.settings.aiPrecision === 'exact' ? 'exact' : 'ranges', preReviewLive: preReviewer().live },
+    ai: { ...aiStatus(), enabledForWorkspace: !!tenant.settings.aiExtraction, dataEntry: dataEntryMode(tenant), aiPlan: hasFeature(tenant, 'ai'), helpAnswers: tenant.settings.helpAi !== false, helpLive: helpAnswerer().live, ask: tenant.settings.askAi !== false, askLive: askPlanner().live, preReview: !!tenant.settings.aiPreReview, preReviewPrecision: tenant.settings.aiPrecision === 'exact' ? 'exact' : 'ranges', guide: tenant.settings.aiGuide !== false, guideLive: guideWriter().live, preReviewLive: preReviewer().live },
     jobs: { running: queueRunning() },
     devMode: env.devShowOtp,
   });

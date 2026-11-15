@@ -9,7 +9,7 @@ interface Status {
   sms: { provider: string; live: boolean; counts: Record<string, number> };
   storage: { driver: string; scan: string; bucket?: string };
   kyc: { provider: string; live: boolean; packs: { code: string; country: string; title: string; provider: string; live: boolean; partlyLive?: boolean; home: boolean; checks?: { kind: string; label: string; provider: string; live: boolean }[] }[] };
-  ai: { helpAnswers?: boolean; helpLive?: boolean; ask?: boolean; askLive?: boolean; preReview?: boolean; preReviewLive?: boolean; preReviewPrecision?: 'ranges' | 'exact'; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean; dataEntry?: 'manual' | 'assisted' | 'automatic'; aiPlan?: boolean };
+  ai: { helpAnswers?: boolean; helpLive?: boolean; ask?: boolean; askLive?: boolean; preReview?: boolean; preReviewLive?: boolean; preReviewPrecision?: 'ranges' | 'exact'; guide?: boolean; guideLive?: boolean; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean; dataEntry?: 'manual' | 'assisted' | 'automatic'; aiPlan?: boolean };
   jobs: { running: boolean };
   devMode: boolean;
 }
@@ -119,6 +119,8 @@ export function Integrations() {
               </select>
               <div className="field-help">Ranges are the most private. Exact amounts let the AI compare more precisely with market norms; a number with no name, registration or bank number attached doesn’t identify the supplier.</div></div>
           )}
+          <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.guide !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, guide: on } }); setting({ aiGuide: on }, on ? 'Send-back to-do lists will be written with AI.' : 'Send-back to-do lists will be made without AI.'); }} />
+            <span><strong>Turn send-back remarks into a to-do list for the supplier with AI</strong><span className="muted small block">Suppliers always get a guide: the next step, what approvers would ask about before they submit, and answers to their questions (from help topics, with <em>Answer F1 help questions with AI</em>). With this on, when you send a registration back the AI also turns your remarks into a clear to-do list in the supplier's language, each point linked to the right tab. Privacy mode: the supplier's names and numbers in your remarks are replaced by placeholders before sending.{!s.ai.guideLive && ' (In test mode the remarks are split into points without AI.)'}</span></span></label>
         </Card>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { monogram } from '../lib/format';
 import { DynamicSection } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
+import { GuidePanel, SubmitCheck, useGuide } from '../components/Guide';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import type { AgreementView, QuestionnaireView, Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Flag, Profile, SectionDef, VendorFull } from '../lib/types';
@@ -70,6 +71,8 @@ export function VendorPortal() {
   }, [nav]);
   useEffect(() => { load(); }, [load, lang]);
   const pending = useRefreshWhileReading(me?.extractions, true, load);
+  // The supplier guide: fetched again whenever the form's state changes.
+  const { guide } = useGuide('/vendor', JSON.stringify([me?.checklist.map((c) => c.id + c.ok), me?.vendor.status, me?.vendor.documents.length, me?.extractions.map((e) => e.status)]), !!me?.editable);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
@@ -106,6 +109,7 @@ export function VendorPortal() {
   const agrTab = me.agreements.length ? { key: 'agreements', label: t('agr.tab') } : undefined;
   const qnTab = me.questionnaires.length ? { key: 'questionnaires', label: t('qn.tab') } : undefined;
   const tabs = formTabs(sectionTabs, docTab, auto, qnTab, agrTab);
+  const tabLabel = (k: string) => tabs.find((x) => x.key === k)?.label;
   const questionnairesDue = me.questionnaires.filter((q) => q.outstanding).length;
   const agreementsDue = me.agreements.filter((a) => a.required && a.outstanding).length;
   // Per field: filled in from which document, or read but waiting for the supplier (bank details, low confidence, different from what they typed).
@@ -330,13 +334,14 @@ export function VendorPortal() {
                 </div>
                 <div className="card pad"><h3 className="card-title">{t('portal.changeRequests')}</h3><CrHistory items={lc!.changeRequests} onCancel={cancelCr} /></div>
               </>
-            ) : me.editable ? (
+            ) : me.editable ? (<>
+              {guide && <GuidePanel guide={guide} base="/vendor" buyer={me.buyer.name} tabLabel={tabLabel} onJump={(s) => { setRevealed((r) => new Set(r).add(s)); goTo(s); }} />}
               <div className="card pad">
                 <Checklist items={me.checklist} sections={cfg.sections} onJump={(s) => { setRevealed((r) => new Set(r).add(s)); goTo(s); }} />
                 <button className="btn btn-primary btn-block" onClick={() => setConfirmSubmit(true)} disabled={saving}>{t('portal.submitForReview')}</button>
                 {blocking > 0 && <p className="small muted center">{t('portal.submitWhenDone')}</p>}
               </div>
-            ) : (
+            </>) : (
               <div className="card pad"><h3 className="card-title">{t('portal.approvalProgress')}</h3><ApprovalTimeline steps={v.steps} levels={cfg.levels} /></div>
             )}
             <div className="card pad">
@@ -376,7 +381,8 @@ export function VendorPortal() {
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmSubmit(false)}>{t('portal.keepEditing')}</button><button className="btn btn-primary" disabled={blocking > 0 && dirty.size === 0} onClick={submit}>{t('portal.submit')}</button></>}>
           {blocking > 0
             ? <Alert kind="warning">{t('portal.itemsNeedAttention', { count: blocking })} {dirty.size > 0 && t('portal.unsavedWillSave')}</Alert>
-            : <p>{t('portal.reviewedBy')} <strong>{cfg.levels.join(lang === 'ar' ? ' ← ' : ' → ')}</strong>. {t('portal.lockedWhileReview')}</p>}
+            : <><p>{t('portal.reviewedBy')} <strong>{cfg.levels.join(lang === 'ar' ? ' ← ' : ' → ')}</strong>. {t('portal.lockedWhileReview')}</p>
+              <SubmitCheck guide={guide} tabLabel={tabLabel} onJump={(s) => { setConfirmSubmit(false); goTo(s); }} /></>}
         </Modal>
       )}
     </SupplierFrame>

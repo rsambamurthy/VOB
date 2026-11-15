@@ -1,0 +1,1 @@
+ALTER TABLE "approval_steps" ADD COLUMN "todo" jsonb;

@@ -23,6 +23,7 @@ import { addDocument, applyExtractedValues, formState, isEditableStatus, saveSec
 import { upload } from '../lib/upload.js';
 import { acceptAgreement } from '../services/agreements.js';
 import { answerRoutes } from './questionnaires.js';
+import { guideRoutes } from './guide.js';
 
 export const vendorRouter = Router();
 vendorRouter.use(requireVendor);
@@ -203,6 +204,14 @@ vendorRouter.post('/agreements/:id/accept', ah(async (req, res) => {
 }));
 
 // Questionnaires: the same answering routes as a buyer filling in for the supplier.
+// The supplier guide: next step, check before submitting, send-back to-do, questions.
+guideRoutes(vendorRouter, {
+  vendor: loadMine,
+  tenant: (req) => vendorCtx(req).tenant,
+  lang: (req, v) => vendorLanguage(vendorCtx(req).tenant, v),
+  who: (_req, v) => v.contactEmail,
+});
+
 answerRoutes(vendorRouter, {
   vendor: loadMine,
   actor: (req, v) => supplier(req, v),

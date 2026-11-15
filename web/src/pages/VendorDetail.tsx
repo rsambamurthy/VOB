@@ -6,6 +6,7 @@ import { DynamicSection } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Checklist } from '../components/Checklist';
+import { GuidePanel, SubmitCheck, useGuide, type Guide } from '../components/Guide';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import { isEditableStatus } from '../lib/types';
@@ -64,6 +65,8 @@ export function VendorDetail() {
   // Filling in for the supplier: while documents are being read, refresh; values filled in from them appear in
   // the tabs not being edited (a tab with unsaved typing is left alone).
   const readingDocs = useRefreshWhileReading(d?.extractions, !!assist, load);
+  // The supplier guide while filling in for the supplier (same component as the portal).
+  const { guide } = useGuide(`/staff/vendors/${id}/assist`, JSON.stringify([d?.checklist.map((c) => c.id + c.ok), d?.vendor.documents.length, d?.extractions.map((e) => e.status)]), !!assist);
   useEffect(() => {
     if (!d) return;
     setAssist((p) => p && Object.fromEntries([...new Set([...Object.keys(p), ...Object.keys(d.vendor.profile)])].map((sec) => [sec, assistDirty.has(sec) ? p[sec] : (d.vendor.profile[sec] ?? p[sec])])));
@@ -80,6 +83,7 @@ export function VendorDetail() {
   const qnTab = d.questionnaires.length || d.canRequestQuestionnaire ? { key: 'questionnaires', label: `Questionnaires${d.questionnaires.some((q) => q.result?.band === 'HIGH') ? ' ⚠' : d.questionnaires.some((q) => q.outstanding) ? ' •' : ''}` } : undefined;
   const tabs = [...formTabs(sectionTabs, docTab, autoAssist, qnTab, agrTab),
     ...(d.changeRequests.length ? [{ key: 'changes', label: `Changes${openCrs.length ? ` (${openCrs.length})` : ''}` }] : []), { key: 'history', label: 'History' }];
+  const tabLabel = (k: string) => tabs.find((x) => x.key === k)?.label;
   const approved = v.status === 'APPROVED';
   const shownProfile = Object.keys(revealed).length ? Object.fromEntries(Object.entries(v.profile).map(([sec, vals]) => [sec, { ...vals, ...Object.fromEntries(Object.entries(revealed).filter(([k]) => k.startsWith(`${sec}.`)).map(([k, x]) => [k.split('.')[1], x])) }])) : v.profile;
   async function reveal(fieldId: string, changeRequestId?: string) {
@@ -308,6 +312,7 @@ export function VendorDetail() {
           </div>
         </div>
         <aside className="side-col">
+          {assisting && guide && <GuidePanel guide={guide} base={`/staff/vendors/${id}/assist`} buyer="your team" tabLabel={tabLabel} onJump={setTab} />}
           <RiskCard risk={d.risk} busy={riskChecking} onCheck={d.canRunRiskCheck && v.status === 'APPROVED' ? async () => { setRiskChecking(true); try { await api(`/staff/risk/vendors/${v.id}/check`, { method: 'POST' }); setFlash({ kind: 'success', text: 'Registration and sanctions re-checked; risk updated.' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); } finally { setRiskChecking(false); } } : undefined} />
           {approved && (
             <div className="card pad">
@@ -362,7 +367,7 @@ export function VendorDetail() {
       {crReassign && <ReassignModal listUrl={`/staff/change-requests/${crReassign.id}/assignable`} assignUrl={`/staff/change-requests/${crReassign.id}/steps/${crReassign.steps.find((s) => s.status === 'PENDING')!.id}/assign`}
         step={crReassign.steps.find((s) => s.status === 'PENDING')!} onClose={() => setCrReassign(undefined)} onDone={(m) => { setCrReassign(undefined); setFlash({ kind: 'success', text: m }); load(); }} />}
       {reassigning && <ReassignModal listUrl={`/staff/vendors/${v.id}/assignable`} assignUrl={`/staff/vendors/${v.id}/steps/${v.steps.find((s) => s.status === 'PENDING')!.id}/assign`} step={v.steps.find((s) => s.status === 'PENDING')!} onClose={() => setReassigning(false)} onDone={(m) => { setReassigning(false); setFlash({ kind: 'success', text: m }); load(); }} />}
-      {assistSubmit && <AssistSubmitModal name={v.name} missing={d.checklist.filter((c) => !c.ok && c.severity === 'error')} onClose={() => setAssistSubmit(false)} onSubmit={async () => {
+      {assistSubmit && <AssistSubmitModal name={v.name} guide={guide} tabLabel={tabLabel} onJump={(tb) => { setAssistSubmit(false); setTab(tb); }} missing={d.checklist.filter((c) => !c.ok && c.severity === 'error')} onClose={() => setAssistSubmit(false)} onSubmit={async () => {
         try { await api(`/staff/vendors/${id}/assist/submit`, { body: { confirm: true } }); setAssistSubmit(false); setAssist(undefined); setFlash({ kind: 'success', text: `Submitted for approval on behalf of ${v.name}. The approval flow has started.` }); await load(); }
         catch (e: any) { setAssistSubmit(false); setFlash({ kind: 'error', text: e.message }); await load(); }
       }} />}
@@ -563,7 +568,7 @@ function PrivacyModal({ mode, vendor, onClose, onDone }: { mode: 'erase' | 'decl
 }
 
 /** Buyer submits for the supplier: lists what's missing, or asks for the confirmation. */
-function AssistSubmitModal({ name, missing, onClose, onSubmit }: { name: string; missing: ChecklistItem[]; onClose: () => void; onSubmit: () => Promise<void> }) {
+function AssistSubmitModal({ name, missing, guide, tabLabel, onJump, onClose, onSubmit }: { name: string; missing: ChecklistItem[]; guide?: Guide; tabLabel: (k: string) => string | undefined; onJump: (tab: string) => void; onClose: () => void; onSubmit: () => Promise<void> }) {
   const [ok, setOk] = useState(false);
   const [busy, setBusy] = useState(false);
   return (
@@ -577,6 +582,7 @@ function AssistSubmitModal({ name, missing, onClose, onSubmit }: { name: string;
           {missing.length > 12 && <li className="muted">and {missing.length - 12} more — see Required fields on the right</li>}</ul>
       </>) : (<>
         <p className="small">The approval flow starts as if the supplier had submitted. The supplier is not asked to sign in; the audit log records that you submitted for them.</p>
+        <SubmitCheck guide={guide} tabLabel={tabLabel} onJump={onJump} />
         <label className="check-item"><input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} />
           <span className="small">The supplier gave us these details and documents, and was shown our privacy notice for suppliers.</span></label>
       </>)}

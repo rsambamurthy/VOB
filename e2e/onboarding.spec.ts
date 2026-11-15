@@ -27,6 +27,10 @@ test('invite → vendor accepts privacy notice, fills in, submits → three appr
   await vendor.getByRole('button', { name: 'Accept and continue' }).click();
   await expect(vendor.getByRole('dialog', { name: 'Privacy notice' })).toBeHidden();
 
+  // The guide shows the next step and takes the supplier to the right tab.
+  const guide = vendor.locator('.guide');
+  await expect(guide.getByText('Next step')).toBeVisible();
+  await expect(guide.getByRole('button', { name: /^Go to / })).toBeVisible();
   // Fill the form (sections through the API, documents through the UI), then submit in the UI.
   const pan = 'AAFCE1234Q';
   await call(vendor, 'PUT', '/api/vendor/profile/basic', { entityType: 'Company (Pvt / Public Ltd)', address: '1 Test Road', region: 'Maharashtra', district: 'Pune', postalCode: '411001', msmeRegistered: 'No', supplyCategory: 'Goods' });
@@ -47,6 +51,8 @@ test('invite → vendor accepts privacy notice, fills in, submits → three appr
     await expect(vendor.locator('.doc-row', { hasText: label }).first().locator('.doc-file')).toHaveCount(1);
   }
   await vendor.getByRole('button', { name: 'Submit for review' }).first().click();
+  // Before submitting: what approvers would ask about (here: nothing) — checked by the same rules as the pre-review.
+  await expect(vendor.getByRole('dialog').locator('.submit-check, .ok-text').first()).toBeVisible();
   await vendor.getByRole('dialog').getByRole('button', { name: 'Submit' }).click();
   await expect(vendor.getByText(/being reviewed/)).toBeVisible();
 

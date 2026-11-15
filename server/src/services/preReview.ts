@@ -13,17 +13,16 @@ import { db, schema } from '../lib/db.js';
 import { HttpError } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
-import { maskField, isSensitive } from '../lib/fieldCrypto.js';
+import { isSensitive } from '../lib/fieldCrypto.js';
 import type { Profile } from '../lib/profileEngine.js';
-import { checkDef, checkInputs, checksForVendor, inputsComplete } from '../countries/registry.js';
-import { latestChecks } from '../integrations/kyc/index.js';
-import { extractionsFor } from '../integrations/ai/index.js';
 import { hasFeature } from './limits.js';
 import { getPublished } from './config.js';
 import { formState } from './onboarding.js';
 import { duplicatesOf, duplicateText } from './duplicates.js';
 import { refreshRisk } from './risk.js';
-import { aiPrecision, ageOf, comparisons, comparisonConcerns, describeAge, describeTurnover, peerComparison, turnoverOf } from './aiFacts.js';
+import { identifiersOf, leaks, reidentify } from './aiPrivacy.js';
+import { submissionIssues } from './submissionIssues.js';
+import { aiPrecision, ageOf, describeAge, describeTurnover, peerComparison, turnoverOf } from './aiFacts.js';
 import { defineJob, enqueue } from '../jobs/queue.js';
 import { preReviewer, mockPreReviewer, recommendFromFacts, type Finding, type PreReviewResult } from '../integrations/ai/preReviewer.js';
 import type { Tenant, Vendor } from '../db/schema.js';
@@ -50,41 +49,14 @@ export async function gather(tenant: Tenant, v: Vendor & { documents: (typeof do
   v = { ...v, documents: [...v.documents].sort((a, b) => a.docType.localeCompare(b.docType) || a.id.localeCompare(b.id)) };
   const facts: Finding[] = [];
   const add = (f: Omit<Finding, 'source'>, aiText?: string) => facts.push({ ...f, source: 'checks', aiText: aiText ?? f.text });
-  const sectionOf = (fieldId: string) => fieldId.split('.')[0];
   const docLabelOf = (type: string) => config.documents.find((x) => x.type === type)?.label ?? type;
 
-  // Missing items and warnings, by the same rules as the form (labels and rules only — safe as they are).
+  // What an approver would pick up from the form, checks and documents (shared with the supplier guide).
   const form = await formState(tenant, config, v, { forStaff: true });
-  for (const c of form.checklist.filter((x) => !x.ok)) {
-    if (c.severity === 'error') add({ severity: 'high', text: c.message ?? `${c.label} is missing`, tab: c.section, fixable: true }, `Missing or invalid: ${c.label}`);
-    else add({ severity: 'medium', text: c.message ?? c.label, tab: c.section, fixable: true }, `To check: ${c.id.startsWith('cross.') ? 'two answers on the form don’t fit together' : c.label}`);
-  }
-  // Verifications.
-  const checks = await latestChecks(v.id);
-  const checkResult: Record<string, string> = {};
-  for (const c of checks) {
-    const def = checkDef(c.kind)?.def;
-    if (!def) continue;
-    if (c.status === 'ERROR') { checkResult[def.label] = 'could not run'; add({ severity: 'info', text: `${def.label} check couldn't run: ${c.message}` }, `${def.label}: the check could not run`); }
-    else if (c.status !== 'VERIFIED') { checkResult[def.label] = 'failed'; add({ severity: 'high', text: `${def.label}: ${c.message}`, tab: sectionOf(def.anchor) }, `${def.label}: failed${def.monitor === 'critical' ? ' (registration or sanctions — serious)' : ''}`); }
-    else if (c.nameMatch !== null && c.nameMatch < 70) { checkResult[def.label] = 'passed, but the name on record differs'; add({ severity: 'medium', text: `${def.label}: the name on record “${c.nameOnRecord}” doesn't match the supplier's name`, tab: sectionOf(def.anchor), fixable: true }, `${def.label}: the name on record doesn't match [SUPPLIER]`); }
-    else checkResult[def.label] = 'passed';
-  }
-  for (const { def } of checksForVendor(tenant.country, profile)) {
-    if (!checkResult[def.label] && inputsComplete(def, checkInputs(def, profile))) { checkResult[def.label] = 'not run yet'; add({ severity: 'info', text: `${def.label} hasn't been verified yet — run it under Verifications`, tab: sectionOf(def.anchor) }); }
-  }
-  // Documents that disagree with the form.
-  const extractions = await extractionsFor(v.id, profile, config);
-  for (const e of extractions) {
-    for (const x of e.suggestions.filter((y) => y.state === 'differs')) {
-      const show = (val: string) => (x.sensitive ? maskField(x.fieldId, val) : val);
-      add({ severity: 'medium', text: `${x.fieldLabel}: the form says “${show(x.current)}” but the ${e.docLabel || 'document'} shows “${show(x.value)}”`, tab: sectionOf(x.fieldId), fixable: true }, `${x.fieldLabel}: the form and the ${e.docLabel || 'document'} disagree`);
-    }
-    if (e.status === 'DONE' && e.summary && /not a |could not be read/i.test(e.summary)) add({ severity: 'medium', text: `${e.docLabel}: ${e.summary}`, tab: 'documents', fixable: true }, `${e.docLabel}: may be the wrong document or unreadable`);
-  }
-  const soon = new Date(Date.now() + 60 * DAY).toISOString().slice(0, 10);
-  for (const d of v.documents.filter((x) => x.status === 'ACTIVE' && x.expiresOn && x.expiresOn <= soon)) {
-    add({ severity: 'medium', text: `${docLabelOf(d.docType)} expires on ${d.expiresOn} — within 60 days`, tab: 'documents', fixable: true }, `${docLabelOf(d.docType)} expires within 60 days`);
+  const { issues, checkResult, consistency, soon } = await submissionIssues(tenant, config, v, form);
+  // (Consistency findings are added after the staff-only ones, below.)
+  for (const i of issues.filter((x) => x.kind !== 'consistency')) {
+    add({ severity: i.severity, text: i.staff, tab: i.tab, ...(i.fixable ? { fixable: true } : {}) }, i.ai);
   }
   // Duplicates (other suppliers become [OTHER-1], [OTHER-2]…), risk, questionnaires.
   const tokens: Record<string, string> = { '[SUPPLIER]': v.name };
@@ -100,9 +72,7 @@ export async function gather(tenant: Tenant, v: Vendor & { documents: (typeof do
     if (r.band === 'HIGH') add({ severity: 'high', text: `${q.title}: high risk (${r.percent ?? '–'}%)${ko.length ? ` — knock-out answer to “${koText}”` : ''}`, tab: 'questionnaires' }, `${q.title}: high risk${ko.length ? ` — knock-out answer to “${koText}”` : ''}`);
     else if (r.band === 'MEDIUM') add({ severity: 'medium', text: `${q.title}: medium risk (${r.percent}%)`, tab: 'questionnaires' });
   }
-  // Values that don't fit together (worked out here — e.g. GSTIN state vs address).
-  const consistency = comparisons(v);
-  for (const c of comparisonConcerns(consistency)) add({ ...c, fixable: c.severity === 'medium' });
+  for (const i of issues.filter((x) => x.kind === 'consistency')) add({ severity: i.severity, text: i.staff, tab: i.tab, fixable: i.fixable });
   // Earlier send-backs (the remarks are free text: the AI only learns there was one), and buyer fill-in.
   const backs = await db.select({ remarks: approvalSteps.remarks, cycle: approvalSteps.cycle, label: approvalSteps.label }).from(approvalSteps)
     .where(and(eq(approvalSteps.vendorId, v.id), eq(approvalSteps.status, 'SENT_BACK'))).orderBy(desc(approvalSteps.cycle)).limit(3);
@@ -141,32 +111,6 @@ export async function gather(tenant: Tenant, v: Vendor & { documents: (typeof do
   const safe = !leaks(payload, identifiersOf(v, dups, allowed));
   return { facts, payload: safe ? payload : null, tokens, hash };
 }
-
-/** Every value that would identify the supplier or a person: what was typed into the form, contact details, names. */
-function identifiersOf(v: Vendor, dups: { code: string; name: string }[], fixedChoices: Set<string>) {
-  const out = new Set<string>();
-  const addVal = (x: unknown) => { const t = String(x ?? '').trim(); if (t.length >= 4) out.add(t.toLowerCase()); };
-  [v.name, v.code, v.contactEmail, v.contactMobile, `${v.contactFirstName} ${v.contactLastName}`].forEach(addVal);
-  // Typed-in values with a number, an @ or several words (registration numbers, accounts, emails, names, addresses).
-  for (const sec of Object.values(v.profile as Profile)) for (const val of Object.values(sec ?? {})) if (typeof val === 'string' && !fixedChoices.has(val) && /\d|@|\S\s+\S/.test(val)) addVal(val);
-  for (const d of dups) { addVal(d.name); addVal(d.code); }
-  return out;
-}
-
-/** True if any identifying value appears in the payload (as whole words; the placeholders themselves don't count). */
-function leaks(payload: unknown, ids: Set<string>) {
-  const text = JSON.stringify(payload).toLowerCase().replace(/\[(supplier|other-\d+)\]/g, ' ');
-  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  for (const id of ids) {
-    for (const form of new Set([id, JSON.stringify(id).slice(1, -1)])) {
-      if (new RegExp(`(^|[^\\p{L}\\p{N}])${esc(form)}($|[^\\p{L}\\p{N}])`, 'u').test(text)) { logger.warn('pre-review: identifying data found in the AI payload — not sent'); return true; }
-    }
-  }
-  return false;
-}
-
-/** Put the real names back into what the AI wrote. */
-const reidentify = (text: string, tokens: Record<string, string>) => Object.entries(tokens).reduce((t, [k, val]) => t.split(k).join(val), text);
 
 /** Make (or remake) the pre-review for the supplier's current review cycle. */
 export async function generatePreReview(vendorId: string, requestedBy = 'system (on submit)') {

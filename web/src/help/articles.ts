@@ -811,6 +811,20 @@ You stay signed in for up to 8 hours. To come back later, open the same link aga
 If the buyer updates the notice, you'll be asked to accept the new version.`,
   },
   {
+    id: 'supplier-guide', title: 'Your guide: next step, checks and questions', audience: ['supplier'],
+    summary: 'What to do next, what approvers would ask about before you submit, what to fix after a send-back, and asking a question.',
+    screens: ['^/vendor'],
+    keywords: 'guide next step what to do help question ask before submit check sent back fix remarks to do',
+    related: ['supplier-fill', 'supplier-submit'],
+    body: `**Your guide** on the right of the form shows the one thing to do next, with a button that takes you to the right tab.
+
+- **Before you submit**, the confirmation lists what approvers would likely ask about — for example a document that shows a different value from the form, a PIN code from a different state, or a check that failed. Fixing these first avoids your registration being sent back. You can still submit as it is.
+- **If your registration is sent back**, the guide turns the buyer's remarks into a to-do list, each point linked to the tab to fix.
+- **Have a question?** Type it in the guide (for example “Why do you need a cancelled cheque?”). The answer comes from the help topics and from what each field of your form is for.
+
+Your details are not sent to the AI: only what each field is for and whether it is filled in. Don't type your numbers or names into a question.`,
+  },
+  {
     id: 'supplier-fill', title: 'Filling in your details', audience: ['supplier'],
     summary: 'Sections, saving as you go, the required-fields checklist and AI suggestions.',
     screens: ['^/vendor'],

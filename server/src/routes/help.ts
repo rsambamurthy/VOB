@@ -7,7 +7,7 @@ import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { effectiveLimits } from '../lib/plans.js';
-import { helpAnswerer } from '../integrations/ai/helpAnswer.js';
+import { helpAnswerer, type HelpSource } from '../integrations/ai/helpAnswer.js';
 import type { Tenant } from '../db/schema.js';
 
 export const helpRouter = Router();
@@ -33,6 +33,11 @@ helpRouter.post('/ask', ah(async (req, res) => {
     articles: z.array(z.object({ id: z.string().max(80), title: z.string().max(200), summary: z.string().max(400).optional(), body: z.string().max(20000) })).min(1).max(12),
   }).parse(req.body);
   const { tenant, who } = asker(req, input.audience);
+  res.json(await answerHelpQuestion(tenant, who, input.audience, input.question, input.articles, input.audience === 'supplier' ? input.language ?? 'en' : 'en'));
+}));
+
+/** An AI answer from help articles, within the workspace's setting and plan limit; logged. Shared with the supplier guide. */
+export async function answerHelpQuestion(tenant: Tenant, who: string, audience: 'staff' | 'supplier', question: string, articles: HelpSource[], language: 'en' | 'ar') {
   if (tenant.settings.helpAi === false) throw new HttpError(403, 'AI answers are turned off for this workspace', undefined, 'HELP_AI_OFF');
   const limit = effectiveLimits(tenant).helpAnswersPerDay;
   const a = helpAnswerer();
@@ -40,10 +45,10 @@ helpRouter.post('/ask', ah(async (req, res) => {
     const [{ n }] = await db.select({ n: count() }).from(helpQuestions).where(and(eq(helpQuestions.tenantId, tenant.id), gte(helpQuestions.createdAt, new Date(Date.now() - 86_400_000)), eq(helpQuestions.provider, a.name)));
     if (Number(n) >= limit) throw new HttpError(429, 'Your workspace has used today’s AI help answers. Search the help topics instead, or try again tomorrow.', undefined, 'PLAN_LIMIT');
   }
-  const r = await a.answer(input.question, input.articles, { audience: input.audience, product: tenant.branding.productName ?? 'VendorGate', language: input.audience === 'supplier' ? input.language ?? 'en' : 'en' });
-  await db.insert(helpQuestions).values({ tenantId: tenant.id, audience: input.audience, askedBy: who, question: input.question, answered: r.answered, sources: r.sources, provider: a.name });
-  res.json({ ...r, test: !a.live });
-}));
+  const r = await a.answer(question, articles, { audience, product: tenant.branding.productName ?? 'VendorGate', language });
+  await db.insert(helpQuestions).values({ tenantId: tenant.id, audience, askedBy: who, question, answered: r.answered, sources: r.sources, provider: a.name });
+  return { ...r, test: !a.live };
+}
 
 /* ---------- Workspace help topics ---------- */
 

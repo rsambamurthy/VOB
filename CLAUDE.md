@@ -48,6 +48,13 @@ documents-first because the supplier portal had its own copy of that logic).
 - **Privacy mode is the only way the AI is used:** `gather()` builds a payload of general facts only (fixed-list choices, ranges, check results, bands) with names as `[SUPPLIER]` / `[OTHER-n]`, every finding has a safe `aiText`, and `leaks()` refuses to send if any value from the record appears. Names are put back locally; the payload is stored in `pre_reviews.sent_to_ai` (“What the AI saw”). Never add names, numbers, addresses, emails or free text to that payload.
 - Facts worked out locally for the AI: `server/src/services/aiFacts.ts` — yes/no `comparisons` (general + each country pack's `consistencyFacts`, e.g. India's GSTIN state / PIN code / PAN type in `countries/in/consistency.ts`), `comparisonConcerns` (the ones that become findings), `peerComparison` (percentiles among approved suppliers, 5+ only) and amounts by `aiPrecision` (ranges or exact). Add new market comparisons here, not in the AI prompt.
 
+**Supplier guide** (AI-guided onboarding — portal *and* the buyer's fill-in):
+- What an approver would pick up: `server/src/services/submissionIssues.ts` — shared by the pre-review and the guide (staff, supplier and AI wording for each issue).
+- Guide rules: `server/src/services/guide.ts` (next step, check before submit, send-back to-do, ask); routes from one `guideRoutes()` (`routes/guide.ts`), mounted in both the portal and assist.
+- AI: send-back to-do in `integrations/ai/guideWriter.ts` (AI or rules); questions reuse the help answerer (`answerHelpQuestion` in `routes/help.ts`).
+- Privacy helpers for every AI use: `server/src/services/aiPrivacy.ts` (`identifiersOf`, `leaks`, `pseudonymise`, `reidentify`, `optionValues`).
+- Screens: `GuidePanel` and `SubmitCheck` (`web/src/components/Guide.tsx`); help article picking is shared with F1 (`articlesForQuestion`).
+
 **Creating suppliers**: `server/src/services/vendors.ts` (`createVendor` with `prefill` / `approved`).
 - Used for invites, Excel invites, approved imports and accepted applications.
 

@@ -24,6 +24,7 @@ import { addDocument, applyExtractedValues, formState, isEditableStatus, saveSec
 import type { Tenant } from '../db/schema.js';
 import { recordSignedCopy } from '../services/agreements.js';
 import { answerRoutes } from './questionnaires.js';
+import { guideRoutes } from './guide.js';
 
 export const assistRouter = Router({ mergeParams: true });
 const { vendors, documents } = schema;
@@ -95,6 +96,16 @@ answerRoutes(assistRouter, {
   vendor: (req) => editableVendor(staffCtx(req).tenant.id, req.params.id),
   actor: (req) => { const s = staffCtx(req); return { name: s.user.name, userId: s.user.id, onBehalf: true, ip: req.ip }; },
   respond: (req, v) => state(staffCtx(req).tenant, v.id),
+});
+
+// The supplier guide, for the buyer filling in (staff wording, English).
+guideRoutes(assistRouter, {
+  guard: requireStaff('vendors.create'),
+  vendor: (req) => editableVendor(staffCtx(req).tenant.id, req.params.id),
+  tenant: (req) => staffCtx(req).tenant,
+  lang: () => 'en',
+  who: (req) => staffCtx(req).user.email,
+  forStaff: true,
 });
 
 /** Submit for approval on the supplier's behalf. The buyer confirms the supplier provided the details and saw the privacy notice. */

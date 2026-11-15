@@ -190,5 +190,22 @@
   "{label} must be answered": "يجب الإجابة عن {label}",
   "Answer every required question first": "أجيبوا أولاً عن جميع الأسئلة المطلوبة",
   "Questionnaire not found": "لم يتم العثور على الاستبيان",
-  "{label} — please answer": "{label} — يرجى الإجابة"
+  "{label} — please answer": "{label} — يرجى الإجابة",
+  "{label} is missing": "{label} غير مكتمل",
+  "{check} couldn't be verified just now. Try again later.": "تعذّر التحقق من {check} الآن. حاولوا مرة أخرى لاحقاً.",
+  "{check} check failed: {message}. Correct it if it was typed wrongly, then verify again.": "فشل التحقق من {check}: {message}. صحّحوه إن كان مكتوباً بشكل خاطئ، ثم أعيدوا التحقق.",
+  "{check}: the name on record “{name}” doesn't match your company name. Use the exact registered name, or be ready to explain the difference.": "{check}: الاسم المسجّل «{name}» لا يطابق اسم شركتكم. استخدموا الاسم المسجّل تماماً، أو كونوا مستعدين لتوضيح الفرق.",
+  "{check} hasn't been verified yet. Use Verify next to it.": "لم يتم التحقق من {check} بعد. استخدموا زر «تحقق» بجانبه.",
+  "{field}: you entered “{form}” but your {doc} shows “{read}”. Correct whichever is wrong.": "{field}: أدخلتم «{form}» لكن {doc} يُظهر «{read}». صحّحوا القيمة الخاطئة.",
+  "{doc}: this may be the wrong document, or hard to read. Upload a clear copy of the right one.": "{doc}: قد يكون هذا مستنداً غير صحيح أو صعب القراءة. ارفعوا نسخة واضحة من المستند الصحيح.",
+  "{doc} expires on {date}. Upload the renewed one if you have it.": "تنتهي صلاحية {doc} في {date}. ارفعوا النسخة المجدّدة إن كانت متوفرة.",
+  "Your contact email is a free webmail address. A company email address is usually expected.": "بريد التواصل الخاص بكم من خدمة بريد مجانية. يُتوقع عادةً بريد إلكتروني باسم نطاق الشركة.",
+  "Your contact email’s domain doesn’t look like your company name. Approvers may ask about it.": "نطاق بريد التواصل لا يشبه اسم شركتكم. قد يسأل المعتمدون عن ذلك.",
+  "Your contact email’s domain is different from your website. Approvers may ask about it.": "نطاق بريد التواصل يختلف عن موقعكم الإلكتروني. قد يسأل المعتمدون عن ذلك.",
+  "The bank account holder name doesn’t match your company name. Payments usually go only to an account in the company’s own name.": "اسم صاحب الحساب البنكي لا يطابق اسم شركتكم. تُحوَّل المدفوعات عادةً إلى حساب باسم الشركة نفسها فقط.",
+  "Your bank is outside your country. Approvers may ask why.": "بنككم خارج بلدكم. قد يسأل المعتمدون عن السبب.",
+  "Your GSTIN is registered in a different state from your address. Check the GSTIN and the state.": "رقم GSTIN مسجّل في ولاية مختلفة عن عنوانكم. تحققوا من الرقم والولاية.",
+  "Your PIN code belongs to a different state from the one in your address. Check both.": "الرمز البريدي (PIN) يتبع ولاية مختلفة عن الولاية في عنوانكم. تحققوا من الاثنين.",
+  "Your PAN’s 4th character doesn’t fit the type of entity you chose (for example, a company PAN has “C”). Check both.": "الحرف الرابع في رقم PAN لا يناسب نوع الكيان الذي اخترتموه (مثلاً رقم PAN للشركة يحتوي على «C»). تحققوا من الاثنين.",
+  "Please ask without including your own details (numbers, names or addresses).": "يُرجى طرح السؤال دون ذكر بياناتكم (الأرقام أو الأسماء أو العناوين)."
 }

@@ -88,17 +88,17 @@ export async function peerComparison(tenant: Tenant, v: Vendor) {
   return Object.keys(out).length > 1 ? out : null;
 }
 
-/** Comparisons that are worth an approver's attention, as findings (shown with or without the AI). */
-const CONCERN: Record<string, { when: boolean; severity: 'medium' | 'info'; tab?: string; text: string }> = {
-  'Contact email is a free webmail address': { when: true, severity: 'info', tab: 'basic', text: 'The contact email is a free webmail address, not a company domain' },
-  'Contact email domain resembles the company name': { when: false, severity: 'info', tab: 'basic', text: 'The contact email domain doesn’t resemble the company name' },
-  'Contact email domain is the same as the website': { when: false, severity: 'info', tab: 'basic', text: 'The contact email domain differs from the website' },
-  'Bank account holder name matches the company name': { when: false, severity: 'medium', tab: 'bank', text: 'The bank account holder name doesn’t match the company name' },
-  'Bank is in the supplier’s country': { when: false, severity: 'info', tab: 'bank', text: 'The bank is outside the supplier’s country' },
-  'GSTIN state matches the address state': { when: false, severity: 'medium', tab: 'tax', text: 'The GSTIN is registered in a different state from the address' },
-  'PIN code matches the address state': { when: false, severity: 'medium', tab: 'basic', text: 'The PIN code belongs to a different state from the one in the address' },
-  'PAN type matches the type of entity': { when: false, severity: 'medium', tab: 'tax', text: 'The PAN’s holder type (4th character) doesn’t fit the type of entity' },
+/** Comparisons worth attention, as findings (shown with or without the AI): staff wording, and the supplier's (“your”). */
+const CONCERN: Record<string, { when: boolean; severity: 'medium' | 'info'; tab?: string; text: string; supplier: string }> = {
+  'Contact email is a free webmail address': { when: true, severity: 'info', tab: 'basic', text: 'The contact email is a free webmail address, not a company domain', supplier: 'Your contact email is a free webmail address. A company email address is usually expected.' },
+  'Contact email domain resembles the company name': { when: false, severity: 'info', tab: 'basic', text: 'The contact email domain doesn’t resemble the company name', supplier: 'Your contact email’s domain doesn’t look like your company name. Approvers may ask about it.' },
+  'Contact email domain is the same as the website': { when: false, severity: 'info', tab: 'basic', text: 'The contact email domain differs from the website', supplier: 'Your contact email’s domain is different from your website. Approvers may ask about it.' },
+  'Bank account holder name matches the company name': { when: false, severity: 'medium', tab: 'bank', text: 'The bank account holder name doesn’t match the company name', supplier: 'The bank account holder name doesn’t match your company name. Payments usually go only to an account in the company’s own name.' },
+  'Bank is in the supplier’s country': { when: false, severity: 'info', tab: 'bank', text: 'The bank is outside the supplier’s country', supplier: 'Your bank is outside your country. Approvers may ask why.' },
+  'GSTIN state matches the address state': { when: false, severity: 'medium', tab: 'tax', text: 'The GSTIN is registered in a different state from the address', supplier: 'Your GSTIN is registered in a different state from your address. Check the GSTIN and the state.' },
+  'PIN code matches the address state': { when: false, severity: 'medium', tab: 'basic', text: 'The PIN code belongs to a different state from the one in the address', supplier: 'Your PIN code belongs to a different state from the one in your address. Check both.' },
+  'PAN type matches the type of entity': { when: false, severity: 'medium', tab: 'tax', text: 'The PAN’s holder type (4th character) doesn’t fit the type of entity', supplier: 'Your PAN’s 4th character doesn’t fit the type of entity you chose (for example, a company PAN has “C”). Check both.' },
 };
 export function comparisonConcerns(c: Record<string, boolean>) {
-  return Object.entries(c).flatMap(([k, val]) => { const x = CONCERN[k]; return x && val === x.when ? [{ severity: x.severity, text: x.text, tab: x.tab }] : []; });
+  return Object.entries(c).flatMap(([k, val]) => { const x = CONCERN[k]; return x && val === x.when ? [{ key: k, severity: x.severity, text: x.text, supplierText: x.supplier, tab: x.tab }] : []; });
 }

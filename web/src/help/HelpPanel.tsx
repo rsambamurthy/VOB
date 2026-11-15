@@ -27,6 +27,14 @@ export function useHelpExtra(articles: HelpArticle[] | null) {
   useEffect(() => { setExtra(articles ?? []); return () => setExtra([]); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
+/** Built-in articles for an audience, in Arabic for suppliers who read Arabic. */
+export const articlesIn = (audience: Audience, lang: string) => (lang === 'ar' && audience !== 'staff' ? ARTICLES.map((a) => (ARTICLES_AR[a.id] ? { ...a, ...ARTICLES_AR[a.id], keywords: `${ARTICLES_AR[a.id].keywords ?? ''} ${a.keywords ?? ''}` } : a)) : ARTICLES);
+/** The articles to send with a question to the AI: best matches first (shared by F1 Ask and the supplier guide). */
+export function articlesForQuestion(q: string, visible: HelpArticle[], forScreen: HelpArticle[] = []) {
+  const picked = [...searchHelp(q, visible).map((r) => r.a), ...forScreen].filter((a, i, all) => all.indexOf(a) === i).slice(0, 8);
+  return (picked.length ? picked : visible.slice(0, 8)).map((a) => ({ id: a.id, title: a.title, summary: a.summary, body: a.body.replace(/!\[[^\]]*\]\([^)]+\)/g, '').slice(0, 6000) }));
+}
+
 function audienceFor(path: string): Audience {
   if (path.startsWith('/platform')) return 'platform';
   if (path.startsWith('/vendor') || path.startsWith('/onboard')) return 'supplier';
@@ -55,7 +63,7 @@ export function HelpProvider({ children }: { children: ReactNode }) {
 
   // What this person may see: their audience, their permissions, their plan's features.
   const lang = useLang();
-  const visible = useMemo(() => [...extra, ...own, ...(lang === 'ar' && audience !== 'staff' ? ARTICLES.map((a) => (ARTICLES_AR[a.id] ? { ...a, ...ARTICLES_AR[a.id], keywords: `${ARTICLES_AR[a.id].keywords ?? ''} ${a.keywords ?? ''}` } : a)) : ARTICLES)].filter((a) => {
+  const visible = useMemo(() => [...extra, ...own, ...articlesIn(audience, lang)].filter((a) => {
     if (!a.audience.includes(audience)) return false;
     if (audience === 'staff' && me) {
       if (a.perms && !a.perms.some((p) => me.permissions.includes(p))) return false;
@@ -147,8 +155,7 @@ function Ask({ query, visible, forScreen, audience, go }: { query: string; visib
   if (!looksLikeQuestion && !state.answer) return null;
   async function ask() {
     setState({ busy: true });
-    const picked = [...searchHelp(q, visible).map((r) => r.a), ...forScreen].filter((a, i, all) => all.indexOf(a) === i).slice(0, 8);
-    const articles = (picked.length ? picked : visible.slice(0, 8)).map((a) => ({ id: a.id, title: a.title, summary: a.summary, body: a.body.replace(/!\[[^\]]*\]\([^)]+\)/g, '').slice(0, 6000) }));
+    const articles = articlesForQuestion(q, visible, forScreen);
     try { setState(await apiCall<{ answer: string; answered: boolean; sources: string[]; test: boolean }>('/help/ask', { body: { question: q, audience, articles, language: getLang() } })); }
     catch (e: any) { setState({ error: e.message }); }
   }
