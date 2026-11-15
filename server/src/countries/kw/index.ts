@@ -21,7 +21,7 @@ export const kwValidators: Record<string, ValidatorDef> = {
 };
 
 export const kwChecks: CheckDef[] = [
-  { kind: 'kw_cr', label: 'Commercial Registration (MOCI)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
+  { kind: 'kw_cr', monitor: 'critical', label: 'Commercial Registration (MOCI)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
     normalise: (r) => { const cr = (r.cr ?? '').replace(/\s+/g, ''); return { input: { cr }, masked: cr, error: kwValidators.kwCr.check(cr, {}) ?? undefined }; } },
 ];
 

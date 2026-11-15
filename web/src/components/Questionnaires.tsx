@@ -4,18 +4,11 @@ import { Alert } from './ui';
 import { t } from '../i18n';
 import { fmtDate } from '../lib/format';
 import { docUrl } from '../lib/api';
+import { RiskBadge } from './Risk';
+export { RiskBadge };
 
 type Answers = Record<string, unknown>;
 type FileAnswer = { documentId: string; fileName: string };
-const BAND: Record<string, { label: string; cls: string }> = { LOW: { label: 'Low risk', cls: 'ok' }, MEDIUM: { label: 'Medium risk', cls: 'flag-medium' }, HIGH: { label: 'High risk', cls: 'flag-high' } };
-
-/** "Low risk · 85%" — for staff. */
-export function RiskBadge({ band, percent }: { band: string | null | undefined; percent?: number | null }) {
-  if (!band) return null;
-  const b = BAND[band];
-  return <span className={`badge sm risk-${band.toLowerCase()}`}>{b.label}{percent !== null && percent !== undefined ? ` · ${percent}%` : ''}</span>;
-}
-
 const visible = (q: QuestionnaireView['questions'][number], a: Answers) => !q.showIf || String(a[q.showIf.questionId] ?? '') === q.showIf.equals;
 
 /**

@@ -243,6 +243,7 @@ export async function submitAnswers(v: V, questionnaireId: string, raw: Answers,
   const result = score(s.questions, answers, s.questionnaire.bands as { low: number; medium: number });
   await db.update(questionnaireResponses).set({ answers, questions: s.questions, ...result, status: 'SUBMITTED', submittedAt: new Date(), submittedByName: actor.name, updatedAt: new Date() }).where(eq(questionnaireResponses.id, d.id));
   await audit({ tenantId: v.tenantId, vendorId: v.id, actor: actor.name, action: 'QUESTIONNAIRE_SUBMITTED', detail: { questionnaire: s.questionnaire.title, ...(result.band ? { risk: result.band, score: `${result.percent}%` } : {}), ...(actor.onBehalf ? { onBehalf: 'yes' } : {}) }, ip: actor.ip });
+  await (await import('./risk.js')).refreshRisk(v.id).catch(() => {});
   return result;
 }
 

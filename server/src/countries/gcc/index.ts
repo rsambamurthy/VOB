@@ -30,7 +30,7 @@ export const gccMockChecks: CheckProvider = {
 
 /** Screens the supplier and its owners (UBOs) against sanctions lists. Internal: suppliers never see it. */
 export const sanctionsCheck: CheckDef = {
-  kind: 'sanctions', label: 'Sanctions screening', anchor: 'basic.vendorName', buttonLabel: 'Screen',
+  kind: 'sanctions', monitor: 'critical', label: 'Sanctions screening', anchor: 'basic.vendorName', buttonLabel: 'Screen',
   inputs: { name: 'basic.vendorName', country: 'basic.supplierCountry', owner1: 'ownership.owner1Name', owner2: 'ownership.owner2Name', owner3: 'ownership.owner3Name' },
   optionalInputs: ['country', 'owner1', 'owner2', 'owner3'],
   scope: 'home', runOnSubmit: true, resultLabels: { ok: 'Clear', fail: 'Possible match' },

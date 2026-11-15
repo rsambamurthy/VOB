@@ -17,12 +17,13 @@ import { useSession } from '../lib/session';
 import { ChecksPanel } from '../components/Checks';
 import { ExtractionList } from '../components/ExtractionCard';
 import { AgreementsPanel } from '../components/Agreements';
-import { QuestionnairesPanel, RiskBadge } from '../components/Questionnaires';
+import { QuestionnairesPanel } from '../components/Questionnaires';
+import { RiskBadge, RiskCard, RiskSignals, type RiskSignal } from '../components/Risk';
 import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { TabStrip } from '../components/TabStrip';
 
 type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
-  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; questionnaireHistory: { id: string; questionnaireId: string; submittedAt: string; submittedByName: string | null; percent: number | null; band: string | null; requestedByName: string | null }[]; canRequestQuestionnaire: boolean };
+  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; questionnaireHistory: { id: string; questionnaireId: string; submittedAt: string; submittedByName: string | null; percent: number | null; band: string | null; requestedByName: string | null }[]; canRequestQuestionnaire: boolean; risk: { score: number; band: 'LOW' | 'MEDIUM' | 'HIGH'; signals: RiskSignal[]; lastMonitoredAt: string | null } | null; canRunRiskCheck: boolean };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
@@ -53,6 +54,7 @@ export function VendorDetail() {
   const [assistSubmit, setAssistSubmit] = useState(false);
   const [dismissing, setDismissing] = useState<Duplicate>();
   const [sendingQn, setSendingQn] = useState(false);
+  const [riskChecking, setRiskChecking] = useState(false);
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
   useEffect(() => { load(); }, [load]);
@@ -267,6 +269,7 @@ export function VendorDetail() {
                     <button className="btn btn-primary btn-sm" onClick={() => setCrAction({ cr, action: 'APPROVE' })}>Approve</button></div>}
                 </div>
                 {!!cr.duplicates?.length && <Alert kind="error"><strong>This change matches another supplier:</strong> {cr.duplicates.map((x, i) => <span key={x.id}>{i ? '; ' : ''}<Link to={`/staff/vendors/${x.id}`}>{x.code} {x.name}</Link> (same {x.matches.join(', ')})</span>)}. A bank account or tax number that belongs to another supplier is a common sign of fraud — confirm with the supplier on their registered number before approving.</Alert>}
+                {cr.bankRisk && cr.bankRisk.band !== 'LOW' && <Alert kind={cr.bankRisk.band === 'HIGH' ? 'error' : 'warning'}><strong>Bank change risk: {cr.bankRisk.band === 'HIGH' ? 'high' : 'medium'}.</strong> <RiskSignals signals={cr.bankRisk.reasons} /> Call the supplier on the number you already have on file (not one given with this request) before approving.</Alert>}
                 {cr.sensitive && cr.status === 'PENDING' && <Alert kind="warning">Includes sensitive fields. For bank changes, confirm the account holder name on the bank check under Verifications and, if in doubt, call the vendor on their registered number before approving.</Alert>}
                 {cr.note && <p className="small">{cr.raisedBy ? 'Reason' : 'Vendor’s note'}: “{cr.note}”</p>}
                 {cr.status === 'PENDING' && cr.raisedBy?.id === d.me && <p className="small muted">You proposed this change, so another approver has to decide each step. An approvals manager can reassign a step if you’re the only one in that role.</p>}
@@ -297,6 +300,7 @@ export function VendorDetail() {
           </div>
         </div>
         <aside className="side-col">
+          <RiskCard risk={d.risk} busy={riskChecking} onCheck={d.canRunRiskCheck && v.status === 'APPROVED' ? async () => { setRiskChecking(true); try { await api(`/staff/risk/vendors/${v.id}/check`, { method: 'POST' }); setFlash({ kind: 'success', text: 'Registration and sanctions re-checked; risk updated.' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); } finally { setRiskChecking(false); } } : undefined} />
           {approved && (
             <div className="card pad">
               <h3 className="card-title">Lifecycle</h3>

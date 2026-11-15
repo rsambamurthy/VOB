@@ -61,6 +61,11 @@ export interface CheckDef {
   resultLabels?: { ok: string; fail: string };
   /** Run automatically when the supplier submits for review. */
   runOnSubmit?: boolean;
+  /**
+   * Re-run by ongoing risk monitoring on approved suppliers (services/risk.ts), every few weeks rather than yearly.
+   * 'critical': a failed result is a serious hit — registration cancelled or suspended, a sanctions match.
+   */
+  monitor?: 'critical';
 }
 
 /* ---------- Document reading (AI) ---------- */

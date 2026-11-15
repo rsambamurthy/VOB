@@ -12,7 +12,7 @@ const fmt = (k: string) => (v: string) => indiaValidators[k].check(v, {});
 
 export const indiaChecks: CheckDef[] = [
   {
-    kind: 'gstin', label: 'GSTIN', anchor: 'tax.gstin', inputs: { gstin: 'tax.gstin' },
+    kind: 'gstin', monitor: 'critical', label: 'GSTIN', anchor: 'tax.gstin', inputs: { gstin: 'tax.gstin' },
     normalise: (r) => { const gstin = up(r.gstin); return { input: { gstin }, masked: mask(gstin, 4, 3), error: err(fmt('gstin'), gstin) }; },
   },
   {

@@ -42,9 +42,9 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 
 try {
   // Background jobs: email/SMS delivery with retries, AI document reading, SLA sweep every 5 minutes.
-  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }, { name: 'po.hourly', cron: '7 * * * *' }, { name: 'billing.daily', cron: '35 9 * * *' }, { name: 'shipments.daily', cron: '45 3 * * *' }];
+  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }, { name: 'po.hourly', cron: '7 * * * *' }, { name: 'billing.daily', cron: '35 9 * * *' }, { name: 'shipments.daily', cron: '45 3 * * *' }, { name: 'risk.daily', cron: '25 4 * * *' }];
   if (env.int.PO_SYNC_SCHEDULE && env.int.PO_SYNC_SCHEDULE !== 'off') schedules.push({ name: 'po.sync', cron: env.int.PO_SYNC_SCHEDULE });
-  await import('./services/orders/pull.js'); await import('./services/orders/acceptance.js'); await import('./services/billing.js');
+  await import('./services/orders/pull.js'); await import('./services/orders/acceptance.js'); await import('./services/billing.js'); await import('./services/risk.js');
   if (env.int.BACKUP_SCHEDULE) { await import('./services/backups.js'); schedules.push({ name: 'db.backup', cron: env.int.BACKUP_SCHEDULE }); }
   await startQueue(schedules);
   if (env.jobsEnabled) console.log('[startup] job queue started');
@@ -58,6 +58,8 @@ if (!env.jobsEnabled) {
   const { runAutoAccept, runAcceptanceReminders } = await import('./services/orders/acceptance.js');
   const { runBillingDaily } = await import('./services/billing.js');
   setInterval(() => { runBillingDaily().catch((e) => logger.error({ err: e }, 'billing run failed')); }, 6 * 3600_000).unref();
+  const { runRiskMonitoring } = await import('./services/risk.js');
+  setInterval(() => { runRiskMonitoring().catch((e) => logger.error({ err: e }, 'risk monitoring failed')); }, 12 * 3600_000).unref();
   setInterval(() => { runAutoAccept().then(() => runAcceptanceReminders()).catch((e) => logger.error({ err: e }, 'purchase order sweep failed')); }, 3600_000).unref();
 }
 

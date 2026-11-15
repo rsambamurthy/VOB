@@ -21,7 +21,7 @@ export const omValidators: Record<string, ValidatorDef> = {
 const OM_VAT = /^OM\d{9}[\dX]$/i;
 
 export const omChecks: CheckDef[] = [
-  { kind: 'om_cr', label: 'Commercial Registration (Invest Easy)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
+  { kind: 'om_cr', monitor: 'critical', label: 'Commercial Registration (Invest Easy)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
     normalise: (r) => { const cr = (r.cr ?? '').replace(/\s+/g, ''); return { input: { cr }, masked: cr, error: omValidators.omCr.check(cr, {}) ?? undefined }; } },
   { kind: 'om_vat', label: 'VAT registration (Tax Authority)', anchor: 'tax.vatNumber', inputs: { vat: 'tax.vatNumber' },
     normalise: (r) => { const vat = (r.vat ?? '').replace(/\s+/g, '').toUpperCase(); return { input: { vat }, masked: `${vat.slice(0, 4)}•••${vat.slice(-2)}`, error: OM_VAT.test(vat) ? undefined : 'An Oman VAT number is OM followed by 10 characters, e.g. OM1100012379' }; } },

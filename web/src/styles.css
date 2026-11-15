@@ -925,3 +925,13 @@ ul.plain { list-style: none; margin: 0; padding: 0; } ul.plain li + li { margin-
 .qb-q { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .qb-opts input:not([type=checkbox]) { width: 100%; }
 .num-in { width: 70px !important; }
+/* Risk */
+.risk-signals { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.risk-signals li { display: flex; gap: 8px; align-items: baseline; }
+.risk-signals .pts { font-family: var(--mono, monospace); font-size: 11.5px; color: var(--muted); min-width: 30px; }
+.risk-signals li.critical { color: var(--err); font-weight: 600; }
+.risk-meter { height: 6px; background: var(--line-2); border-radius: 4px; overflow: hidden; }
+.risk-meter span { display: block; height: 100%; background: currentColor; }
+.risk-meter.risk-low { color: var(--ok); background: var(--line-2); } .risk-meter.risk-medium { color: #c27a00; background: var(--line-2); } .risk-meter.risk-high { color: var(--err); background: var(--line-2); }
+.risk-card { display: flex; flex-direction: column; gap: 10px; }
+.stat.stat-high { border-top-color: var(--err); } .stat.stat-medium { border-top-color: #c27a00; } .stat.stat-low { border-top-color: var(--ok); }

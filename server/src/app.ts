@@ -36,6 +36,7 @@ import { vendorRouter } from './routes/vendorPortal.js';
 import { documentsRouter } from './routes/documents.js';
 import { agreementsRouter } from './routes/agreements.js';
 import { questionnairesRouter } from './routes/questionnaires.js';
+import { riskRouter } from './routes/risk.js';
 import { applicationsRouter, applyRouter, registrationLinksRouter } from './routes/applications.js';
 import { configRouter } from './routes/config.js';
 
@@ -102,6 +103,7 @@ export function createApp() {
   app.use('/api/staff/vendors/:id/assist', assistRouter);
   app.use('/api/staff/vendor-import', vendorImportRouter);
   app.use('/api/staff/applications', applicationsRouter);
+  app.use('/api/staff/risk', riskRouter);
   app.use('/api/staff/registration-links', registrationLinksRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);

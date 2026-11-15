@@ -29,7 +29,7 @@ export const aeValidators: Record<string, ValidatorDef> = {
 
 export const aeChecks: CheckDef[] = [
   {
-    kind: 'ae_trn', label: 'TRN (Federal Tax Authority)', anchor: 'tax.vatNumber', inputs: { trn: 'tax.vatNumber' },
+    kind: 'ae_trn', monitor: 'critical', label: 'TRN (Federal Tax Authority)', anchor: 'tax.vatNumber', inputs: { trn: 'tax.vatNumber' },
     normalise: (r) => { const trn = digits(r.trn); return { input: { trn }, masked: mask(trn, 3, 3), error: aeValidators.aeTrn.check(trn, {}) ?? undefined }; },
   },
 ];

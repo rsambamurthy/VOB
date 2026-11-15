@@ -170,6 +170,7 @@ export async function decideChange(tenantId: string, crId: string, actor: { id: 
   await applyChange(cr, vendor);
   await db.update(changeRequests).set({ status: 'APPROVED', remarks: remarks || null, decidedAt: now }).where(eq(changeRequests.id, cr.id));
   await audit({ tenantId, vendorId: vendor.id, actor: 'system', action: 'CHANGE_APPLIED', detail: { fields: cr.changes.map((c) => c.fieldId).join(', ') } });
+  await (await import('./risk.js')).refreshRisk(vendor.id).catch(() => {});
   const crLang = await langForVendor(vendor);
   await mailSupplier(crLang, { tenantId, to: vendor.contactEmail }, cr.raisedById ? 'crAppliedByBuyer' : 'crApproved', { first: vendor.contactFirstName, vendor: vendor.name,
     changes: cr.changes.map((c) => `- ${crLang === 'ar' ? arLabel(c.label) : c.label}`).join('\n') || snippet(crLang, 'newDocuments') });
@@ -278,15 +279,26 @@ export async function setBlocked(tenantId: string, vendorId: string, block: bool
  * A required document lapsed (e.g. Zakat or GOSI certificate): put the vendor on hold until a renewal is approved.
  * Manual blocks are never touched; an existing expiry hold just gets the extra document added to its reason.
  */
+/**
+ * Put an approved supplier on hold automatically (EXPIRY: a required document lapsed; RISK: monitoring found a
+ * serious problem). A person's block is never touched; an existing hold of the same kind just gets the extra
+ * reason added. The ERP is told (payment hold). Returns whether the hold is new.
+ */
+export async function applySystemHold(vendorId: string, source: 'EXPIRY' | 'RISK', reasonLine: string, actor: string, detail: Record<string, unknown>, appendLine = reasonLine) {
+  const fresh = await db.query.vendors.findFirst({ where: eq(vendors.id, vendorId) });
+  if (!fresh || fresh.status !== 'APPROVED') return null;
+  if (fresh.blockedAt && fresh.blockSource !== source) return null;
+  const reason = fresh.blockedAt ? `${fresh.blockedReason}; ${appendLine}` : reasonLine;
+  await db.update(vendors).set({ blockedAt: fresh.blockedAt ?? new Date(), blockedReason: reason.slice(0, 500), blockedById: null, blockSource: source }).where(eq(vendors.id, fresh.id));
+  await audit({ tenantId: fresh.tenantId, vendorId: fresh.id, actor, action: source === 'EXPIRY' ? 'VENDOR_HELD_EXPIRY' : 'VENDOR_HELD_RISK', detail });
+  if (fresh.blockedAt) return { vendor: fresh, isNew: false };
+  await pushLater(fresh.tenantId, fresh.id, 'BLOCK', actor);
+  return { vendor: fresh, isNew: true };
+}
+
 export async function holdForExpiry(v: Vendor, label: string, expiredOn: string) {
-  const fresh = await db.query.vendors.findFirst({ where: eq(vendors.id, v.id) });
-  if (!fresh || fresh.status !== 'APPROVED') return;
-  if (fresh.blockedAt && fresh.blockSource !== 'EXPIRY') return;
-  const reason = fresh.blockedAt ? `${fresh.blockedReason}; ${label}` : `Expired: ${label}`;
-  await db.update(vendors).set({ blockedAt: fresh.blockedAt ?? new Date(), blockedReason: reason.slice(0, 500), blockedById: null, blockSource: 'EXPIRY' }).where(eq(vendors.id, v.id));
-  await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'system (document expiry)', action: 'VENDOR_HELD_EXPIRY', detail: { document: label, expiredOn } });
-  if (fresh.blockedAt) return;
-  await pushLater(v.tenantId, v.id, 'BLOCK', 'system (document expiry)');
+  const held = await applySystemHold(v.id, 'EXPIRY', `Expired: ${label}`, 'system (document expiry)', { document: label, expiredOn }, label);
+  if (!held?.isNew) return;
   const holdLang = await langForVendor(v);
   await mailSupplier(holdLang, { tenantId: v.tenantId, to: v.contactEmail, link: portalUrl(v) }, 'holdExpiry', { first: v.contactFirstName, vendor: v.name, doc: holdLang === 'ar' ? arLabel(label) : label, date: holdLang === 'ar' ? mailDate(expiredOn, holdLang) : expiredOn });
   for (const a of await usersWithPermission(v.tenantId, 'vendors.block')) {
@@ -401,7 +413,7 @@ export async function runPeriodicReviews(now = new Date(), limit = 200) {
 
 /* ======================= "Needs attention" flags ======================= */
 
-export interface Flag { code: 'POSSIBLE_DUPLICATE' | 'AGREEMENT_PENDING' | 'QUESTIONNAIRE_DUE' | 'QUESTIONNAIRE_HIGH_RISK' | 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
+export interface Flag { code: 'RISK_HIGH' | 'POSSIBLE_DUPLICATE' | 'AGREEMENT_PENDING' | 'QUESTIONNAIRE_DUE' | 'QUESTIONNAIRE_HIGH_RISK' | 'EMAIL_BOUNCING' | 'ERASURE_REQUESTED' | 'BLOCKED' | 'DOC_EXPIRED' | 'DOC_EXPIRING' | 'CHANGE_PENDING' | 'REVIEW_ATTENTION' | 'REVIEW_DUE'; label: string; severity: 'high' | 'medium' | 'low' }
 
 export function flagsFor(v: Pick<Vendor, 'status' | 'blockedAt' | 'reviewStatus' | 'nextReviewAt'> & { erasureRequestedAt?: Date | null; blockSource?: string | null; emailBouncedAt?: Date | null; emailBounceReason?: string | null }, docs: Pick<DocumentRow, 'status' | 'expiresOn' | 'docType'>[], hasOpenChange: boolean, now = new Date()): Flag[] {
   const flags: Flag[] = [];
@@ -425,7 +437,9 @@ export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, '
   // Approved suppliers asked to accept a new or updated agreement who haven't yet.
   const agr = await vendorsWithOutstandingAgreements(tenantId, vendorRows.filter((v) => v.status === 'APPROVED').map((v) => v.id));
   const qf = await questionnaireFlags(tenantId, vendorRows.map((v) => v.id));
+  const highRisk = new Set(vendorRows.filter((v) => (v as { riskBand?: string | null }).riskBand === 'HIGH').map((v) => v.id));
   const withDup = (id: string, f: Flag[]) => [
+    ...(highRisk.has(id) ? [{ code: 'RISK_HIGH', label: 'High risk', severity: 'high' } as Flag] : []),
     ...(dups.has(id) ? [{ code: 'POSSIBLE_DUPLICATE', label: 'Possible duplicate', severity: 'high' } as Flag] : []),
     ...f,
     ...(agr.has(id) ? [{ code: 'AGREEMENT_PENDING', label: 'Agreement to accept', severity: 'medium' } as Flag] : []),

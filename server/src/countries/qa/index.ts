@@ -23,7 +23,7 @@ export const qaValidators: Record<string, ValidatorDef> = {
 };
 
 export const qaChecks: CheckDef[] = [
-  { kind: 'qa_cr', label: 'Commercial Registration (MOCI)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
+  { kind: 'qa_cr', monitor: 'critical', label: 'Commercial Registration (MOCI)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
     normalise: (r) => { const cr = (r.cr ?? '').replace(/\s+/g, ''); return { input: { cr }, masked: cr, error: qaValidators.qaCr.check(cr, {}) ?? undefined }; } },
   { kind: 'qa_tin', label: 'Tax registration (GTA)', anchor: 'tax.tinNumber', inputs: { tin: 'tax.tinNumber' },
     normalise: (r) => { const tin = (r.tin ?? '').replace(/\D/g, ''); return { input: { tin }, masked: `${tin.slice(0, 3)}••••${tin.slice(-2)}`, error: qaValidators.qaTin.check(tin, {}) ?? undefined }; } },

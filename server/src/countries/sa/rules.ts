@@ -21,7 +21,7 @@ const digits = (v?: string) => (v ?? '').replace(/\D/g, '');
 
 export const saChecks: CheckDef[] = [
   {
-    kind: 'sa_cr', label: 'Commercial Registration (Wathq)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
+    kind: 'sa_cr', monitor: 'critical', label: 'Commercial Registration (Wathq)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
     normalise: (r) => { const cr = digits(r.cr); return { input: { cr }, masked: mask(cr, 3, 2), error: saValidators.saCr.check(cr, {}) ?? undefined }; },
   },
   {

@@ -82,6 +82,7 @@ export interface ChangeRequest {
   /** staff view */ raisedBy?: { id: string; name: string } | null; canWithdraw?: boolean;
   /** vendor view: proposed by the buyer's staff */ byBuyer?: boolean;
   /** staff view: other suppliers this change would match (e.g. their bank account) */ duplicates?: Duplicate[];
+  /** staff view: how risky a proposed bank change looks */ bankRisk?: { band: 'LOW' | 'MEDIUM' | 'HIGH'; score: number; reasons: { code: string; label: string; points: number; critical?: boolean }[] } | null;
 }
 /** Another supplier sharing a tax / registration number or bank account. */
 export interface Duplicate { id: string; code: string; name: string; status: string; matches: string[] }

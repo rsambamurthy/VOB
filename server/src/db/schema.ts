@@ -105,6 +105,8 @@ export interface TenantSettings {
   vendorOtpChannel?: 'email' | 'sms' | 'both';
   /** DPDP privacy notice shown to vendors; changing the text bumps the version and asks vendors to accept again. */
   privacy?: { version: number; text: string; textAr?: string; contactEmail?: string; updatedAt?: string };
+  /** Ongoing risk monitoring: days between re-checks of registration status and sanctions (0 = off; default 30), who is alerted, and whether a serious hit puts the supplier on hold. */
+  risk?: { monitorDays?: number; alertEmails?: string; autoHold?: boolean };
   /** Days after which vendor data is anonymised: rejected registrations, and ones abandoned before submitting (0 = keep). */
   retention?: { rejectedDays: number; abandonedDays: number };
   /** Answer F1 help questions with AI (from the help articles only). Default on. */
@@ -288,7 +290,15 @@ export const vendors = pgTable('vendors', {
   /** Keyed hashes of the supplier's identifiers (PAN, GSTIN, bank account, IBAN, CR, VAT…) for spotting duplicates
    *  without decrypting anything. Null = not computed yet (filled at startup). See services/duplicates.ts. */
   identityKeys: text('identity_keys').array(),
-}, (t) => [uniqueIndex('vendors_tenant_code_uq').on(t.tenantId, t.code), index('vendors_tenant_status_idx').on(t.tenantId, t.status), index('vendors_identity_keys_idx').using('gin', t.identityKeys)]);
+  /* ---- Risk monitoring (services/risk.ts) ---- */
+  /** 0–100, higher = riskier; LOW · MEDIUM · HIGH; the signals behind it. Recomputed daily and when the supplier is opened. */
+  riskScore: integer('risk_score'),
+  riskBand: text('risk_band'),
+  riskSignals: jsonb('risk_signals'),
+  riskUpdatedAt: timestamp('risk_updated_at', { withTimezone: true }),
+  /** When registration status and sanctions were last re-checked by monitoring. */
+  lastMonitoredAt: timestamp('last_monitored_at', { withTimezone: true }),
+}, (t) => [uniqueIndex('vendors_tenant_code_uq').on(t.tenantId, t.code), index('vendors_tenant_status_idx').on(t.tenantId, t.status), index('vendors_identity_keys_idx').using('gin', t.identityKeys), index('vendors_tenant_risk_idx').on(t.tenantId, t.riskScore)]);
 
 export const otpCodes = pgTable('otp_codes', {
   id: id(),

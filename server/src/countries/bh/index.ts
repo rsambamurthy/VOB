@@ -28,7 +28,7 @@ export const bhValidators: Record<string, ValidatorDef> = {
 
 export const bhChecks: CheckDef[] = [
   {
-    kind: 'bh_cr', label: 'Commercial Registration (Sijilat)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
+    kind: 'bh_cr', monitor: 'critical', label: 'Commercial Registration (Sijilat)', anchor: 'tax.crNumber', inputs: { cr: 'tax.crNumber' },
     normalise: (r) => { const cr = (r.cr ?? '').replace(/\s+/g, ''); return { input: { cr }, masked: cr, error: bhValidators.bhCr.check(cr, {}) ?? undefined }; },
   },
   {

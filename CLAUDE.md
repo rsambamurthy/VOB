@@ -36,6 +36,12 @@ documents-first because the supplier portal had its own copy of that logic).
 - Screens: one `QuestionnairesPanel` (`web/src/components/Questionnaires.tsx`).
 - Conditions reuse `RulePicker` / `ConditionEditor` from `pages/admin/config/shared.tsx`.
 
+**Risk** (scores, monitoring, bank-change risk):
+- Rules: `server/src/services/risk.ts`.
+- Checks marked `monitor: 'critical'` in the country packs are re-checked by monitoring.
+- Automatic holds go through `applySystemHold` (lifecycle), shared with document-expiry holds.
+- Badges and signals: `web/src/components/Risk.tsx`.
+
 **Creating suppliers**: `server/src/services/vendors.ts` (`createVendor` with `prefill` / `approved`).
 - Used for invites, Excel invites, approved imports and accepted applications.
 

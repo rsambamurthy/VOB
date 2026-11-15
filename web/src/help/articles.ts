@@ -459,6 +459,24 @@ The **Approval flow** card on the right shows every level and its status. When a
 - **Decline** records a reason and, if you choose, emails the applicant.`,
   },
   {
+    id: 'risk', title: 'Risk scores and ongoing monitoring', audience: ['staff'], perms: ['vendors.view'],
+    summary: 'Each supplier’s risk score, what drives it, re-checks of registration and sanctions, alerts and automatic hold.',
+    screens: ['^/staff/risk', '^/staff/vendors/[^/]+$'],
+    keywords: 'risk score monitoring high medium low sanctions gst cancelled registration hold alert bank change fraud re-check',
+    related: ['duplicates', 'questionnaires', 'block-recheck', 'scorecards'],
+    body: `**Vendors → Risk** lists approved and under-review suppliers by risk score (0–100). The score adds up what VendorGate already knows: failed verifications, possible duplicates, recent or frequent bank changes, a recent contact-email change, questionnaire results, expired documents, a scorecard below 70 and agreements not accepted. **Low** is below 25, **Medium** 25–49, **High** 50 or more.
+
+**Serious findings** make a supplier High straight away: registration (GSTIN, CR, TRN) cancelled, suspended or not found; a possible sanctions match; an approved supplier sharing a bank account with another supplier.
+
+**Monitoring**: approved suppliers' registration status and sanctions screening are re-checked automatically — every 30 days by default (*Monitoring settings*, needs *Workspace settings*). The supplier page shows a **Risk** card with the score and reasons; *Re-check now* runs the checks straight away (needs *Block vendors*).
+
+**When a supplier turns High** the people you chose (or everyone who can block vendors) are emailed, the vendor list shows **High risk**, and the history records it. With **automatic hold** switched on, a serious finding also puts the supplier on hold — payment and purchase-order hold in the ERP — until someone reviews and unblocks it.
+
+**Bank changes**: a change request with new bank details shows a **bank change risk** to the approver — the account of another supplier, a recent contact-email change, a supplier approved less than 30 days ago, a second change within 6 months, a bank in another country, or an account holder who isn't the supplier. Call the supplier on the number you already have before approving.
+
+Suppliers never see risk scores.`,
+  },
+  {
     id: 'questionnaires', title: 'Supplier questionnaires and risk scores', audience: ['staff'], perms: ['config.manage', 'vendors.view'],
     summary: 'ESG, information security, quality, anti-bribery — asked by category, scored into Low / Medium / High risk.',
     screens: ['^/staff/admin/questionnaires', '^/staff/vendors/[^/]+$'],

@@ -19,6 +19,7 @@ import { publicCheck } from './vendorPortal.js';
 import { upload } from '../lib/upload.js';
 import { checkExpiry, formState, isEditableStatus } from '../services/onboarding.js';
 import { requestQuestionnaire, responseHistory } from '../services/questionnaires.js';
+import { bankChangeRisk, refreshRisk } from '../services/risk.js';
 import { getPublished } from '../services/config.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { cancelStaffChange, changeRequestsForVendor, decideChange, flagsForMany, openChangeRequest, reassignChangeStep, reviewVendor, setBlocked, submitChangeRequest } from '../services/lifecycle.js';
@@ -154,6 +155,9 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
     vendor: { ...rest, profile: maskProfile(rest.profile), steps: rest.steps.map(({ role, assignee, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })), inviteLink: canInvite && env.devShowOtp ? `${env.appBaseUrl}/onboard/${inviteToken}` : undefined },
     // Fields, documents and agreements — the same rules the supplier sees.
     ...(await formState(s.tenant, config, v, { forStaff: true })),
+    // Risk: recomputed when the supplier is opened (cheap; alerts if it just turned serious).
+    risk: await refreshRisk(v.id).then(async (r) => r && { ...r, updatedAt: new Date(), lastMonitoredAt: (await findVendor(s.tenant.id, v.id))?.lastMonitoredAt ?? null }).catch(() => null),
+    canRunRiskCheck: s.permissions.has('vendors.block'),
     questionnaireHistory: (await responseHistory(v.id)).map((r) => ({ id: r.id, questionnaireId: r.questionnaireId, submittedAt: r.submittedAt, submittedByName: r.submittedByName, percent: r.percent, band: r.band, requestedByName: r.requestedByName })),
     canRequestQuestionnaire: s.permissions.has('vendors.edit'),
     /** How the form is filled in: 'automatic' means documents first (also when a buyer fills it in for the supplier). */
@@ -179,6 +183,7 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
         ...cr,
         changes: maskChanges(cr.changes),
         duplicates: cr.status === 'PENDING' ? await changeDuplicates(s.tenant.id, v, cr.changes) : [],
+        bankRisk: cr.status === 'PENDING' ? await bankChangeRisk(v, cr.changes, !!cr.raisedById) : null,
         raisedBy: cr.raisedBy ? { id: cr.raisedBy.id, name: cr.raisedBy.name } : null,
         canWithdraw: cr.status === 'PENDING' && !!cr.raisedById && (cr.raisedById === s.user.id || s.permissions.has('approvals.manage')),
         steps: cr.steps.map(({ role, assignee, actedBy, ...st }) => ({ ...st, roleName: role?.name, assigneeName: assignee?.name ?? null, actedBy: actedBy ? { name: actedBy.name } : null, overdue: st.status === 'PENDING' && !!st.dueAt && st.dueAt < new Date() })),
