@@ -7,7 +7,7 @@ import { fmtDate } from '../lib/format';
 import { RiskBadge, RiskSignals, type Band, type RiskSignal } from '../components/Risk';
 
 interface Row { id: string; code: string; name: string; status: string; riskScore: number | null; riskBand: Band | null; riskSignals: RiskSignal[] | null; lastMonitoredAt: string | null; blockedAt: string | null; blockSource: string | null }
-interface Settings { monitorDays: number; alertEmails: string; autoHold: boolean }
+interface Settings { monitorDays: number; alertEmails: string; autoHold: boolean; holdOnOverdueAction?: boolean }
 interface Data { rows: Row[]; counts: Record<string, number>; heldByRisk: number; settings: Settings; canChangeSettings: boolean; canCheck: boolean }
 
 /** Vendors → Risk: every supplier's risk score, what drives it, and how monitoring is set up. */
@@ -60,6 +60,7 @@ export function Risk() {
           <li>Bank details changed in the last 90 days +10, twice or more in a year +15 · contact email changed in the last 30 days +5.</li>
           <li>Questionnaire result High +25, Medium +10 · documents expired +15 (expiring soon +5).</li>
           <li>Scorecard below 70 (last 90 days) +15 · required agreement not accepted +5 · contact email bouncing +5.</li>
+          <li>Corrective actions overdue +15 (+25 when one is high priority).</li>
         </ul>
         <p>Scores are refreshed every day and whenever someone opens the supplier. Suppliers never see them.</p>
       </details>
@@ -83,6 +84,8 @@ function SettingsModal({ current, onClose, onSaved }: { current: Settings; onClo
         <div className="field-help">Leave empty to alert everyone who can block vendors.</div></div>
       <label className="check-item"><input type="checkbox" checked={s.autoHold} onChange={(e) => setS({ ...s, autoHold: e.target.checked })} />
         <span><strong>Put the supplier on hold automatically on a serious finding</strong><span className="muted small block">Registration cancelled, a sanctions match, or another supplier's bank account: payment and purchase-order hold in the ERP until someone reviews it and unblocks.</span></span></label>
+      <label className="check-item"><input type="checkbox" checked={!!s.holdOnOverdueAction} onChange={(e) => setS({ ...s, holdOnOverdueAction: e.target.checked })} />
+        <span><strong>Put the supplier on hold when a high-priority corrective action is overdue</strong><span className="muted small block">Approved suppliers only. Overdue actions always raise the risk score and send reminders; this also holds payments and purchase orders in the ERP until someone unblocks.</span></span></label>
     </Modal>
   );
 }

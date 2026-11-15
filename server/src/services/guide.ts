@@ -22,6 +22,7 @@ import { getPublished } from './config.js';
 import { formState, isEditableStatus } from './onboarding.js';
 import { hasFeature } from './limits.js';
 import { submissionIssues } from './submissionIssues.js';
+import { actionsFor } from './correctiveActions.js';
 import { identifiersOf, leaks, optionValues, pseudonymise, reidentify } from './aiPrivacy.js';
 import { answerHelpQuestion } from '../routes/help.js';
 
@@ -52,10 +53,14 @@ export async function supplierGuide(tenant: Tenant, v: VendorWithDocs, opts: { l
   const approverWouldAsk = issues.filter((i) => i.kind !== 'missing' && i.kind !== 'warning' && (i.fixable || i.kind === 'check_failed')).map(asIs);
   const worthChecking = issues.filter((i) => i.kind === 'warning' || (!i.fixable && i.kind !== 'check_failed' && i.kind !== 'missing')).map(asIs);
   const sendBack = v.status === 'SENT_BACK' ? await sendBackTodo(tenant, v, config, lang) : null;
-  const next: GuideItem | null = sendBack?.items[0] ? { ...sendBack.items[0], severity: 'high' } : missing[0] ? asIs(missing[0]) : approverWouldAsk[0] ?? null;
+  // Corrective actions still to answer (rejected and overdue first).
+  const open = (await actionsFor(v.id, { forSupplier: true })).filter((a) => a.status === 'OPEN').sort((a, b) => Number(b.rejected) - Number(a.rejected) || Number(b.overdue) - Number(a.overdue));
+  const actionItem: GuideItem | null = open[0] ? { text: opts.forStaff ? `Corrective action due ${open[0].dueOn}: ${open[0].title}` : translateMessage(`Answer the corrective action “${open[0].title}” (due ${open[0].dueOn})`, lang), tab: 'actions', severity: 'high' } : null;
+  const next: GuideItem | null = sendBack?.items[0] ? { ...sendBack.items[0], severity: 'high' } : actionItem ?? (missing[0] ? asIs(missing[0]) : approverWouldAsk[0] ?? null);
   return {
     editable: isEditableStatus(v.status), remaining: missing.length, ready: missing.length === 0,
-    next, nextKind: sendBack?.items[0] ? 'sendBack' : missing[0] ? 'missing' : approverWouldAsk[0] ? 'check' : 'ready',
+    next, nextKind: sendBack?.items[0] ? 'sendBack' : actionItem ? 'action' : missing[0] ? 'missing' : approverWouldAsk[0] ? 'check' : 'ready',
+    openActions: open.length,
     beforeSubmit: { approverWouldAsk, worthChecking },
     sendBack,
     canAsk: tenant.settings.helpAi !== false,

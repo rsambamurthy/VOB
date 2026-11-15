@@ -1,4 +1,5 @@
 /** Buyer-side vendor management. Every query is scoped by the signed-in user's tenant. */
+import { actionCounts } from '../services/correctiveActions.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
@@ -178,6 +179,7 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
     me: s.user.id,
     flags: (await flagsForMany(s.tenant.id, [v])).get(v.id) ?? [],
     duplicates: await duplicatesOf(v),
+    actionCounts: (await actionCounts(s.tenant.id, [v.id])).get(v.id) ?? null,
     canDismissDuplicate: s.permissions.has('vendors.edit'),
     changeRequests: await Promise.all((await changeRequestsForVendor(v.id)).map(async (cr) => {
       const cur = cr.steps.find((st) => st.status === 'PENDING');

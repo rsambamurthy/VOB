@@ -22,9 +22,10 @@ riskRouter.put('/settings', requireStaff('tenant.settings'), ah(async (req, res)
     monitorDays: z.number().int().min(0).max(365),
     alertEmails: z.string().trim().max(500).refine((v) => !v || v.split(/[,;\s]+/).filter(Boolean).every((e) => z.string().email().safeParse(e).success), 'Enter email addresses separated by commas'),
     autoHold: z.boolean(),
+    holdOnOverdueAction: z.boolean().default(false),
   }).parse(req.body);
   await db.update(schema.tenants).set({ settings: { ...s.tenant.settings, risk } }).where(eq(schema.tenants.id, s.tenant.id));
-  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'RISK_SETTINGS_CHANGED', detail: { monitorDays: risk.monitorDays, autoHold: risk.autoHold ? 'on' : 'off' }, ip: req.ip });
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'RISK_SETTINGS_CHANGED', detail: { monitorDays: risk.monitorDays, autoHold: risk.autoHold ? 'on' : 'off', holdOnOverdueAction: risk.holdOnOverdueAction ? 'on' : 'off' }, ip: req.ip });
   res.json({ settings: risk });
 }));
 

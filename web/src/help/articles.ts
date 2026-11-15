@@ -459,6 +459,21 @@ The **Approval flow** card on the right shows every level and its status. When a
 - **Decline** records a reason and, if you choose, emails the applicant.`,
   },
   {
+    id: 'corrective-actions', title: 'Corrective actions', audience: ['staff'], perms: ['vendors.view'],
+    summary: 'Ask a supplier to fix something by a date, from VendorGate’s suggestions or your own, and accept or reject their evidence.',
+    screens: ['^/staff/actions', '^/staff/vendors/[^/]+$', '^/staff/risk'],
+    keywords: 'corrective action capa remediation fix evidence due date overdue condition of approval suggest hold',
+    related: ['risk', 'pre-review'],
+    body: `Open a supplier → **Corrective actions** → **Raise corrective actions**. VendorGate suggests actions from what it found — a questionnaire knock-out answer, a registration that is no longer active, an expired certificate, a scorecard below 70, a name on record that doesn't match. Tick the ones to send, edit the wording, priority and due date, or add your own. The supplier is emailed once with all of them.
+
+- **Who can raise them:** people with *Raise corrective actions on suppliers and review their evidence*, and the approvers of a supplier under review.
+- **During review** actions are **conditions of approval**: the supplier can be approved, and must still complete them.
+- **The supplier answers** with a note and files. Whoever raised the action (or anyone allowed to manage corrective actions) **accepts and closes** it, or **asks for more** with remarks. You can change the due date or cancel an action.
+- **Reminders** go to the supplier before the due date and when overdue (the person who raised it is told too). Overdue actions add to the supplier's **risk score**; under Risk → *Monitoring settings* you can also **put the supplier on hold** when a high-priority action is overdue.
+
+Vendors → **Corrective actions** lists every action: open, evidence to review, overdue, raised by you, closed.`,
+  },
+  {
     id: 'pre-review', title: 'Pre-review for approvers', audience: ['staff'], perms: ['vendors.view'],
     summary: 'What VendorGate (and optionally AI) found about a submission, a recommendation and questions for the supplier.',
     screens: ['^/staff/vendors/[^/]+$', '^/staff/admin/integrations'],
@@ -809,6 +824,18 @@ You stay signed in for up to 8 hours. To come back later, open the same link aga
 ![The privacy notice](/help/12a-privacy.jpg)
 
 If the buyer updates the notice, you'll be asked to accept the new version.`,
+  },
+  {
+    id: 'supplier-actions', title: 'Corrective actions', audience: ['supplier'],
+    summary: 'When the buyer asks you to fix something by a date: write what you did, attach evidence and send it for review.',
+    screens: ['^/vendor'],
+    keywords: 'corrective action fix evidence due date overdue remediation plan send review rejected more needed',
+    related: ['supplier-guide'],
+    body: `The buyer may ask you to fix something — for example after a questionnaire answer, a registration that is no longer active, or an expired certificate. You'll get an email, and the actions appear under **Corrective actions** in the portal.
+
+- For each action, write **what you did** and **attach evidence** (a policy, certificate, plan or printout), then click **Send for review**.
+- The buyer accepts it (the action is closed) or asks for more — their remarks are shown on the action; answer again.
+- Each action has a **due date**. You'll get a reminder before it, and again if it is overdue. Overdue actions can affect your standing with the buyer.`,
   },
   {
     id: 'supplier-guide', title: 'Your guide: next step, checks and questions', audience: ['supplier'],

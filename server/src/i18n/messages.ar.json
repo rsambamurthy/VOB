@@ -207,5 +207,6 @@
   "Your GSTIN is registered in a different state from your address. Check the GSTIN and the state.": "رقم GSTIN مسجّل في ولاية مختلفة عن عنوانكم. تحققوا من الرقم والولاية.",
   "Your PIN code belongs to a different state from the one in your address. Check both.": "الرمز البريدي (PIN) يتبع ولاية مختلفة عن الولاية في عنوانكم. تحققوا من الاثنين.",
   "Your PAN’s 4th character doesn’t fit the type of entity you chose (for example, a company PAN has “C”). Check both.": "الحرف الرابع في رقم PAN لا يناسب نوع الكيان الذي اخترتموه (مثلاً رقم PAN للشركة يحتوي على «C»). تحققوا من الاثنين.",
-  "Please ask without including your own details (numbers, names or addresses).": "يُرجى طرح السؤال دون ذكر بياناتكم (الأرقام أو الأسماء أو العناوين)."
+  "Please ask without including your own details (numbers, names or addresses).": "يُرجى طرح السؤال دون ذكر بياناتكم (الأرقام أو الأسماء أو العناوين).",
+  "Answer the corrective action “{title}” (due {due})": "ردّوا على الإجراء التصحيحي «{title}» (موعده {due})"
 }

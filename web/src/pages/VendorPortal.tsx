@@ -7,6 +7,7 @@ import { DynamicSection } from '../components/DynamicSection';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { Checklist } from '../components/Checklist';
 import { GuidePanel, SubmitCheck, useGuide } from '../components/Guide';
+import { ActionsPanel, type ActionView } from '../components/CorrectiveActions';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import type { AgreementView, QuestionnaireView, Branding, ChangeRequest, Check, ChecklistItem, DocRequirement, Extraction, FieldDef, Flag, Profile, SectionDef, VendorFull } from '../lib/types';
@@ -24,7 +25,7 @@ import { setLang, t, useLang, type Lang } from '../i18n';
 import { Rich } from '../i18n/Rich';
 import { TabStrip } from '../components/TabStrip';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[] };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; correctiveActions: ActionView[] };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; hold: { reason: string | null } | null; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
@@ -72,7 +73,7 @@ export function VendorPortal() {
   useEffect(() => { load(); }, [load, lang]);
   const pending = useRefreshWhileReading(me?.extractions, true, load);
   // The supplier guide: fetched again whenever the form's state changes.
-  const { guide } = useGuide('/vendor', JSON.stringify([me?.checklist.map((c) => c.id + c.ok), me?.vendor.status, me?.vendor.documents.length, me?.extractions.map((e) => e.status)]), !!me?.editable);
+  const { guide } = useGuide('/vendor', JSON.stringify([me?.checklist.map((c) => c.id + c.ok), me?.vendor.status, me?.vendor.documents.length, me?.extractions.map((e) => e.status), me?.correctiveActions.map((a) => a.status)]), !!me?.editable);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
@@ -108,7 +109,9 @@ export function VendorPortal() {
   const docTab = { key: 'documents', label: t('portal.documentsTab') };
   const agrTab = me.agreements.length ? { key: 'agreements', label: t('agr.tab') } : undefined;
   const qnTab = me.questionnaires.length ? { key: 'questionnaires', label: t('qn.tab') } : undefined;
-  const tabs = formTabs(sectionTabs, docTab, auto, qnTab, agrTab);
+  const actionsToDo = me.correctiveActions.filter((a) => a.status === 'OPEN').length;
+  const caTab = me.correctiveActions.length ? { key: 'actions', label: `${t('ca.tab')}${actionsToDo ? ' •' : ''}` } : undefined;
+  const tabs = formTabs(sectionTabs, docTab, auto, qnTab, agrTab, caTab);
   const tabLabel = (k: string) => tabs.find((x) => x.key === k)?.label;
   const questionnairesDue = me.questionnaires.filter((q) => q.outstanding).length;
   const agreementsDue = me.agreements.filter((a) => a.required && a.outstanding).length;
@@ -269,6 +272,7 @@ export function VendorPortal() {
             {canChange && <button className="btn btn-ghost btn-sm" onClick={() => setChangeMode(true)}>{t('portal.somethingChanged')}</button>}</Alert>
         )}
         {approved && questionnairesDue > 0 && tab !== 'questionnaires' && <Alert kind="warning">{t('qn.pendingBanner', { buyer: me.buyer.name, count: questionnairesDue })} <button className="link-btn" onClick={() => goTo('questionnaires')}>{t('qn.open')}</button></Alert>}
+        {actionsToDo > 0 && tab !== 'actions' && <Alert kind="warning">{t('ca.banner', { buyer: me.buyer.name, count: actionsToDo })} <button className="link-btn" onClick={() => goTo('actions')}>{t('ca.open')}</button></Alert>}
         {approved && agreementsDue > 0 && tab !== 'agreements' && <Alert kind="warning">{t('agr.pendingBanner', { buyer: me.buyer.name, count: agreementsDue })} <button className="link-btn" onClick={() => goTo('agreements')}>{t('agr.review')}</button></Alert>}
         {approved && docFlags.length > 0 && <Alert kind="warning"><strong>{docFlags.map((f) => f.label).join(' · ')}.</strong> {t('portal.uploadRenewedA')} <button className="link-btn" onClick={() => goTo('documents')}>{t('portal.documentsTab')}</button> {t('portal.uploadRenewedB')}</Alert>}
         {approved && changeMode && <Alert kind="info"><strong>{t('portal.editing')}</strong> {t('portal.editingText')}</Alert>}
@@ -300,6 +304,11 @@ export function VendorPortal() {
               {tab === 'documents' && <DocumentsPanel requirements={me.docRequirements} documents={v.documents} editable={docsEditable} onUpload={upload} onDelete={remove}
                 canDelete={approved ? (d) => d.status === 'PENDING' && !d.changeRequestId : undefined} uploadLabel={approved ? t('portal.uploadRenewal') : undefined} />}
               {tab === 'questionnaires' && <QuestionnairesPanel items={me.questionnaires} buyer={me.buyer.name} {...(me.editable || approved ? { onSave: saveQuestionnaire, onSubmit: submitQuestionnaire, onUpload: uploadForQuestionnaire } : {})} />}
+              {tab === 'actions' && <ActionsPanel items={me.correctiveActions} buyer={me.buyer.name}
+                onSave={async (a, note) => { await api(`/vendor/actions/${a.id}`, { method: 'PUT', body: { note } }); }}
+                onUpload={async (a, file) => { const fd = new FormData(); fd.append('file', file); await api(`/vendor/actions/${a.id}/file`, { body: fd }); await load(); }}
+                onRemoveFile={async (a, documentId) => { await api(`/vendor/actions/${a.id}/file/${documentId}`, { method: 'DELETE' }); await load(); }}
+                onSubmit={async (a, note) => { await api(`/vendor/actions/${a.id}/submit`, { body: { note } }); setFlash({ kind: 'success', text: t('ca.sent') }); await load(); }} />}
               {tab === 'agreements' && <AgreementsPanel agreements={me.agreements} vendorName={v.name} buyer={me.buyer.name} defaultSigner={`${v.contactFirstName} ${v.contactLastName}`.trim()} onAccept={acceptAgreement} />}
               {tab === 'documents' && me.editable && <ExtractionList extractions={me.extractions} documents={v.documents} requirements={me.docRequirements} onApply={applyExtraction} />}
             </div>

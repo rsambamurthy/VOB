@@ -24,6 +24,8 @@ import { upload } from '../lib/upload.js';
 import { acceptAgreement } from '../services/agreements.js';
 import { answerRoutes } from './questionnaires.js';
 import { guideRoutes } from './guide.js';
+import { supplierActionRoutes } from './correctiveActions.js';
+import { actionsFor } from '../services/correctiveActions.js';
 
 export const vendorRouter = Router();
 vendorRouter.use(requireVendor);
@@ -35,7 +37,7 @@ const requireConsent = ah(async (req, _res, next) => {
   if (!v || needsConsent(tenant, v)) throw new HttpError(403, 'Please read and accept the privacy notice first', undefined, 'CONSENT_REQUIRED');
   next();
 });
-for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details', '/agreements', '/questionnaires']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
+for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details', '/agreements', '/questionnaires', '/actions']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
 
 /** The supplier, as the one acting (their contact email is what the history shows). */
 const supplier = (req: { ip?: string }, v: { contactEmail: string }): Actor => ({ name: v.contactEmail, ip: req.ip });
@@ -89,6 +91,7 @@ vendorRouter.get('/', ah(async (req, res) => {
     // Reviewers' identities and remarks are internal; the vendor only sees level, label and status (plus send-back remarks).
     vendor: { ...vendor, steps: v.steps.filter((s) => s.cycle === v.reviewCycle).map((s) => ({ id: s.id, cycle: s.cycle, level: s.level, label: arLabelFor(s.label, lang), status: s.status, actedAt: s.actedAt })) },
     sendBackRemarks: v.status === 'SENT_BACK' ? lastSendBack?.remarks : undefined,
+    correctiveActions: await actionsFor(v.id, { forSupplier: true }),
     config: { sections: config.sections, guide: config.guide, levels: config.workflow.levels.map((l) => l.label) },
     // Fields, documents and agreements still to do; documents first offers "if it applies" documents.
     checklist: form.checklist,
@@ -204,6 +207,9 @@ vendorRouter.post('/agreements/:id/accept', ah(async (req, res) => {
 }));
 
 // Questionnaires: the same answering routes as a buyer filling in for the supplier.
+// Corrective actions the buyer asked for (answered also after approval).
+supplierActionRoutes(vendorRouter, { vendor: loadMine, tenant: (req) => vendorCtx(req).tenant, actor: (req, v) => supplier(req, v) });
+
 // The supplier guide: next step, check before submitting, send-back to-do, questions.
 guideRoutes(vendorRouter, {
   vendor: loadMine,

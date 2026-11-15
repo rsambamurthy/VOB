@@ -112,7 +112,7 @@ export interface TenantSettings {
   /** Supplier guide: turn a buyer's send-back remarks into a to-do list with AI (privacy mode; values replaced by placeholders). Default on; otherwise by rules. */
   aiGuide?: boolean;
   /** Ongoing risk monitoring: days between re-checks of registration status and sanctions (0 = off; default 30), who is alerted, and whether a serious hit puts the supplier on hold. */
-  risk?: { monitorDays?: number; alertEmails?: string; autoHold?: boolean };
+  risk?: { monitorDays?: number; alertEmails?: string; autoHold?: boolean; holdOnOverdueAction?: boolean };
   /** Days after which vendor data is anonymised: rejected registrations, and ones abandoned before submitting (0 = keep). */
   retention?: { rejectedDays: number; abandonedDays: number };
   /** Answer F1 help questions with AI (from the help articles only). Default on. */
@@ -1232,3 +1232,40 @@ export const systemBackups = pgTable('system_backups', {
   size: integer('size').notNull(),
   createdAt: createdAt(),
 });
+
+/**
+ * Corrective actions: what a buyer asks a supplier to fix after a finding (questionnaire knock-out, failed re-check,
+ * expired certificate, poor performance…), with a due date. The supplier sends evidence; whoever raised it (or anyone
+ * with "actions.manage") accepts or rejects it. Raised during review they are conditions of approval. See
+ * services/correctiveActions.ts.
+ */
+export const correctiveActions = pgTable('corrective_actions', {
+  id: id(), tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  description: text('description'),
+  /** HIGH · MEDIUM · LOW */
+  priority: text('priority').notNull().default('MEDIUM'),
+  dueOn: date('due_on', { mode: 'string' }).notNull(),
+  /** OPEN (to do, or evidence rejected) · SUBMITTED (evidence sent) · ACCEPTED (closed) · CANCELLED */
+  status: text('status').notNull().default('OPEN'),
+  /** What it came from, e.g. "questionnaire:<id>:<question>", "check:gstin", "document:GST_CERT", "scorecard", "manual". */
+  source: text('source').notNull().default('manual'),
+  sourceLabel: text('source_label'),
+  /** Raised while the supplier was under review: a condition of approval. */
+  condition: boolean('condition').notNull().default(false),
+  raisedById: text('raised_by_id').references(() => users.id),
+  raisedByName: text('raised_by_name').notNull(),
+  /** The supplier's answer: a note and files (documents kept as attachments). */
+  responseNote: text('response_note'),
+  evidence: jsonb('evidence').$type<{ documentId: string; fileName: string }[]>().notNull().default([]),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  submittedByName: text('submitted_by_name'),
+  reviewedByName: text('reviewed_by_name'),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  reviewRemarks: text('review_remarks'),
+  remindedAt: timestamp('reminded_at', { withTimezone: true }),
+  overdueNotifiedAt: timestamp('overdue_notified_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('corrective_actions_vendor_idx').on(t.vendorId, t.status), index('corrective_actions_tenant_idx').on(t.tenantId, t.status, t.dueOn)]);

@@ -39,6 +39,7 @@ export function StaffShell() {
       { to: '/staff/changes', label: 'Change requests', icon: 'changes', show: can('vendors.view') },
       { to: '/staff/scorecards', label: 'Scorecards', icon: 'scorecard', show: can('vendors.view') },
       { to: '/staff/risk', label: 'Risk', icon: 'risk', show: can('vendors.view') },
+      { to: '/staff/actions', label: 'Corrective actions', icon: 'actions', show: can('vendors.view') },
     ]),
     group('purchasing', 'Purchasing', 'orders', [
       { to: '/staff/orders', label: 'Purchase orders', icon: 'orders', show: collab && can('orders.view') },

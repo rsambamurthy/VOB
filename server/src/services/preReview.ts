@@ -22,6 +22,7 @@ import { duplicatesOf, duplicateText } from './duplicates.js';
 import { refreshRisk } from './risk.js';
 import { identifiersOf, leaks, reidentify } from './aiPrivacy.js';
 import { submissionIssues } from './submissionIssues.js';
+import { actionCounts } from './correctiveActions.js';
 import { aiPrecision, ageOf, describeAge, describeTurnover, peerComparison, turnoverOf } from './aiFacts.js';
 import { defineJob, enqueue } from '../jobs/queue.js';
 import { preReviewer, mockPreReviewer, recommendFromFacts, type Finding, type PreReviewResult } from '../integrations/ai/preReviewer.js';
@@ -72,6 +73,9 @@ export async function gather(tenant: Tenant, v: Vendor & { documents: (typeof do
     if (r.band === 'HIGH') add({ severity: 'high', text: `${q.title}: high risk (${r.percent ?? '–'}%)${ko.length ? ` — knock-out answer to “${koText}”` : ''}`, tab: 'questionnaires' }, `${q.title}: high risk${ko.length ? ` — knock-out answer to “${koText}”` : ''}`);
     else if (r.band === 'MEDIUM') add({ severity: 'medium', text: `${q.title}: medium risk (${r.percent}%)`, tab: 'questionnaires' });
   }
+  // Corrective actions (conditions raised during this review, or earlier ones still open).
+  const ca = (await actionCounts(tenant.id, [v.id])).get(v.id);
+  if (ca) add({ severity: ca.overdue ? 'medium' : 'info', text: `${ca.open} corrective action${ca.open > 1 ? 's' : ''} open${ca.overdue ? `, ${ca.overdue} overdue` : ''}${ca.toReview ? `, ${ca.toReview} with evidence to review` : ''}`, tab: 'actions' });
   for (const i of issues.filter((x) => x.kind === 'consistency')) add({ severity: i.severity, text: i.staff, tab: i.tab, fixable: i.fixable });
   // Earlier send-backs (the remarks are free text: the AI only learns there was one), and buyer fill-in.
   const backs = await db.select({ remarks: approvalSteps.remarks, cycle: approvalSteps.cycle, label: approvalSteps.label }).from(approvalSteps)

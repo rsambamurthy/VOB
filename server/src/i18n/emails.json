@@ -508,5 +508,45 @@
       "subject": "{buyer}: يُرجى تعبئة {questionnaire}",
       "body": "مرحباً {first}،\n\nيطلب منكم {buyer} تعبئة {questionnaire}. يُرجى تسجيل الدخول إلى بوابة الموردين والإجابة عنه من قسم الاستبيانات.\n\nيُرجى إكماله بحلول: {due}"
     }
+  },
+  "actionsRequested": {
+    "en": {
+      "subject": "{buyer}: corrective actions for you",
+      "body": "Dear {first},\n\n{buyer} asks you to take these corrective actions:\n\n{list}\n\nPlease sign in to the supplier portal, open Corrective actions, and send a note and evidence for each by its due date."
+    },
+    "ar": {
+      "subject": "{buyer}: إجراءات تصحيحية مطلوبة منكم",
+      "body": "مرحباً {first}،\n\nيطلب منكم {buyer} اتخاذ الإجراءات التصحيحية التالية:\n\n{list}\n\nيُرجى تسجيل الدخول إلى بوابة الموردين، وفتح قسم الإجراءات التصحيحية، وإرسال ملاحظة وما يثبت ذلك لكل إجراء قبل موعده."
+    }
+  },
+  "actionRejected": {
+    "en": {
+      "subject": "{buyer}: more needed for “{action}”",
+      "body": "Dear {first},\n\n{buyer} reviewed your answer to the corrective action “{action}” and needs more:\n\n“{remarks}”\n\nPlease sign in to the supplier portal and send it again under Corrective actions."
+    },
+    "ar": {
+      "subject": "{buyer}: مطلوب المزيد بخصوص «{action}»",
+      "body": "مرحباً {first}،\n\nراجع {buyer} ردّكم على الإجراء التصحيحي «{action}» ويحتاج إلى المزيد:\n\n«{remarks}»\n\nيُرجى تسجيل الدخول إلى بوابة الموردين وإعادة الإرسال من قسم الإجراءات التصحيحية."
+    }
+  },
+  "actionReminder": {
+    "en": {
+      "subject": "Reminder: “{action}” is due {due}",
+      "body": "Dear {first},\n\nA reminder that the corrective action “{action}” requested by {buyer} is due on {due}. Please sign in to the supplier portal and send your note and evidence under Corrective actions."
+    },
+    "ar": {
+      "subject": "تذكير: موعد «{action}» هو {due}",
+      "body": "مرحباً {first}،\n\nنذكّركم بأن موعد الإجراء التصحيحي «{action}» الذي طلبه {buyer} هو {due}. يُرجى تسجيل الدخول إلى بوابة الموردين وإرسال ملاحظتكم وما يثبت ذلك من قسم الإجراءات التصحيحية."
+    }
+  },
+  "actionOverdue": {
+    "en": {
+      "subject": "Overdue: “{action}”",
+      "body": "Dear {first},\n\nThe corrective action “{action}” requested by {buyer} was due on {due} and hasn't been answered yet. Please sign in to the supplier portal and send your note and evidence under Corrective actions as soon as possible."
+    },
+    "ar": {
+      "subject": "متأخر: «{action}»",
+      "body": "مرحباً {first}،\n\nكان موعد الإجراء التصحيحي «{action}» الذي طلبه {buyer} في {due} ولم يتم الرد عليه بعد. يُرجى تسجيل الدخول إلى بوابة الموردين وإرسال ملاحظتكم وما يثبت ذلك من قسم الإجراءات التصحيحية في أقرب وقت."
+    }
   }
 }

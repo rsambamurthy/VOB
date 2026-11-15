@@ -23,6 +23,7 @@ import { responseHistory } from './questionnaires.js';
 import { scorecardFor } from './scorecards.js';
 import { usersWithPermission } from './approvers.js';
 import { applySystemHold } from './lifecycle.js';
+import { overdueActions } from './correctiveActions.js';
 import { defineJob } from '../jobs/queue.js';
 import type { Tenant, Vendor } from '../db/schema.js';
 
@@ -31,7 +32,7 @@ const DAY = 86_400_000;
 export type Band = 'LOW' | 'MEDIUM' | 'HIGH';
 export interface Signal { code: string; label: string; points: number; critical?: boolean }
 export const DEFAULT_MONITOR_DAYS = 30;
-export const riskSettings = (t: Pick<Tenant, 'settings'>) => ({ monitorDays: DEFAULT_MONITOR_DAYS, autoHold: false, alertEmails: '', ...(t.settings.risk ?? {}) });
+export const riskSettings = (t: Pick<Tenant, 'settings'>) => ({ monitorDays: DEFAULT_MONITOR_DAYS, autoHold: false, alertEmails: '', holdOnOverdueAction: false, ...(t.settings.risk ?? {}) });
 
 /** Score → band. Any critical signal is High whatever the score. */
 export function bandOf(score: number, signals: Signal[]): Band {
@@ -40,7 +41,7 @@ export function bandOf(score: number, signals: Signal[]): Band {
 }
 
 /** Is the GST / registration result active? (VERIFIED, and a status, when given, that isn't cancelled or suspended.) */
-const inactive = (c: { status: string; data: Record<string, string> | null }) => {
+export const inactive = (c: { status: string; data: Record<string, string> | null }) => {
   if (c.status !== 'VERIFIED') return true;
   const st = (c.data?.gstStatus ?? c.data?.status ?? c.data?.crStatus ?? '').toLowerCase();
   return /cancel|suspend|inactive|expired|struck/.test(st);
@@ -93,6 +94,9 @@ export async function signalsFor(tenant: Tenant, v: Vendor): Promise<Signal[]> {
     if (card?.score !== null && card?.score !== undefined && card.score < 70) out.push({ code: 'performance', label: `Poor performance: scorecard ${Math.round(card.score)} (grade ${card.grade})`, points: 15 });
     if ((await agreementsFor(v)).some((a) => a.required && a.outstanding)) out.push({ code: 'agreement', label: 'Agreement not accepted', points: 5 });
   }
+  // Corrective actions not answered by their due date.
+  const od = await overdueActions(v.id);
+  if (od.count) out.push({ code: 'actionsOverdue', label: `${od.count} corrective action${od.count > 1 ? 's' : ''} overdue${od.high.length ? ` (${od.high.length} high priority)` : ''}`, points: od.high.length ? 25 : 15 });
   if (v.emailBouncedAt) out.push({ code: 'emailBouncing', label: 'Contact email bouncing', points: 5 });
   return out;
 }

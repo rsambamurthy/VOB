@@ -55,6 +55,12 @@ documents-first because the supplier portal had its own copy of that logic).
 - Privacy helpers for every AI use: `server/src/services/aiPrivacy.ts` (`identifiersOf`, `leaks`, `pseudonymise`, `reidentify`, `optionValues`).
 - Screens: `GuidePanel` and `SubmitCheck` (`web/src/components/Guide.tsx`); help article picking is shared with F1 (`articlesForQuestion`).
 
+**Corrective actions** (suggested from findings, conditions of approval, evidence, reminders):
+- Rules: `server/src/services/correctiveActions.ts` (`suggestActions`, `raiseActions`, `submitResponse`, `reviewAction`, `runActionReminders` — job `actions.daily`).
+- Routes: `routes/correctiveActions.ts` — staff `actionsRouter` and the supplier's `supplierActionRoutes()` (portal).
+- Overdue actions feed the risk score (`signalsFor`) and holds go through `applySystemHold`; open actions are the guide's next step and a pre-review finding.
+- Screens: one `ActionsPanel` for supplier and staff, `StaffActions` / `RaiseActionsModal` (`web/src/components/CorrectiveActions.tsx`); overview page `pages/CorrectiveActions.tsx`.
+
 **Creating suppliers**: `server/src/services/vendors.ts` (`createVendor` with `prefill` / `approved`).
 - Used for invites, Excel invites, approved imports and accepted applications.
 

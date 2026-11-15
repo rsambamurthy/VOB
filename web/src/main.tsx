@@ -53,6 +53,7 @@ import { Questionnaires } from './pages/admin/Questionnaires';
 import { Apply } from './pages/Apply';
 import { Applications } from './pages/Applications';
 import { Risk } from './pages/Risk';
+import { CorrectiveActions } from './pages/CorrectiveActions';
 import { LangGate } from './i18n/LangGate';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -92,6 +93,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/questionnaires" element={<Questionnaires />} />
               <Route path="applications" element={<Applications />} />
               <Route path="risk" element={<Risk />} />
+              <Route path="actions" element={<CorrectiveActions />} />
               <Route path="admin/integrations" element={<Integrations />} />
               <Route path="admin/sign-in" element={<SignIn />} />
               <Route path="mailbox" element={<Mailbox />} />

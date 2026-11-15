@@ -7,6 +7,7 @@ import { DocumentsPanel } from '../components/DocumentsPanel';
 import { ApprovalTimeline } from '../components/Timeline';
 import { Checklist } from '../components/Checklist';
 import { GuidePanel, SubmitCheck, useGuide, type Guide } from '../components/Guide';
+import { StaffActions } from '../components/CorrectiveActions';
 import { Alert, Modal, StatusBadge } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import { isEditableStatus } from '../lib/types';
@@ -24,7 +25,7 @@ import { PreReviewCard, type PreReview } from '../components/PreReview';
 import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { TabStrip } from '../components/TabStrip';
 
-type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
+type Detail = { actionCounts: { open: number; overdue: number; toReview: number } | null; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
   privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; questionnaireHistory: { id: string; questionnaireId: string; submittedAt: string; submittedByName: string | null; percent: number | null; band: string | null; requestedByName: string | null }[]; canRequestQuestionnaire: boolean; risk: { score: number; band: 'LOW' | 'MEDIUM' | 'HIGH'; signals: RiskSignal[]; lastMonitoredAt: string | null } | null; canRunRiskCheck: boolean; preReview: PreReview | null };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
@@ -33,7 +34,7 @@ export function VendorDetail() {
   const { config, checks: checkDefs } = useConfig();
   const { can, me } = useSession();
   const [d, setD] = useState<Detail>();
-  const [tab, setTab] = useState('basic');
+  const [tab, setTab] = useState(() => new URLSearchParams(window.location.search).get('tab') ?? 'basic'); // e.g. ?tab=actions from an email
   const [action, setAction] = useState<Action>();
   const [erp, setErp] = useState<unknown>();
   const [reassigning, setReassigning] = useState(false);
@@ -82,6 +83,7 @@ export function VendorDetail() {
   const agrTab = d.agreements.length ? { key: 'agreements', label: `Agreements${d.agreements.some((a) => a.required && a.outstanding) ? ' •' : ''}` } : undefined;
   const qnTab = d.questionnaires.length || d.canRequestQuestionnaire ? { key: 'questionnaires', label: `Questionnaires${d.questionnaires.some((q) => q.result?.band === 'HIGH') ? ' ⚠' : d.questionnaires.some((q) => q.outstanding) ? ' •' : ''}` } : undefined;
   const tabs = [...formTabs(sectionTabs, docTab, autoAssist, qnTab, agrTab),
+    ...(['UNDER_REVIEW', 'APPROVED', 'SENT_BACK', 'IN_PROGRESS'].includes(v.status) || d.actionCounts ? [{ key: 'actions', label: `Corrective actions${d.actionCounts?.toReview ? ` (${d.actionCounts.toReview} to review)` : d.actionCounts?.overdue ? ' ⚠' : d.actionCounts?.open ? ' •' : ''}` }] : []),
     ...(d.changeRequests.length ? [{ key: 'changes', label: `Changes${openCrs.length ? ` (${openCrs.length})` : ''}` }] : []), { key: 'history', label: 'History' }];
   const tabLabel = (k: string) => tabs.find((x) => x.key === k)?.label;
   const approved = v.status === 'APPROVED';
@@ -294,6 +296,7 @@ export function VendorDetail() {
                 {cr.remarks && cr.status !== 'PENDING' && <p className="small muted">Decision remarks: “{cr.remarks}”</p>}
               </div>
             ))}
+            {tab === 'actions' && <StaffActions vendorId={v.id} vendorName={v.name} onChanged={load} />}
             {tab === 'questionnaires' && <>
               {d.canRequestQuestionnaire && !d.privacy.erasedAt && <div className="row-between"><span className="small muted">Scores and risk are shown to your staff only, never to the supplier.</span><button className="btn btn-secondary btn-sm" onClick={() => setSendingQn(true)}>Send questionnaire…</button></div>}
               <QuestionnairesPanel items={d.questionnaires} {...(assisting ? { onSave: assistQnSave, onSubmit: assistQnSubmit, onUpload: assistQnUpload } : {})} />
