@@ -1269,3 +1269,13 @@ export const correctiveActions = pgTable('corrective_actions', {
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('corrective_actions_vendor_idx').on(t.vendorId, t.status), index('corrective_actions_tenant_idx').on(t.tenantId, t.status, t.dueOn)]);
+
+/** On-prem installations: the licence issued by Integratatech (one row, id = 'current'). See lib/licence.ts. */
+export const systemLicence = pgTable('system_licence', {
+  id: text('id').primaryKey(),
+  token: text('token').notNull(),
+  installedAt: timestamp('installed_at', { withTimezone: true }).notNull().defaultNow(),
+  installedBy: text('installed_by').notNull(),
+  /** Reminder milestones already emailed (e.g. "30", "7", "expired", "readonly"), per licence id. */
+  notified: jsonb('notified').$type<Record<string, string[]>>().notNull().default({}),
+});

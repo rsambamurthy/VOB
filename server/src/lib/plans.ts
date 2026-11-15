@@ -3,6 +3,9 @@
  * (set per tenant in the platform console). null = unlimited.
  */
 import type { Tenant, TenantLimits } from '../db/schema.js';
+import { licenceLimits } from './licence.js';
+
+const onPrem = () => process.env.DEPLOYMENT_MODE === 'onprem';
 
 export type Feature = 'erp' | 'ai' | 'kyc' | 'collab';
 export interface PlanDef {
@@ -26,6 +29,8 @@ export const PLAN_KEYS = Object.keys(PLANS) as [string, ...string[]];
 export const FEATURE_LABELS: Record<Feature, string> = { erp: 'ERP integration', ai: 'AI document reading', kyc: 'Verification checks (GSTIN, PAN, bank)', collab: 'Supplier collaboration (purchase orders)' };
 
 export function effectiveLimits(t: Pick<Tenant, 'plan' | 'limits'>): PlanDef {
+  // On-prem: the licence sets users, suppliers and features; nothing else is limited.
+  if (onPrem()) { const l = licenceLimits(); return { label: 'On-premises licence', maxUsers: l.maxUsers, maxVendors: l.maxVendors, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: l.features }; }
   const p = PLANS[t.plan] ?? PLANS.standard;
   const o: TenantLimits = t.limits ?? {};
   const pick = (k: 'maxUsers' | 'maxVendors' | 'emailsPerDay') => (o[k] === undefined ? p[k] : o[k] ?? null);

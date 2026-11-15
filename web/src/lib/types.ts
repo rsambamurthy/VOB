@@ -37,6 +37,10 @@ export interface Me {
   plan?: { key: string; label: string; trialEndsAt: string | null; trialExpired: boolean; features: { erp: boolean; ai: boolean; kyc: boolean; collab: boolean } };
   /** Read-only support session opened from the platform console. */
   support?: { by: string; reason: string | null; endsAt: string };
+  /** cloud = the VendorGate service; onprem = a customer's own installation (licence instead of plans and billing). */
+  deployment?: 'cloud' | 'onprem';
+  version?: string;
+  licence?: { state: string; readOnly: boolean; message: string | null; validUntil: string | null } | null;
 }
 
 export interface ChecklistItem { id: string; section: string; label: string; ok: boolean; message?: string; severity: 'error' | 'warning' }

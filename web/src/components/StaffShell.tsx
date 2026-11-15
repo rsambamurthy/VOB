@@ -59,7 +59,8 @@ export function StaffShell() {
       { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },
       { to: '/staff/admin/erp', label: 'ERP integration', icon: 'erp', show: can('tenant.settings') },
       { to: '/staff/admin/help-topics', label: 'Help topics', icon: 'help', show: can('tenant.settings') },
-      { to: '/staff/admin/billing', label: 'Billing', icon: 'billing', show: can('tenant.settings') && !me.support },
+      { to: '/staff/admin/billing', label: 'Billing', icon: 'billing', show: can('tenant.settings') && !me.support && me.deployment !== 'onprem' },
+      { to: '/staff/admin/licence', label: 'Licence', icon: 'billing', show: can('tenant.settings') && me.deployment === 'onprem' },
       { to: '/staff/admin/audit', label: 'Audit log', icon: 'audit', show: can('audit.view') },
       { to: '/staff/mailbox', label: 'Mailbox', icon: 'mail', show: me.devMailbox, tag: 'dev' },
     ]),
@@ -88,7 +89,8 @@ export function StaffShell() {
           <button className="btn btn-sm btn-secondary" onClick={async () => { await signOut(); window.location.href = '/platform/tenants'; }}>End support access</button>
         </div>
       )}
-      {!me.support && me.plan?.key === 'trial' && me.plan.trialEndsAt && <TrialBar endsAt={me.plan.trialEndsAt} expired={me.plan.trialExpired} />}
+      {!me.support && me.deployment !== 'onprem' && me.plan?.key === 'trial' && me.plan.trialEndsAt && <TrialBar endsAt={me.plan.trialEndsAt} expired={me.plan.trialExpired} />}
+      {me.licence?.message && <div className={`trial-bar ${me.licence.readOnly ? 'ended' : ''}`} role="status">{me.licence.message}{can('tenant.settings') && <> <Link to="/staff/admin/licence">Licence</Link></>}</div>}
       <Outlet />
     </AppFrame>
   );

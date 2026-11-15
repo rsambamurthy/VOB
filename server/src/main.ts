@@ -29,6 +29,12 @@ if (process.env.PLATFORM_ADMIN_EMAIL) {
   const link = await ensureFirstPlatformAdmin(process.env.PLATFORM_ADMIN_EMAIL, process.env.PLATFORM_ADMIN_NAME ?? 'Platform Admin');
   if (link) { logger.warn(`[platform] First platform admin invited: ${process.env.PLATFORM_ADMIN_EMAIL} (also emailed): ${link}`); console.log(`[platform] Platform admin invitation for ${process.env.PLATFORM_ADMIN_EMAIL}: ${link}`); }
 }
+// On-prem: the licence (read-only without one), and a real licence key in production builds.
+if (env.onPrem) {
+  const { PRODUCTION_PUBLIC_KEY } = await import('./lib/licenceKeys.js');
+  if (env.isProd && !PRODUCTION_PUBLIC_KEY) { console.error('[licence] This build has no production licence key. Build the on-prem image with the Integratatech licence key (npm run licence:keygen).'); process.exit(1); }
+  await (await import('./services/licence.js')).startLicence();
+}
 const server = createApp().listen(env.port, () => {
   logger.info(`API listening on http://localhost:${env.port}`);
   console.log(`[startup] API listening on http://localhost:${env.port}`);
@@ -42,9 +48,9 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 
 try {
   // Background jobs: email/SMS delivery with retries, AI document reading, SLA sweep every 5 minutes.
-  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }, { name: 'po.hourly', cron: '7 * * * *' }, { name: 'billing.daily', cron: '35 9 * * *' }, { name: 'shipments.daily', cron: '45 3 * * *' }, { name: 'risk.daily', cron: '25 4 * * *' }, { name: 'actions.daily', cron: '50 4 * * *' }];
+  const schedules = [{ name: 'sla.sweep', cron: '*/5 * * * *' }, { name: 'lifecycle.daily', cron: '15 9 * * *' }, { name: 'po.hourly', cron: '7 * * * *' }, ...(env.onPrem ? [{ name: 'licence.daily', cron: '5 8 * * *' }] : [{ name: 'billing.daily', cron: '35 9 * * *' }]), { name: 'shipments.daily', cron: '45 3 * * *' }, { name: 'risk.daily', cron: '25 4 * * *' }, { name: 'actions.daily', cron: '50 4 * * *' }];
   if (env.int.PO_SYNC_SCHEDULE && env.int.PO_SYNC_SCHEDULE !== 'off') schedules.push({ name: 'po.sync', cron: env.int.PO_SYNC_SCHEDULE });
-  await import('./services/orders/pull.js'); await import('./services/orders/acceptance.js'); await import('./services/billing.js'); await import('./services/risk.js');
+  await import('./services/orders/pull.js'); await import('./services/orders/acceptance.js'); await import(env.onPrem ? './services/licence.js' : './services/billing.js'); await import('./services/risk.js');
   if (env.int.BACKUP_SCHEDULE) { await import('./services/backups.js'); schedules.push({ name: 'db.backup', cron: env.int.BACKUP_SCHEDULE }); }
   await startQueue(schedules);
   if (env.jobsEnabled) console.log('[startup] job queue started');
@@ -57,7 +63,8 @@ if (!env.jobsEnabled) {
   setInterval(() => { runExpiryReminders().then(() => runPeriodicReviews()).catch((e) => logger.error({ err: e }, 'daily lifecycle failed')); }, 6 * 3600_000).unref();
   const { runAutoAccept, runAcceptanceReminders } = await import('./services/orders/acceptance.js');
   const { runBillingDaily } = await import('./services/billing.js');
-  setInterval(() => { runBillingDaily().catch((e) => logger.error({ err: e }, 'billing run failed')); }, 6 * 3600_000).unref();
+  if (!env.onPrem) setInterval(() => { runBillingDaily().catch((e) => logger.error({ err: e }, 'billing run failed')); }, 6 * 3600_000).unref();
+  else { const { runLicenceReminders } = await import('./services/licence.js'); setInterval(() => { runLicenceReminders().catch((e) => logger.error({ err: e }, 'licence reminders failed')); }, 6 * 3600_000).unref(); }
   const { runRiskMonitoring } = await import('./services/risk.js');
   setInterval(() => { runRiskMonitoring().catch((e) => logger.error({ err: e }, 'risk monitoring failed')); }, 12 * 3600_000).unref();
   setInterval(() => { runAutoAccept().then(() => runAcceptanceReminders()).catch((e) => logger.error({ err: e }, 'purchase order sweep failed')); }, 3600_000).unref();

@@ -32,5 +32,5 @@ if (fs.existsSync(uploads)) {
   const count = (d: string): number => fs.readdirSync(d, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? count(path.join(d, e.name)) : 1), 0);
   files = count(path.join(dir, 'uploads'));
 }
-console.log(`Saved ${path.relative(process.cwd(), file)} (${(dump.length / 1024).toFixed(0)} KB)${files ? ` and ${files} uploaded file(s)` : ''}.`);
-console.log(`Restore with: npm run db:restore -- "${dir}" --yes`);
+console.log(`Saved ${file} (${(dump.length / 1024).toFixed(0)} KB)${files ? ` and ${files} uploaded file(s)` : ''}.`);
+console.log(`Restore with: node server/dist/cli.js restore "${dir}" --yes`);

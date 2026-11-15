@@ -766,6 +766,20 @@ During that time they can approve, send back or reject everything waiting for yo
 
   /* ---------------- Workspace-level ---------------- */
   {
+    id: 'licence', title: 'Licence (on-premises installations)', audience: ['staff'], perms: ['tenant.settings'],
+    summary: 'See the licence of your own VendorGate installation, its limits and end date, and install a new one.',
+    screens: ['^/staff/admin/licence'],
+    keywords: 'licence license on-premises on-prem expiry renew read-only grace install users suppliers limit',
+    related: ['plan-limits'],
+    body: `If VendorGate runs on your company's own servers, it uses a **licence** from Integratatech instead of a subscription. **Administration → Licence** shows the customer, licence number, dates, how many staff users and suppliers it allows (and how many you use), and which features are included.
+
+- **Renewing**: administrators are emailed 30, 14, 7 and 1 days before the end date. Choose the new licence file (or paste it) and click **Install licence** — it takes effect straight away.
+- **After the end date** there is a grace period (normally 15 days) with a warning at the top of every screen.
+- **After the grace period** VendorGate is **read-only** for staff: you can sign in and see everything, but not invite, approve or change anything until a new licence is installed. Suppliers can still use their portal, and the ERP integration and reminders keep running.
+
+Your IT team can also install a licence from the server: \`./scripts/vg.sh licence install\`.`,
+  },
+  {
     id: 'plan-limits', title: 'Plan limits and free trial', audience: ['staff'],
     summary: 'User, vendor and email limits; what happens when a trial ends.',
     keywords: 'plan plans limit limits trial free trial ended expired upgrade users vendors emails per day feature not included subscription',

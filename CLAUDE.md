@@ -61,6 +61,12 @@ documents-first because the supplier portal had its own copy of that logic).
 - Overdue actions feed the risk score (`signalsFor`) and holds go through `applySystemHold`; open actions are the guide's next step and a pre-review finding.
 - Screens: one `ActionsPanel` for supplier and staff, `StaffActions` / `RaiseActionsModal` (`web/src/components/CorrectiveActions.tsx`); overview page `pages/CorrectiveActions.tsx`.
 
+**On-premises** (`DEPLOYMENT_MODE=onprem`):
+- Licence rules (pure, signed Ed25519 tokens, states valid → expiring → grace → read-only): `server/src/lib/licence.ts`; public keys `lib/licenceKeys.ts`; storing/loading/reminders `services/licence.ts` (job `licence.daily`); Administration → Licence (`routes/licence.ts`, `pages/admin/Licence.tsx`).
+- Read-only for staff via `licenceGuard` (auth/session.ts); limits and features from the licence in `plans.effectiveLimits`. Platform console, sign-up and billing are off on-prem (app.ts).
+- Administration commands built into the image: `server/src/cli.ts` (`node server/dist/cli.js …`). Licence issuing tool for Integratatech: `server/scripts/licence.ts`.
+- Kit: `onprem/` (docker-compose.yml, .env.template, nginx with a supplier-only port, scripts, docs, build-kit.sh). Never add an outbound call that is required — every external service must be optional.
+
 **Creating suppliers**: `server/src/services/vendors.ts` (`createVendor` with `prefill` / `approved`).
 - Used for invites, Excel invites, approved imports and accepted applications.
 

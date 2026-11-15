@@ -28,16 +28,18 @@ export function startOfDay(now = new Date()) {
   return new Date(ist.getTime() - 5.5 * 3600_000);
 }
 
+const allowance = () => (process.env.DEPLOYMENT_MODE === 'onprem' ? 'VendorGate licence' : 'plan');
+
 export async function assertCanAddUser(t: Tenant) {
   assertTrialActive(t);
   const max = effectiveLimits(t).maxUsers;
-  if (max !== null && (await usage(t.id)).users >= max) throw limitError(`Your plan allows ${max} users. Disable someone who no longer needs access, or contact us to raise the limit.`);
+  if (max !== null && (await usage(t.id)).users >= max) throw limitError(`Your ${allowance()} allows ${max} users. Disable someone who no longer needs access, or contact us to raise the limit.`);
 }
 
 export async function assertCanAddVendor(t: Tenant) {
   assertTrialActive(t);
   const max = effectiveLimits(t).maxVendors;
-  if (max !== null && (await usage(t.id)).vendors >= max) throw limitError(`Your plan allows ${max} vendors. Contact us to raise the limit.`);
+  if (max !== null && (await usage(t.id)).vendors >= max) throw limitError(`Your ${allowance()} allows ${max} vendors. Contact us to raise the limit.`);
 }
 
 export function hasFeature(t: Tenant, f: Feature) { return effectiveLimits(t).features[f] !== false; }

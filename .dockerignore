@@ -10,3 +10,5 @@ playwright-report
 test-results
 .git
 .github
+onprem/out
+server/tests

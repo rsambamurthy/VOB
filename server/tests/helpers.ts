@@ -68,11 +68,12 @@ export async function submittedVendor(name: string, email: string, opts: { vendo
   const { id, v, admin } = await invitedSupplier(name, email, opts.vendorType ?? 'DOMESTIC');
   // Each test supplier gets its own PAN, GSTIN, CIN and bank account, so they aren't flagged as duplicates of each other.
   const n = String(Math.floor(Math.random() * 1000)).padStart(3, '0') + (1 + Math.floor(Math.random() * 9)); // never ending in 0: the test checks treat that as "not found"
-  const L = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-  const pan = `AAFC${L}${n}Q`; const g = `27${pan}1Z`;
+  const L = String.fromCharCode(65 + Math.floor(Math.random() * 26)), L2 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+  const six = String(10000 + Math.floor(Math.random() * 89999)) + (1 + Math.floor(Math.random() * 9));
+  const pan = `A${L2}FC${L}${n}Q`; const g = `27${pan}1Z`;
   await v.put('/api/vendor/profile/basic', { entityType: 'Company (Pvt / Public Ltd)', address: '1 Main Rd', region: 'Maharashtra', district: 'Pune', postalCode: '411001', msmeRegistered: 'No', supplyCategory: 'Goods' });
-  await v.put('/api/vendor/profile/bank', { bankName: 'HDFC Bank', accountHolderName: name, accountNumber: `5010${L.charCodeAt(0)}12${n}`, bankBranch: 'Pune', ifsc: 'HDFC0000001' });
-  await v.put('/api/vendor/profile/tax', { hasGst: 'Yes', gstin: g + gstinCheckChar(g), gstClassification: 'Regular', pan, cin: `U74999MH2015PTC12${n}` });
+  await v.put('/api/vendor/profile/bank', { bankName: 'HDFC Bank', accountHolderName: name, accountNumber: `50${L.charCodeAt(0)}${L2.charCodeAt(0)}12${n}`, bankBranch: 'Pune', ifsc: 'HDFC0000001' });
+  await v.put('/api/vendor/profile/tax', { hasGst: 'Yes', gstin: g + gstinCheckChar(g), gstClassification: 'Regular', pan, cin: `U74999MH2015PTC${six}` });
   await v.put('/api/vendor/profile/risk', { fiscalYearEnd: 'March', currency: 'INR', turnoverYear: 'FY 2024-25', annualTurnover: '9000000', sourceOfInfo: 'Audited financial statements', hasRating: 'No', bankruptcy5y: 'No', litigation: 'No' });
   for (const t of ['PAN_CARD', 'GST_CERT', 'CANCELLED_CHEQUE', 'INCORPORATION_CERT']) expect((await v.upload('/api/vendor/documents', t, PDF)).status).toBe(201);
   if (opts.beforeSubmit) await opts.beforeSubmit(v);

@@ -1,3 +1,4 @@
+import { licenceStatus } from '../lib/licence.js';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { localeFor } from '../countries/registry.js';
@@ -53,7 +54,15 @@ function me(req: Request) {
     devMailbox: env.devShowOtp,
     plan: { key: s.tenant.plan, label: effectiveLimits(s.tenant).label, trialEndsAt: s.tenant.trialEndsAt, trialExpired: trialExpired(s.tenant), features: effectiveLimits(s.tenant).features },
     support: s.support,
+    deployment: env.onPrem ? 'onprem' : 'cloud',
+    version: env.version,
+    // On-prem: the licence banner (everyone sees read-only; administrators also see warnings ahead of the end date).
+    licence: env.onPrem ? licenceBanner(s.permissions.has('tenant.settings')) : null,
   };
+}
+function licenceBanner(admin: boolean) {
+  const l = licenceStatus();
+  return { state: l.state, readOnly: l.readOnly, message: l.readOnly || admin ? l.message : null, validUntil: l.licence?.validUntil ?? null };
 }
 
 staffAuthRouter.post('/login', loginLimiter, ah(async (req, res) => {

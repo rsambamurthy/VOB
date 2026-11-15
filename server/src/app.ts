@@ -13,7 +13,8 @@ import { env } from './lib/env.js';
 import { logger } from './lib/logger.js';
 import { HttpError } from './lib/http.js';
 import { apiLimiter } from './lib/rateLimits.js';
-import { csrfGuard, loadSessions, supportReadOnly } from './auth/session.js';
+import { csrfGuard, licenceGuard, loadSessions, supportReadOnly } from './auth/session.js';
+import { licenceRouter } from './routes/licence.js';
 import { loadPlatformSession } from './platform/session.js';
 import { platformRouter } from './platform/routes.js';
 import { signupRouter } from './platform/signup.js';
@@ -57,8 +58,8 @@ export function createApp() {
       directives: {
         'default-src': ["'self'"],
         'script-src': ["'self'"],
-        'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        'font-src': ["'self'", 'https://fonts.gstatic.com'],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'font-src': ["'self'", 'data:'],
         'img-src': ["'self'", 'data:', 'https:'],
         'connect-src': ["'self'"],
         'frame-ancestors': ["'none'"],
@@ -89,10 +90,13 @@ export function createApp() {
 
   // Used by Railway / load balancers: 200 only when the database answers.
   app.get('/api/health', async (_req, res) => {
-    try { await db.execute(sql`select 1`); res.json({ ok: true }); }
+    try { await db.execute(sql`select 1`); res.json({ ok: true, version: env.version, mode: env.onPrem ? 'onprem' : 'cloud' }); }
     catch { res.status(503).json({ ok: false, error: 'database unavailable' }); }
   });
-  app.use('/api', apiLimiter, csrfGuard, loadSessions, supportReadOnly, loadPlatformSession);
+  app.use('/api', apiLimiter, csrfGuard, loadSessions, supportReadOnly, licenceGuard, loadPlatformSession);
+  // On-prem: one customer's installation — no platform console, self-service sign-up or subscription billing.
+  if (env.onPrem) for (const path of ['/api/platform', '/api/signup', '/api/admin/billing']) app.use(path, (_req, _res, next) => next(new HttpError(404, 'Not available in this installation', undefined, 'NOT_ONPREM')));
+  app.use('/api/admin/licence', licenceRouter);
   app.use('/api/platform', platformRouter);
   app.use('/api/signup', signupRouter);
   app.use('/api/auth/sso', ssoRouter);

@@ -2,6 +2,7 @@
  * Cookie sessions for staff and vendors (separate cookies, so one browser can hold both).
  * Cookie value = random token; DB stores sha256(token). Sessions are revocable server-side.
  */
+import { licenceStatus } from '../lib/licence.js';
 import type { Request, Response, NextFunction } from 'express';
 import { and, eq, gt, inArray } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
@@ -146,6 +147,15 @@ export function csrfGuard(req: Request, _res: Response, next: NextFunction) {
 export function supportReadOnly(req: Request, _res: Response, next: NextFunction) {
   if (!req.staff?.support || ['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/auth/logout') return next();
   next(new HttpError(403, 'Support access is read-only', undefined, 'SUPPORT_READ_ONLY'));
+}
+
+/** On-prem, licence expired (after the grace period) or missing: staff can look but not change anything — except signing in and out and installing a licence. Suppliers and integrations are not affected. */
+export function licenceGuard(req: Request, _res: Response, next: NextFunction) {
+  if (process.env.DEPLOYMENT_MODE !== 'onprem' || !req.staff || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  if (/^\/(auth\/|admin\/licence)/.test(req.path)) return next();
+  const s = licenceStatus();
+  if (!s.readOnly) return next();
+  next(new HttpError(403, s.message ?? 'VendorGate is read-only', undefined, 'LICENCE_READ_ONLY'));
 }
 
 export function requireStaff(...perms: Permission[]) {

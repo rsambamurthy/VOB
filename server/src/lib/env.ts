@@ -4,6 +4,12 @@ import { z } from 'zod';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /** cloud = the VendorGate service (many workspaces, sign-up, billing); onprem = one customer's own installation (licence, no sign-up or billing). */
+  DEPLOYMENT_MODE: z.enum(['cloud', 'onprem']).default('cloud'),
+  /** On-prem: path to the licence file issued by Integratatech (also installable from Administration → Licence or the CLI). */
+  LICENCE_FILE: z.string().optional(),
+  /** Version shown in the app and the health check (set by the image build). */
+  APP_VERSION: z.string().default('dev'),
   DATABASE_URL: z.string().default('postgresql://vendor:vendor@localhost:5433/vendor_onboarding'),
   PORT: z.coerce.number().default(4000),
   /** Public URL of the web app, used in email links */
@@ -114,6 +120,8 @@ const schema = z.object({
 });
 
 const parsed = schema.parse(process.env);
+// On-prem the ERP is usually on the customer's own network.
+if (parsed.DEPLOYMENT_MODE === 'onprem' && parsed.ERP_ALLOW_PRIVATE_HOSTS === undefined) parsed.ERP_ALLOW_PRIVATE_HOSTS = 'true';
 const isProd = parsed.NODE_ENV === 'production';
 
 if (isProd) {
@@ -128,6 +136,8 @@ export const env = {
   nodeEnv: parsed.NODE_ENV,
   isProd,
   isTest: parsed.NODE_ENV === 'test',
+  onPrem: parsed.DEPLOYMENT_MODE === 'onprem',
+  version: parsed.APP_VERSION,
   databaseUrl: parsed.DATABASE_URL,
   port: parsed.PORT,
   appBaseUrl: parsed.APP_BASE_URL.replace(/\/$/, ''),

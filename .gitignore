@@ -9,3 +9,8 @@ server/uploads-e2e/
 playwright-report/
 test-results/
 translations-ar*.csv
+onprem/out
+onprem/.env
+onprem/certs/*
+onprem/licence/*
+onprem/backups/*

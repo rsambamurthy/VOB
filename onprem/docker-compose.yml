@@ -1,0 +1,101 @@
+# VendorGate on-premises — Docker Compose.
+#   Start / update:  ./scripts/install.sh   (first time)   ·   docker compose up -d   (afterwards)
+#   Settings:        .env  (made from .env.template by ./scripts/gen-secrets.sh)
+# Images are loaded from the kit (./scripts/load-images.sh); nothing is pulled from the internet.
+name: vendorgate
+
+x-app: &app
+  image: vendorgate:${VG_VERSION:?set VG_VERSION in .env}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DEPLOYMENT_MODE: onprem
+    DATABASE_URL: postgresql://vendorgate:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/vendorgate
+    MIGRATE_ON_START: "true"
+    TRUST_PROXY: "true"
+    DEV_SHOW_OTP: "false"
+    UPLOAD_DIR: /data/uploads
+    BACKUP_DIR: /backups
+    LICENCE_FILE: /licence/vendorgate.lic
+    CLAMAV_HOST: clamav
+  volumes:
+    - vgdata:/data
+    - ./licence:/licence:ro
+    - ./backups:/backups
+  depends_on:
+    db: { condition: service_healthy }
+  networks: [internal]
+  logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+
+services:
+  app:
+    <<: *app
+    # Two copies for availability; sessions and jobs live in the database, documents on the shared volume.
+    deploy:
+      replicas: ${VG_APP_REPLICAS:-2}
+      resources:
+        limits:
+          memory: 1536m
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vendorgate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: vendorgate
+    volumes: [vgdb:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U vendorgate -d vendorgate"], interval: 10s, timeout: 5s, retries: 10 }
+    networks: [internal]
+    shm_size: 256mb
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+
+  # Reverse proxy: HTTPS with your certificate.
+  #   443  — full application for staff (intranet).
+  #   8443 — supplier portal only (point your DMZ reverse proxy / WAF here; staff screens are not reachable on it).
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    environment:
+      VG_HOSTNAME: ${VG_HOSTNAME:?set VG_HOSTNAME in .env}
+      VG_MAX_UPLOAD: ${VG_MAX_UPLOAD:-25m}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - "${VG_STAFF_PORT:-443}:443"
+      - "${VG_SUPPLIER_PORT:-8443}:8443"
+      - "${VG_HTTP_PORT:-80}:80"
+    depends_on: [app]
+    networks: [internal]
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+
+  # Virus scanning of every upload. Offline installs: signatures are as of the kit; update from your mirror (see the runbook).
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    profiles: ["scan"]
+    volumes: [vgclam:/var/lib/clamav]
+    networks: [internal]
+
+  # Optional S3-compatible document store (instead of the local volume): docker compose --profile minio up -d
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    profiles: ["minio"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-vendorgate}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-please}
+    volumes: [vgminio:/data]
+    networks: [internal]
+
+networks:
+  internal: {}
+
+volumes:
+  vgdata: {}
+  vgdb: {}
+  vgclam: {}
+  vgminio: {}

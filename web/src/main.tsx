@@ -1,3 +1,8 @@
+// The Inter font is bundled with the app (no call to Google Fonts), so it also works on-premises without internet.
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
@@ -53,6 +58,7 @@ import { Questionnaires } from './pages/admin/Questionnaires';
 import { Apply } from './pages/Apply';
 import { Applications } from './pages/Applications';
 import { Risk } from './pages/Risk';
+import { Licence } from './pages/admin/Licence';
 import { CorrectiveActions } from './pages/CorrectiveActions';
 import { LangGate } from './i18n/LangGate';
 
@@ -82,6 +88,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="ask" element={<AskPage />} />
               <Route path="admin/erp" element={<ErpSettings />} />
               <Route path="admin/billing" element={<Billing />} />
+              <Route path="admin/licence" element={<Licence />} />
               <Route path="admin/help-topics" element={<HelpTopics />} />
               <Route path="account" element={<Account />} />
               <Route path="admin/users" element={<Users />} />
