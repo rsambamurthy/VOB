@@ -12,9 +12,10 @@ FROM node:22-slim
 WORKDIR /app
 ARG APP_VERSION=dev
 # pg_dump / pg_restore for scheduled backups (client 18 can back up Postgres 13–18; Railway currently provisions 18).
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+RUN echo "Acquire::Retries \"5\";" > /etc/apt/apt.conf.d/80-retries \
+ && apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
  && install -d /usr/share/postgresql-common/pgdg \
- && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && curl -fsSL --http1.1 --retry 5 --retry-delay 3 --retry-all-errors -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
  && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
  && apt-get purge -y curl gnupg && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
