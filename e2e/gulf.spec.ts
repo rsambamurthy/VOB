@@ -116,7 +116,7 @@ for (const c of CASES) {
     await expect(v.getByText(/being reviewed/)).toBeVisible();
 
     await admin.reload();
-    await expect(admin.locator('.card', { hasText: 'Verifications' }).locator('.verif li', { hasText: 'Sanctions screening' })).toContainText('Clear');
+    await expect(admin.locator('.card', { has: admin.locator('h3.card-title', { hasText: /^Verifications$/ }) }).locator('.verif li', { hasText: 'Sanctions screening' })).toContainText('Clear');
     await admin.goto('/staff/admin/workspace');
     await expect(admin.getByRole('checkbox', { name: /Count deadlines in working days/ })).toBeChecked();
     await expect(admin.getByText(c.weekend, { exact: false })).toBeVisible();

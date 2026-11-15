@@ -120,6 +120,7 @@ export const validatorList = () => Object.entries(VALIDATORS).map(([key, v]) => 
 
 /** Consistency checks from every pack (each only looks at its own fields). */
 export const crossChecks = (p: Profile) => PACKS.flatMap((pk) => pk.crossChecks?.(p) ?? []);
+export const consistencyFacts = (p: Profile): Record<string, boolean> => Object.assign({}, ...PACKS.map((pk) => pk.consistencyFacts?.(p) ?? {}));
 
 /* ---------- Online checks (global by kind) ---------- */
 

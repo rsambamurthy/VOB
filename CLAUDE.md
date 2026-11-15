@@ -42,6 +42,12 @@ documents-first because the supplier portal had its own copy of that logic).
 - Automatic holds go through `applySystemHold` (lifecycle), shared with document-expiry holds.
 - Badges and signals: `web/src/components/Risk.tsx`.
 
+**Pre-review for approvers**:
+- Findings: `server/src/services/preReview.ts`, built from `formState`, checks, extractions, duplicates and risk.
+- AI part: `integrations/ai/preReviewer.ts` (mock and Claude, like the help answerer).
+- **Privacy mode is the only way the AI is used:** `gather()` builds a payload of general facts only (fixed-list choices, ranges, check results, bands) with names as `[SUPPLIER]` / `[OTHER-n]`, every finding has a safe `aiText`, and `leaks()` refuses to send if any value from the record appears. Names are put back locally; the payload is stored in `pre_reviews.sent_to_ai` (“What the AI saw”). Never add names, numbers, addresses, emails or free text to that payload.
+- Facts worked out locally for the AI: `server/src/services/aiFacts.ts` — yes/no `comparisons` (general + each country pack's `consistencyFacts`, e.g. India's GSTIN state / PIN code / PAN type in `countries/in/consistency.ts`), `comparisonConcerns` (the ones that become findings), `peerComparison` (percentiles among approved suppliers, 5+ only) and amounts by `aiPrecision` (ranges or exact). Add new market comparisons here, not in the AI prompt.
+
 **Creating suppliers**: `server/src/services/vendors.ts` (`createVendor` with `prefill` / `approved`).
 - Used for invites, Excel invites, approved imports and accepted applications.
 

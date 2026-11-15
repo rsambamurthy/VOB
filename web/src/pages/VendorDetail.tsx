@@ -19,11 +19,12 @@ import { ExtractionList } from '../components/ExtractionCard';
 import { AgreementsPanel } from '../components/Agreements';
 import { QuestionnairesPanel } from '../components/Questionnaires';
 import { RiskBadge, RiskCard, RiskSignals, type RiskSignal } from '../components/Risk';
+import { PreReviewCard, type PreReview } from '../components/PreReview';
 import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { TabStrip } from '../components/TabStrip';
 
 type Detail = { vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; canAct: boolean; canInvite: boolean; canExport: boolean; canReassign: boolean; checks: Check[]; extractions: Extraction[]; canBlock: boolean; canPropose: boolean; canEditContact?: boolean; me: string;
-  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; questionnaireHistory: { id: string; questionnaireId: string; submittedAt: string; submittedByName: string | null; percent: number | null; band: string | null; requestedByName: string | null }[]; canRequestQuestionnaire: boolean; risk: { score: number; band: 'LOW' | 'MEDIUM' | 'HIGH'; signals: RiskSignal[]; lastMonitoredAt: string | null } | null; canRunRiskCheck: boolean };
+  privacy: { consentAt: string | null; consentVersion: number | null; currentVersion: number; erasureRequestedAt: string | null; erasureReason: string | null; erasedAt: string | null; canErase: boolean; canExport: boolean }; flags: Flag[]; changeRequests: ChangeRequest[]; duplicates: Duplicate[]; canDismissDuplicate: boolean; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; questionnaireHistory: { id: string; questionnaireId: string; submittedAt: string; submittedByName: string | null; percent: number | null; band: string | null; requestedByName: string | null }[]; canRequestQuestionnaire: boolean; risk: { score: number; band: 'LOW' | 'MEDIUM' | 'HIGH'; signals: RiskSignal[]; lastMonitoredAt: string | null } | null; canRunRiskCheck: boolean; preReview: PreReview | null };
 type Action = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 
 export function VendorDetail() {
@@ -55,6 +56,8 @@ export function VendorDetail() {
   const [dismissing, setDismissing] = useState<Duplicate>();
   const [sendingQn, setSendingQn] = useState(false);
   const [riskChecking, setRiskChecking] = useState(false);
+  const [preRefreshing, setPreRefreshing] = useState(false);
+  const [decisionRemarks, setDecisionRemarks] = useState('');
 
   const load = useCallback(() => api<Detail>(`/staff/vendors/${id}`).then(setD).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
   useEffect(() => { load(); }, [load]);
@@ -245,6 +248,11 @@ export function VendorDetail() {
       )}
       {v.status === 'UNDER_REVIEW' && openErrors.length > 0 && <Alert kind="warning">Heads-up: {openErrors.length} checklist item(s) are not satisfied under the current rules.</Alert>}
 
+      {d.preReview && (v.status === 'UNDER_REVIEW' || d.canAct) && (
+        <PreReviewCard pr={d.preReview} tabLabel={(k) => tabs.find((t) => t.key === k)?.label} onJump={setTab} refreshing={preRefreshing}
+          onRefresh={v.status === 'UNDER_REVIEW' ? async () => { setPreRefreshing(true); try { await api(`/staff/vendors/${v.id}/pre-review`, { method: 'POST' }); await load(); } catch (e: any) { setFlash({ kind: 'error', text: e.message }); } finally { setPreRefreshing(false); } } : undefined}
+          onUseQuestions={d.canAct ? (text) => { setDecisionRemarks(`Please answer the following and resubmit:\n${text}`); setAction('SEND_BACK'); } : undefined} />
+      )}
       <div className="detail-grid">
         <div className="card">
           <TabStrip>
@@ -358,7 +366,7 @@ export function VendorDetail() {
         try { await api(`/staff/vendors/${id}/assist/submit`, { body: { confirm: true } }); setAssistSubmit(false); setAssist(undefined); setFlash({ kind: 'success', text: `Submitted for approval on behalf of ${v.name}. The approval flow has started.` }); await load(); }
         catch (e: any) { setAssistSubmit(false); setFlash({ kind: 'error', text: e.message }); await load(); }
       }} />}
-      {action && <DecisionModal action={action} vendorId={v.id} duplicates={d.duplicates} onClose={() => setAction(undefined)} onDone={(msg) => { setAction(undefined); setFlash({ kind: 'success', text: msg }); load(); }} />}
+      {action && <DecisionModal action={action} vendorId={v.id} duplicates={d.duplicates} initialRemarks={action === 'SEND_BACK' ? decisionRemarks : ''} onClose={() => { setAction(undefined); setDecisionRemarks(''); }} onDone={(msg) => { setAction(undefined); setDecisionRemarks(''); setFlash({ kind: 'success', text: msg }); load(); }} />}
       {erp !== undefined && (
         <Modal title="ERP export — Oracle supplier payload" wide onClose={() => setErp(undefined)}
           footer={<><button className="btn btn-ghost" onClick={() => navigator.clipboard?.writeText(JSON.stringify(erp, null, 2))}>Copy</button>
@@ -371,8 +379,8 @@ export function VendorDetail() {
   );
 }
 
-function DecisionModal({ action, vendorId, duplicates, onClose, onDone }: { action: Action; vendorId: string; duplicates: Duplicate[]; onClose: () => void; onDone: (msg: string) => void }) {
-  const [remarks, setRemarks] = useState('');
+function DecisionModal({ action, vendorId, duplicates, initialRemarks = '', onClose, onDone }: { action: Action; vendorId: string; duplicates: Duplicate[]; initialRemarks?: string; onClose: () => void; onDone: (msg: string) => void }) {
+  const [remarks, setRemarks] = useState(initialRemarks);
   const needCheck = action === 'APPROVE' && duplicates.length > 0;
   const [checked, setChecked] = useState(false);
   const [error, setError] = useState<string>();

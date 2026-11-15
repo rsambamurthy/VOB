@@ -110,6 +110,8 @@ export interface CountryPack {
   formats?: { postalCode?: FormatRule; bankAccount?: FormatRule; vatNumber?: FormatRule };
   /** Consistency checks between fields for suppliers from this country. */
   crossChecks?: (p: Profile) => { field: string; message: string }[];
+  /** Yes/no comparisons between this supplier's own values (e.g. GSTIN state vs address state), worked out locally so the AI gets only the answer — never the values. Keys are plain-English questions; omit a key when it can't be judged. */
+  consistencyFacts?: (p: Profile) => Record<string, boolean>;
 
   /** Online checks this pack adds, and the provider that runs them. */
   checks?: CheckDef[];

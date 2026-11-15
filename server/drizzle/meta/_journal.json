@@ -183,6 +183,20 @@
       "when": 1794715963358,
       "tag": "0025_risk_monitoring",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794717134865,
+      "tag": "0026_pre_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794719286544,
+      "tag": "0027_pre_review_privacy",
+      "breakpoints": true
     }
   ]
 }

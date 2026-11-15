@@ -9,7 +9,7 @@ interface Status {
   sms: { provider: string; live: boolean; counts: Record<string, number> };
   storage: { driver: string; scan: string; bucket?: string };
   kyc: { provider: string; live: boolean; packs: { code: string; country: string; title: string; provider: string; live: boolean; partlyLive?: boolean; home: boolean; checks?: { kind: string; label: string; provider: string; live: boolean }[] }[] };
-  ai: { helpAnswers?: boolean; helpLive?: boolean; ask?: boolean; askLive?: boolean; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean; dataEntry?: 'manual' | 'assisted' | 'automatic'; aiPlan?: boolean };
+  ai: { helpAnswers?: boolean; helpLive?: boolean; ask?: boolean; askLive?: boolean; preReview?: boolean; preReviewLive?: boolean; preReviewPrecision?: 'ranges' | 'exact'; provider: string; live: boolean; model?: string; supports: string[]; enabledForWorkspace: boolean; dataEntry?: 'manual' | 'assisted' | 'automatic'; aiPlan?: boolean };
   jobs: { running: boolean };
   devMode: boolean;
 }
@@ -109,6 +109,16 @@ export function Integrations() {
             <span><strong>Answer F1 help questions with AI</strong><span className="muted small block">Staff and suppliers can ask a question in their own words; the answer comes only from the help topics they can see. Only the question and those topics are sent to the AI provider.{!s.ai.helpLive && ' (In test mode the closest topic is shown instead.)'}</span></span></label>
           <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.ask !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, ask: on } }); setting({ askAi: on }, on ? 'Ask turned on.' : 'Ask turned off.'); }} />
             <span><strong>Let staff ask about suppliers in their own words</strong><span className="muted small block">“Ask” in the top bar turns a question into one of VendorGate’s built-in searches and shows the matching records. Only the question is sent to the AI provider — never supplier data — and everyone sees only what their role allows.{!s.ai.askLive && ' (In test mode questions are matched by keywords instead.)'}</span></span></label>
+          <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={!!s.ai.preReview} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, preReview: on } }); setting({ aiPreReview: on }, on ? 'AI pre-review summaries turned on.' : 'AI pre-review summaries turned off.'); }} />
+            <span><strong>Write an AI summary for approvers</strong><span className="muted small block">When a supplier is submitted, approvers see what VendorGate found (missing items, failed checks, documents that disagree with the form, duplicates, risk). With this on, the AI also writes a short summary, a recommendation and questions for the supplier. Privacy mode: the AI gets only general facts — choices from fixed lists, amounts, yes/no comparisons VendorGate works out itself (e.g. GSTIN state vs address), how the supplier compares with your approved suppliers, check results, risk bands — with the supplier called [SUPPLIER]. No names, registration or bank numbers, addresses, emails or free text are sent; VendorGate checks this before sending and refuses otherwise. Approvers can see exactly what was sent.{!s.ai.preReviewLive && ' (In test mode the summary is written from the findings without AI.)'}</span></span></label>
+          {s.ai.preReview && (
+            <div className="field" style={{ marginInlineStart: 28, maxWidth: 520 }}><label htmlFor="ai-precision">Amounts sent to the AI (turnover, company age)</label>
+              <select id="ai-precision" value={s.ai.preReviewPrecision ?? 'ranges'} onChange={(e) => { const v = e.target.value as 'ranges' | 'exact'; setS({ ...s, ai: { ...s.ai, preReviewPrecision: v } }); setting({ aiPrecision: v }, v === 'exact' ? 'Exact amounts will be sent to the AI (never with names).' : 'Amounts will be sent to the AI as ranges.'); }}>
+                <option value="ranges">Ranges — “10–100 million INR”, “5–10 years”</option>
+                <option value="exact">Exact — “42,500,000 INR”, “7 years”</option>
+              </select>
+              <div className="field-help">Ranges are the most private. Exact amounts let the AI compare more precisely with market norms; a number with no name, registration or bank number attached doesn’t identify the supplier.</div></div>
+          )}
         </Card>
       </div>
     </div>

@@ -459,6 +459,34 @@ The **Approval flow** card on the right shows every level and its status. When a
 - **Decline** records a reason and, if you choose, emails the applicant.`,
   },
   {
+    id: 'pre-review', title: 'Pre-review for approvers', audience: ['staff'], perms: ['vendors.view'],
+    summary: 'What VendorGate (and optionally AI) found about a submission, a recommendation and questions for the supplier.',
+    screens: ['^/staff/vendors/[^/]+$', '^/staff/admin/integrations'],
+    keywords: 'pre-review prereview ai summary recommendation approve review send back findings questions approver',
+    related: ['review-decide', 'risk', 'duplicates'],
+    body: `When a supplier is submitted, approvers find a **Pre-review** at the top of the supplier's page. It lists what VendorGate found, most serious first, each with a link to the tab it concerns:
+
+- required items still missing (if the form changed since),
+- verifications that failed, weren't run, or where the name on record doesn't match,
+- documents that disagree with the form (“the form says … but the GST certificate shows …”) and documents expiring soon,
+- possible duplicates, serious risk findings, high-risk questionnaire answers, and earlier send-back remarks.
+
+It gives a recommendation — **Looks ready to approve**, **Check before approving** or **Send back to the supplier** — and questions for the supplier. **Send back with these questions…** opens *Send back* with them filled in.
+
+**AI summary** (Administration → Integrations, *Write an AI summary for approvers*): the AI also writes a short summary and may add points the checks miss (for example answers that don't fit together). The recommendation is never softer than the findings call for.
+
+**Privacy mode** — the only way the AI is used:
+- The AI gets only general facts: choices from the form's fixed lists, company age and turnover, which documents exist and whether they are valid, each check as passed / failed / not run, questionnaire risk bands and multiple-choice answers, agreements accepted or not.
+- **Amounts** go as ranges (“10–100 million INR”) or, if you choose *Exact* under Integrations, as exact figures — still with no name attached.
+- **Comparisons worked out by VendorGate**: does the GSTIN's state match the address, does the PIN code match the state, does the PAN's holder type fit the type of entity, does the bank account holder name match the company, does the email domain match the company or website. The AI gets only yes / no. Any that don't fit also appear as findings, with or without the AI.
+- **Compared with your suppliers**: where turnover, company age and requested payment terms sit among your approved suppliers of the same type and category (“higher than 85% of them”) — only when there are at least 5 to compare with.
+- Names become placeholders — the supplier is [SUPPLIER], matching suppliers [OTHER-1]… — and VendorGate puts the real names back in what the AI writes.
+- No names, numbers (bank, tax, registration), addresses, emails, phone numbers, typed-in answers, remarks or document contents are sent. Before sending, VendorGate checks the data against everything in the supplier's record and refuses to send if anything matches.
+- **What the AI saw** on the pre-review shows exactly what was sent.
+
+The pre-review is advisory — the approver decides. When the supplier's details change, it shows **out of date**; click *Refresh*.`,
+  },
+  {
     id: 'risk', title: 'Risk scores and ongoing monitoring', audience: ['staff'], perms: ['vendors.view'],
     summary: 'Each supplier’s risk score, what drives it, re-checks of registration and sanctions, alerts and automatic hold.',
     screens: ['^/staff/risk', '^/staff/vendors/[^/]+$'],

@@ -74,6 +74,8 @@ export async function startReview(vendor: Vendor) {
   const dups = fresh ? await duplicatesOf(fresh) : [];
   if (dups.length) await audit({ tenantId: vendor.tenantId, vendorId: vendor.id, actor: 'system', action: 'POSSIBLE_DUPLICATE', detail: { with: duplicateText(dups) } });
   await activate(steps[0], vendor);
+  // Findings (and, if switched on, an AI summary) ready for the first approver.
+  await (await import('./preReview.js')).queuePreReview(vendor.id).catch((err) => logger.warn({ err, vendor: vendor.id }, 'pre-review not queued'));
 }
 
 export type Decision = 'APPROVE' | 'SEND_BACK' | 'REJECT';

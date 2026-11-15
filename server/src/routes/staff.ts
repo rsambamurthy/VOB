@@ -20,6 +20,7 @@ import { upload } from '../lib/upload.js';
 import { checkExpiry, formState, isEditableStatus } from '../services/onboarding.js';
 import { requestQuestionnaire, responseHistory } from '../services/questionnaires.js';
 import { bankChangeRisk, refreshRisk } from '../services/risk.js';
+import { latestPreReview, regeneratePreReview } from '../services/preReview.js';
 import { getPublished } from '../services/config.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
 import { cancelStaffChange, changeRequestsForVendor, decideChange, flagsForMany, openChangeRequest, reassignChangeStep, reviewVendor, setBlocked, submitChangeRequest } from '../services/lifecycle.js';
@@ -158,6 +159,7 @@ staffRouter.get('/vendors/:id', requireStaff('vendors.view'), ah(async (req, res
     // Risk: recomputed when the supplier is opened (cheap; alerts if it just turned serious).
     risk: await refreshRisk(v.id).then(async (r) => r && { ...r, updatedAt: new Date(), lastMonitoredAt: (await findVendor(s.tenant.id, v.id))?.lastMonitoredAt ?? null }).catch(() => null),
     canRunRiskCheck: s.permissions.has('vendors.block'),
+    preReview: await latestPreReview(s.tenant, v).catch(() => null),
     questionnaireHistory: (await responseHistory(v.id)).map((r) => ({ id: r.id, questionnaireId: r.questionnaireId, submittedAt: r.submittedAt, submittedByName: r.submittedByName, percent: r.percent, band: r.band, requestedByName: r.requestedByName })),
     canRequestQuestionnaire: s.permissions.has('vendors.edit'),
     /** How the form is filled in: 'automatic' means documents first (also when a buyer fills it in for the supplier). */
@@ -258,6 +260,14 @@ staffRouter.post('/vendors/:id/verify/:kind', requireStaff('vendors.view'), ah(a
 }));
 
 /* ---------- Change requests (after approval) ---------- */
+
+/** Make the pre-review again (e.g. after the supplier changed something). */
+staffRouter.post('/vendors/:id/pre-review', requireStaff('vendors.view'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const r = await regeneratePreReview(s.tenant, req.params.id, s.user.name);
+  if (!r) throw new HttpError(500, 'The pre-review could not be made. Try again in a moment.');
+  res.json({ ok: true });
+}));
 
 /** Send a questionnaire to a supplier (e.g. a yearly ESG review). */
 staffRouter.post('/vendors/:id/questionnaires/:qid/request', requireStaff('vendors.edit'), ah(async (req, res) => {

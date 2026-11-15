@@ -61,17 +61,11 @@ export async function invitedSupplier(name: string, email: string, vendorType: '
   return { id, v, admin };
 }
 
-/** Onboard a vendor all the way to APPROVED and return a signed-in vendor session. `beforeSubmit` runs just before
- *  submitting (e.g. to accept agreements); `vendorType` defaults to DOMESTIC. */
 const PDF = '%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF';
-export async function approvedVendor(name: string, email: string, opts: { vendorType?: 'DOMESTIC' | 'GOVERNMENT'; beforeSubmit?: (v: ReturnType<typeof client>) => Promise<unknown> } = {}) {
-  const admin = await login('admin@acme.test');
-  const id = (await admin.post('/api/staff/vendors', { name, vendorType: opts.vendorType ?? 'DOMESTIC', contactFirstName: 'Life', contactLastName: 'Cycle', contactEmail: email, contactMobile: '9800022233' })).body.vendor.id;
-  const token = tokenOf((await lastLinkTo(email))!);
-  const v = client();
-  const { devOtp } = (await v.post('/api/vendor-auth/request-otp', { token })).body;
-  await v.post('/api/vendor-auth/verify-otp', { token, code: devOtp });
-  await v.post('/api/vendor/consent', { version: (await v.get('/api/vendor')).body.privacy.version });
+/** Onboard a vendor and submit it for approval (UNDER_REVIEW); returns a signed-in vendor session. `beforeSubmit` runs just
+ *  before submitting (e.g. to accept agreements); `vendorType` defaults to DOMESTIC. */
+export async function submittedVendor(name: string, email: string, opts: { vendorType?: 'DOMESTIC' | 'GOVERNMENT'; beforeSubmit?: (v: ReturnType<typeof client>) => Promise<unknown> } = {}) {
+  const { id, v, admin } = await invitedSupplier(name, email, opts.vendorType ?? 'DOMESTIC');
   // Each test supplier gets its own PAN, GSTIN, CIN and bank account, so they aren't flagged as duplicates of each other.
   const n = String(Math.floor(Math.random() * 1000)).padStart(3, '0') + (1 + Math.floor(Math.random() * 9)); // never ending in 0: the test checks treat that as "not found"
   const L = String.fromCharCode(65 + Math.floor(Math.random() * 26));
@@ -83,7 +77,13 @@ export async function approvedVendor(name: string, email: string, opts: { vendor
   for (const t of ['PAN_CARD', 'GST_CERT', 'CANCELLED_CHEQUE', 'INCORPORATION_CERT']) expect((await v.upload('/api/vendor/documents', t, PDF)).status).toBe(201);
   if (opts.beforeSubmit) await opts.beforeSubmit(v);
   expect((await v.post('/api/vendor/submit')).status).toBe(200);
-  for (const u of ['tax@acme.test', 'finance@acme.test', 'mdm@acme.test']) expect((await (await login(u)).post(`/api/staff/vendors/${id}/decision`, { action: 'APPROVE' })).status).toBe(200);
   return { v, id, admin };
+}
+
+/** Onboard a vendor all the way to APPROVED and return a signed-in vendor session. */
+export async function approvedVendor(name: string, email: string, opts: Parameters<typeof submittedVendor>[2] = {}) {
+  const r = await submittedVendor(name, email, opts);
+  for (const u of ['tax@acme.test', 'finance@acme.test', 'mdm@acme.test']) expect((await (await login(u)).post(`/api/staff/vendors/${r.id}/decision`, { action: 'APPROVE' })).status).toBe(200);
+  return r;
 }
 

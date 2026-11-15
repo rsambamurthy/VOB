@@ -58,7 +58,7 @@ test('Saudi workspace: Saudi form with Arabic name, CR/VAT checks, sanctions scr
 
   // Staff: sanctions screening ran on submit and shows "Clear"; Saudi checks listed, Indian ones not
   await admin.reload();
-  const checks = admin.locator('.card', { hasText: 'Verifications' });
+  const checks = admin.locator('.card', { has: admin.locator('h3.card-title', { hasText: /^Verifications$/ }) });
   await expect(checks.locator('.verif li', { hasText: 'Sanctions screening' })).toContainText('Clear');
   await expect(checks).toContainText('Commercial Registration (Wathq)');
   await expect(checks).not.toContainText('GSTIN');

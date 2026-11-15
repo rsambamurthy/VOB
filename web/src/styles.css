@@ -935,3 +935,13 @@ ul.plain { list-style: none; margin: 0; padding: 0; } ul.plain li + li { margin-
 .risk-meter.risk-low { color: var(--ok); background: var(--line-2); } .risk-meter.risk-medium { color: #c27a00; background: var(--line-2); } .risk-meter.risk-high { color: var(--err); background: var(--line-2); }
 .risk-card { display: flex; flex-direction: column; gap: 10px; }
 .stat.stat-high { border-top-color: var(--err); } .stat.stat-medium { border-top-color: #c27a00; } .stat.stat-low { border-top-color: var(--ok); }
+/* Pre-review for approvers */
+.pre-review { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; border-inline-start: 4px solid var(--info); }
+.sent-to-ai { max-height: 60vh; overflow: auto; background: var(--surface-2, #f6f7f9); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.pre-summary { margin: 0; font-size: 14.5px; line-height: 1.55; }
+.pre-findings { display: flex; flex-direction: column; gap: 5px; margin: 0; font-size: 13.5px; }
+.pre-findings li { display: flex; gap: 8px; }
+.pre-findings .sev { width: 14px; flex: none; text-align: center; }
+.pre-findings .sev-high .sev { color: var(--err); } .pre-findings .sev-medium .sev { color: #c27a00; } .pre-findings .sev-info .sev { color: var(--muted); }
+.pre-questions { background: var(--line-2); border-radius: 10px; padding: 10px 12px; }
+.pre-questions ol { margin: 6px 0 8px; padding-inline-start: 20px; }

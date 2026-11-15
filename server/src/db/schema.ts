@@ -105,6 +105,10 @@ export interface TenantSettings {
   vendorOtpChannel?: 'email' | 'sms' | 'both';
   /** DPDP privacy notice shown to vendors; changing the text bumps the version and asks vendors to accept again. */
   privacy?: { version: number; text: string; textAr?: string; contactEmail?: string; updatedAt?: string };
+  /** Pre-review for approvers: also send general facts about the submission (privacy mode: no names, numbers or free text) to the AI provider for a summary and recommendation. Off by default; VendorGate's own findings are always shown. */
+  aiPreReview?: boolean;
+  /** Privacy mode: amounts (turnover, company age) go to the AI as ranges (default) or exact — never with names. */
+  aiPrecision?: 'ranges' | 'exact';
   /** Ongoing risk monitoring: days between re-checks of registration status and sanctions (0 = off; default 30), who is alerted, and whether a serious hit puts the supplier on hold. */
   risk?: { monitorDays?: number; alertEmails?: string; autoHold?: boolean };
   /** Days after which vendor data is anonymised: rejected registrations, and ones abandoned before submitting (0 = keep). */
@@ -908,6 +912,30 @@ export const questionnaireResponses = pgTable('questionnaire_responses', {
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('questionnaire_responses_vendor_idx').on(t.vendorId, t.questionnaireId)]);
+
+/**
+ * Pre-review for approvers: what VendorGate found about a submission (missing items, failed checks, documents
+ * that disagree with the form, duplicates, risk…) and, when switched on, an AI summary and recommendation.
+ * One per review cycle (regenerated on request). Advisory only. See services/preReview.ts.
+ */
+export const preReviews = pgTable('pre_reviews', {
+  id: id(), tenantId: tenantId(),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  cycle: integer('cycle').notNull(),
+  /** PENDING · READY · FAILED */
+  status: text('status').notNull().default('PENDING'),
+  /** 'checks' (VendorGate's own findings only) or the AI provider. */
+  provider: text('provider').notNull(),
+  live: boolean('live').notNull().default(false),
+  result: jsonb('result'),
+  /** Fingerprint of what was reviewed — when the supplier's data changes, the pre-review shows as out of date. */
+  inputHash: text('input_hash').notNull(),
+  /** Exactly what was sent to the AI provider (privacy mode: no names, numbers or free text), for “What the AI saw”. */
+  sentToAi: jsonb('sent_to_ai'),
+  error: text('error'),
+  requestedBy: text('requested_by').notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('pre_reviews_vendor_idx').on(t.vendorId, t.createdAt)]);
 
 /** Public "Become a supplier" links (website, trade fair, QR code…). Applications from them are screened before an invitation. */
 export const registrationLinks = pgTable('registration_links', {

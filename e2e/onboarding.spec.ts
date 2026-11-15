@@ -62,8 +62,8 @@ test('invite → vendor accepts privacy notice, fills in, submits → three appr
   }
   await admin.reload();
   await expect(admin.locator('h1 .badge-approved')).toBeVisible();
-  await expect(admin.locator('.card', { hasText: 'Verifications' })).toContainText('GSTIN');
-  await expect(admin.locator('.card', { hasText: 'Verifications' }).locator('.verif li', { hasText: 'Bank account' })).toContainText('Verified');
+  await expect(admin.locator('.card', { has: admin.locator('h3.card-title', { hasText: /^Verifications$/ }) })).toContainText('GSTIN');
+  await expect(admin.locator('.card', { has: admin.locator('h3.card-title', { hasText: /^Verifications$/ }) }).locator('.verif li', { hasText: 'Bank account' })).toContainText('Verified');
   await vendor.reload();
   await expect(vendor.getByRole('heading', { name: 'Registered details' })).toBeVisible();
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "pre_reviews" ADD COLUMN "sent_to_ai" jsonb;

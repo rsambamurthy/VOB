@@ -4,6 +4,7 @@
  * anywhere): GSTIN/PAN/TAN/CIN/IFSC/Udyam formats, GST portal / PAN / penny-drop / MCA checks,
  * and reading Indian KYC documents.
  */
+import { indiaConsistencyFacts } from './consistency.js';
 import type { CountryPack, Profile } from '../types.js';
 import { indiaValidators, indiaFormats, indiaCrossChecks } from './validators.js';
 import { indiaChecks, indiaCheckProvider } from './checks.js';
@@ -36,6 +37,7 @@ export const indiaPack: CountryPack = {
   validators: indiaValidators,
   formats: indiaFormats,
   crossChecks: indiaCrossChecks,
+  consistencyFacts: indiaConsistencyFacts,
 
   checks: indiaChecks,
   checkProvider: indiaCheckProvider,
