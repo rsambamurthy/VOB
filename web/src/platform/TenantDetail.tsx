@@ -6,8 +6,10 @@ import { PLAN_LABEL, SOURCE_LABEL, papi, relDays } from './session';
 import { TenantStatus } from './Tenants';
 import { BillingForm, InvoiceStatus, money, type BillingDetails, type InvoiceRow } from '../pages/admin/Billing';
 
-type Features = { erp: boolean; ai: boolean; kyc: boolean };
-interface Limits { maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Features }
+type Features = Record<string, boolean>;
+interface Limits { maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Features; sourcingFormats?: string[] | null }
+/** Plans, feature names and sourcing formats come from the server (lib/plans.ts, lib/features.ts). */
+interface PlanCatalogue { plans: Record<string, { label: string; maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Features }>; features: Record<string, string>; addOns: string[]; sourcingFormats: Record<string, { label: string; available: boolean }> }
 interface Detail {
   tenant: { id: string; slug: string; name: string; status: 'ACTIVE' | 'SUSPENDED'; statusReason: string | null; plan: string; limits: Partial<Limits>; trialEndsAt: string | null; source: string; notes: string | null; createdAt: string; country?: string; countryName?: string;
     security?: { requireMfa: boolean; enforced: boolean }; email?: { sender: string; replyTo: string | null; domain: { name: string; status: string } | null } };
@@ -17,7 +19,6 @@ interface Detail {
   activity: { id: string; actor: string; action: string; createdAt: string }[];
   platformHistory: { id: string; actor: string; action: string; detail: any; createdAt: string }[];
 }
-const FEATURE_LABEL: Record<keyof Features, string> = { erp: 'ERP integration', ai: 'AI document reading', kyc: 'Verification checks' };
 
 export function PlatformTenantDetail() {
   const { id = '' } = useParams();
@@ -237,6 +238,10 @@ function PlanCard({ d, onSaved }: { d: Detail; onSaved: () => void }) {
   const [trialEnds, setTrialEnds] = useState(t.trialEndsAt?.slice(0, 10) ?? '');
   const [o, setO] = useState({ maxUsers: num(t.limits.maxUsers), maxVendors: num(t.limits.maxVendors), emailsPerDay: num(t.limits.emailsPerDay) });
   const [feat, setFeat] = useState<Partial<Features>>(t.limits.features ?? {});
+  const [cat, setCat] = useState<PlanCatalogue>();
+  useEffect(() => { papi<PlanCatalogue>('/plans').then(setCat).catch(() => {}); }, []);
+  // undefined = the plan's choice (all formats); an array = only these.
+  const [formats, setFormats] = useState<string[] | null | undefined>(t.limits.sourcingFormats);
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
   const parse = (s: string) => (s.trim() === '' ? undefined : /^unlimited$/i.test(s.trim()) ? null : Number(s));
 
@@ -249,13 +254,14 @@ function PlanCard({ d, onSaved }: { d: Detail; onSaved: () => void }) {
       if (v !== undefined) limits[k] = v;
     }
     if (Object.keys(feat).length) limits.features = feat;
+    if (formats !== undefined) limits.sourcingFormats = formats;
     try {
       await papi(`/tenants/${t.id}`, { method: 'PATCH', body: { plan, limits, ...(plan === 'trial' ? { trialEndsAt: trialEnds || undefined } : {}) } });
       setMsg({ kind: 'success', text: 'Saved. Changes apply immediately.' }); onSaved();
     } catch (err: any) { setMsg({ kind: 'error', text: err.message }); }
   }
   const planDefault = (k: 'maxUsers' | 'maxVendors' | 'emailsPerDay') => {
-    const p = PLAN_DEFAULTS[plan]?.[k];
+    const p = cat?.plans[plan]?.[k];
     return p === null ? 'unlimited' : String(p ?? '');
   };
   return (
@@ -270,28 +276,29 @@ function PlanCard({ d, onSaved }: { d: Detail; onSaved: () => void }) {
         <div className="field"><label htmlFor="mv">Max vendors</label><input id="mv" value={o.maxVendors} onChange={(e) => setO({ ...o, maxVendors: e.target.value })} placeholder={`Plan: ${planDefault('maxVendors')}`} /></div>
         <div className="field"><label htmlFor="me">Emails per day</label><input id="me" value={o.emailsPerDay} onChange={(e) => setO({ ...o, emailsPerDay: e.target.value })} placeholder={`Plan: ${planDefault('emailsPerDay')}`} /></div>
         <div className="field field-wide"><label>Features</label>
-          <div className="feature-list">{(Object.keys(FEATURE_LABEL) as (keyof Features)[]).map((k) => {
-            const planOn = PLAN_DEFAULTS[plan]?.features[k] ?? true;
+          <div className="feature-list">{Object.keys(cat?.features ?? {}).map((k) => {
+            const planOn = cat?.plans[plan]?.features[k] ?? !cat?.addOns.includes(k);
             const v = feat[k];
             return (
               <label key={k} className="feature-row">
-                <span>{FEATURE_LABEL[k]}</span>
+                <span>{cat!.features[k]}{cat!.addOns.includes(k) && <span className="badge sm" style={{ marginInlineStart: 6 }}>add-on</span>}</span>
                 <select value={v === undefined ? '' : v ? 'on' : 'off'} onChange={(e) => { const n = { ...feat }; if (e.target.value === '') delete n[k]; else n[k] = e.target.value === 'on'; setFeat(n); }}>
                   <option value="">Plan default ({planOn ? 'on' : 'off'})</option><option value="on">On</option><option value="off">Off</option>
                 </select>
               </label>);
           })}</div></div>
+        {cat && (feat.sourcing ?? cat.plans[plan]?.features.sourcing) && (
+          <div className="field field-wide"><label>Sourcing formats included</label>
+            <label className="check-item"><input type="checkbox" checked={!formats} onChange={(e) => setFormats(e.target.checked ? null : Object.keys(cat.sourcingFormats))} /><span>All formats</span></label>
+            {formats && <div className="feature-list">{Object.entries(cat.sourcingFormats).map(([k, f]) => (
+              <label key={k} className="check-item"><input type="checkbox" checked={formats.includes(k)} onChange={(e) => setFormats(e.target.checked ? [...formats, k] : formats.filter((x) => x !== k))} />
+                <span>{f.label}{!f.available && <span className="muted small"> (coming later)</span>}</span></label>))}</div>}
+          </div>)}
         <div className="field-wide"><button className="btn btn-primary">Save plan</button></div>
       </form>
     </section>
   );
 }
-/** Mirrors server/src/lib/plans.ts (shown as hints only; the server decides). */
-const PLAN_DEFAULTS: Record<string, { maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Features }> = {
-  trial: { maxUsers: 5, maxVendors: 25, emailsPerDay: 200, features: { erp: false, ai: false, kyc: true } },
-  standard: { maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, features: { erp: true, ai: true, kyc: true } },
-  enterprise: { maxUsers: null, maxVendors: null, emailsPerDay: null, features: { erp: true, ai: true, kyc: true } },
-};
 
 function NotesCard({ id, notes }: { id: string; notes: string | null }) {
   const [v, setV] = useState(notes ?? '');

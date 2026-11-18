@@ -218,6 +218,13 @@
       "when": 1794742614940,
       "tag": "0030_onprem_licence",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794986182660,
+      "tag": "0031_sourcing_foundations",
+      "breakpoints": true
     }
   ]
 }

@@ -67,6 +67,18 @@ documents-first because the supplier portal had its own copy of that logic).
 - Administration commands built into the image: `server/src/cli.ts` (`node server/dist/cli.js …`). Licence issuing tool for Integratatech: `server/scripts/licence.ts`.
 - Kit: `onprem/` (docker-compose.yml, .env.template, nginx with a supplier-only port, scripts, docs, build-kit.sh). Never add an outbound call that is required — every external service must be optional.
 
+**Plan / licence features** (cloud plans, workspace overrides and on-prem licences):
+- One list: `server/src/lib/features.ts` (`FEATURES`, `resolveFeatures`, `SOURCING_FORMATS`). `addOn` features (Sourcing) are off unless switched on explicitly.
+- Used by `plans.effectiveLimits`, `licence.licenceLimits`, the platform console (`/api/platform/plans`), the licence tool and Administration → Licence. Never re-type feature names or plan defaults on the web side.
+- Permissions tied to a feature are hidden on the Roles screen without it (`PERMISSION_FEATURE` / `visiblePermissions` in `lib/permissions.ts`).
+
+**Sourcing** (RFQs and e-auctions):
+- Configuration — the only place that decides what is on: `server/src/services/sourcing/config.ts`. Layers: plan/licence (`sourcing` add-on + `sourcingFormats`) → workspace switch → formats → sub-features (`SUB_FEATURES`, some `requires` a plan feature) → rule defaults and locks (`RULES`) → per event (`resolveRules`). Use `sourcingOn` / `formatOn` / `featureOn` / `resolveRules` / `assertSourcingOn`; never read `settings.sourcing` by hand.
+- New formats and options are added to the catalogue with `available: false` and flipped when released.
+- Events store a snapshot of their rules and options when published; settings changes never alter a published event.
+- Tables: `sourcing_events`, `sourcing_lots`, `sourcing_lines`, `sourcing_bidders` (always a VendorGate supplier), `sourcing_submissions` (sealed, encrypted), `sourcing_bids` (append-only, hash-chained), `sourcing_awards`.
+- Routes: `routes/sourcing.ts` — `sourcingAdminRouter` (Administration → Sourcing) and `sourcingRouter` (404 unless on). Screens: `pages/admin/Sourcing.tsx`, `pages/sourcing/`.
+
 **Creating suppliers**: `server/src/services/vendors.ts` (`createVendor` with `prefill` / `approved`).
 - Used for invites, Excel invites, approved imports and accepted applications.
 

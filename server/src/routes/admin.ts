@@ -6,7 +6,8 @@ import { and, asc, count, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, revokeUserSessions, staffCtx } from '../auth/session.js';
-import { ALL_PERMISSIONS, PERMISSIONS } from '../lib/permissions.js';
+import { ALL_PERMISSIONS, visiblePermissions } from '../lib/permissions.js';
+import { effectiveLimits } from '../lib/plans.js';
 import { audit } from '../lib/audit.js';
 import { createStaffUser, sendStaffInvite } from '../services/users.js';
 import { rolesInUse } from '../services/config.js';
@@ -132,7 +133,7 @@ adminRouter.get('/roles', requireStaff('users.manage'), ah(async (req, res) => {
   const { tenant } = staffCtx(req);
   const list = await db.select().from(roles).where(eq(roles.tenantId, tenant.id)).orderBy(asc(roles.createdAt));
   const counts = await db.select({ roleId: userRoles.roleId, n: count() }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(roles.tenantId, tenant.id)).groupBy(userRoles.roleId);
-  res.json({ roles: list.map((r) => ({ ...r, userCount: counts.find((c) => c.roleId === r.id)?.n ?? 0 })), permissions: PERMISSIONS });
+  res.json({ roles: list.map((r) => ({ ...r, userCount: counts.find((c) => c.roleId === r.id)?.n ?? 0 })), permissions: visiblePermissions(effectiveLimits(tenant).features) });
 }));
 
 const roleInput = z.object({

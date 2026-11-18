@@ -47,6 +47,9 @@ export function StaffShell() {
       { to: '/staff/payments', label: 'Payments', icon: 'payments', show: collab && can('invoices.manage') },
       { to: '/staff/admin/purchasing', label: 'Purchasing setup', icon: 'setup', show: collab && (can('orders.manage') || can('tenant.settings')) },
     ]),
+    group('sourcing', 'Sourcing', 'sourcing', [
+      { to: '/staff/sourcing', label: 'Events', icon: 'sourcing', end: true, show: !!me.sourcing?.on && can('sourcing.view') },
+    ]),
     ...keep([{ to: '/staff/reports', label: 'Reports', icon: 'reports', show: can('reports.view') }]),
     group('admin', 'Administration', 'config', [
       { to: '/staff/admin/users', label: 'Users', icon: 'users', show: can('users.manage') },
@@ -54,6 +57,7 @@ export function StaffShell() {
       { to: '/staff/admin/config', label: 'Configuration', icon: 'config', show: can('config.manage') },
       { to: '/staff/admin/agreements', label: 'Agreements', icon: 'agreement', show: can('config.manage') },
       { to: '/staff/admin/questionnaires', label: 'Questionnaires', icon: 'questionnaire', show: can('config.manage') },
+      { to: '/staff/admin/sourcing', label: 'Sourcing', icon: 'sourcing', show: can('tenant.settings') && !!me.plan?.features.sourcing },
       { to: '/staff/admin/workspace', label: 'Workspace', icon: 'workspace', show: can('tenant.settings') },
       { to: '/staff/admin/sign-in', label: 'Sign-in & SSO', icon: 'signin', show: can('tenant.settings') },
       { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },

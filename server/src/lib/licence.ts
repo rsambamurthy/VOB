@@ -15,7 +15,8 @@
 import crypto from 'node:crypto';
 import { DEV_PUBLIC_KEY, PRODUCTION_PUBLIC_KEY } from './licenceKeys.js';
 
-export type LicenceFeature = 'erp' | 'ai' | 'kyc' | 'collab';
+import { resolveFeatures, type Feature, type SourcingFormat } from './features.js';
+export type LicenceFeature = Feature;
 export interface Licence {
   v: 1;
   /** Licence number, e.g. "VG-2026-0007". */
@@ -29,6 +30,8 @@ export interface Licence {
   maxUsers: number | null;
   maxVendors: number | null;
   features?: Partial<Record<LicenceFeature, boolean>>;
+  /** Sourcing formats included when features.sourcing is on (absent = all). */
+  sourcingFormats?: SourcingFormat[];
   /** Days after validUntil before the system turns read-only. Default 15. */
   graceDays?: number;
   notes?: string;
@@ -98,7 +101,7 @@ export function licenceStatus(now = new Date()) {
     missing: 'No VendorGate licence is installed. VendorGate is read-only until one is installed (Administration → Licence).',
     notYetValid: lic ? `The installed licence starts on ${lic.validFrom}. VendorGate is read-only until then.` : null,
   }[s.state];
-  return { ...s, readOnly: isReadOnly(s.state), message, licence: lic && { id: lic.id, customer: lic.customer, validFrom: lic.validFrom, validUntil: lic.validUntil, maxUsers: lic.maxUsers, maxVendors: lic.maxVendors, features: lic.features ?? {}, graceDays: lic.graceDays ?? DEFAULT_GRACE_DAYS },
+  return { ...s, readOnly: isReadOnly(s.state), message, licence: lic && { id: lic.id, customer: lic.customer, validFrom: lic.validFrom, validUntil: lic.validUntil, maxUsers: lic.maxUsers, maxVendors: lic.maxVendors, features: resolveFeatures(lic.features), sourcingFormats: lic.sourcingFormats ?? null, graceDays: lic.graceDays ?? DEFAULT_GRACE_DAYS },
     installedAt: current?.installedAt ?? null, installedBy: current?.installedBy ?? null };
 }
 
@@ -107,5 +110,5 @@ export function licenceLimits() {
   const lic = current?.licence;
   const f = lic?.features ?? {};
   return { maxUsers: lic?.maxUsers ?? null, maxVendors: lic?.maxVendors ?? null,
-    features: { erp: f.erp !== false, ai: f.ai !== false, kyc: f.kyc !== false, collab: f.collab !== false } };
+    features: resolveFeatures(f), sourcingFormats: lic?.sourcingFormats ?? null };
 }

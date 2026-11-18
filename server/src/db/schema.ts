@@ -92,6 +92,8 @@ export interface TenantSettings {
   scorecard?: { weights?: Partial<Record<'onTime' | 'fillRate' | 'acknowledgement' | 'invoiceAccuracy' | 'asn' | 'rating', number>>; graceDays?: number; showToSuppliers?: boolean };
   scim?: { enabled: boolean; tokenHash?: string; tokenCreatedAt?: string; lastUsedAt?: string; defaultRoleId?: string };
   requireMfa?: boolean;
+  /** Sourcing (RFQs and e-auctions): workspace switch, formats, sub-features, rule defaults and locks. See services/sourcing/config.ts. */
+  sourcing?: import('../services/sourcing/config.js').SourcingSettings;
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
   reKycMonths?: number;
   sessionHours?: number;
@@ -138,7 +140,9 @@ export interface TenantLimits {
   maxUsers?: number | null;
   maxVendors?: number | null;
   emailsPerDay?: number | null;
-  features?: { erp?: boolean; ai?: boolean; kyc?: boolean; collab?: boolean };
+  features?: Partial<Record<import('../lib/features.js').Feature, boolean>>;
+  /** Sourcing formats included (null = all; missing = the plan's). */
+  sourcingFormats?: import('../lib/features.js').SourcingFormat[] | null;
 }
 
 export const tenants = pgTable('tenants', {
@@ -1279,3 +1283,143 @@ export const systemLicence = pgTable('system_licence', {
   /** Reminder milestones already emailed (e.g. "30", "7", "expired", "readonly"), per licence id. */
   notified: jsonb('notified').$type<Record<string, string[]>>().notNull().default({}),
 });
+
+/* ================= Sourcing: RFQs and e-auctions (services/sourcing/) ================= */
+/*
+ * One event = one RFQ or auction. Lots group lines; bidders are always VendorGate suppliers (outside bidders are
+ * created as suppliers through the light bidder form). Sealed offers are encrypted at rest and readable only after
+ * opening; live bids are append-only and hash-chained so the bid history can't be changed unnoticed.
+ */
+export const sourcingEvents = pgTable('sourcing_events', {
+  id: id(), tenantId: tenantId(),
+  /** e.g. "RFQ-2026-0007", "RA-2026-0012" — unique per workspace. */
+  number: text('number').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  /** rfq · reverse · forward · japanese · dutch (lib/features.ts SOURCING_FORMATS) */
+  format: text('format').notNull(),
+  /** DRAFT · PENDING_APPROVAL · PUBLISHED · BIDDING (sealed bids open) · OPENING · EVALUATION · LIVE · CLOSED · AWARD_PENDING · AWARDED · CANCELLED */
+  status: text('status').notNull().default('DRAFT'),
+  currency: text('currency').notNull(),
+  estimatedValue: numeric('estimated_value', { precision: 18, scale: 2 }),
+  categories: jsonb('categories').$type<string[]>().notNull().default([]),
+  /** Rules fixed when the event is published (config.resolveRules) — later settings changes don't affect it. */
+  rules: jsonb('rules').$type<Record<string, string | number | null>>().notNull().default({}),
+  /** Sub-features that were on when the event was published. */
+  features: jsonb('features').$type<string[]>().notNull().default([]),
+  /** Event terms (an agreement version bidders accept) and the technical questionnaire, when used. */
+  termsAgreementId: text('terms_agreement_id'),
+  questionnaireId: text('questionnaire_id'),
+  /** Schedule. liveEndsAt moves with auto-extensions. */
+  bidDeadline: timestamp('bid_deadline', { withTimezone: true }),
+  liveStartsAt: timestamp('live_starts_at', { withTimezone: true }),
+  liveEndsAt: timestamp('live_ends_at', { withTimezone: true }),
+  extensionsUsed: integer('extensions_used').notNull().default(0),
+  ownerId: text('owner_id').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  cancelledReason: text('cancelled_reason'),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('sourcing_events_number_idx').on(t.tenantId, t.number), index('sourcing_events_status_idx').on(t.tenantId, t.status)]);
+
+export const sourcingLots = pgTable('sourcing_lots', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull(),
+  title: text('title').notNull(),
+  /** line: a price per line, the lot total is worked out · lot: one price for the whole lot */
+  bidMode: text('bid_mode').notNull().default('lot'),
+  startPrice: numeric('start_price', { precision: 18, scale: 2 }),
+  reservePrice: numeric('reserve_price', { precision: 18, scale: 2 }),
+  /** Best live bid so far (kept with the bid in one transaction). */
+  bestAmount: numeric('best_amount', { precision: 18, scale: 2 }),
+  bestBidderId: text('best_bidder_id'),
+  /** For sequential / staggered lots; null = closes with the event. */
+  closesAt: timestamp('closes_at', { withTimezone: true }),
+}, (t) => [uniqueIndex('sourcing_lots_pos_idx').on(t.eventId, t.position)]);
+
+export const sourcingLines = pgTable('sourcing_lines', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  lotId: text('lot_id').notNull().references(() => sourcingLots.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull(),
+  itemCode: text('item_code'),
+  description: text('description').notNull(),
+  quantity: numeric('quantity', { precision: 18, scale: 3 }).notNull(),
+  unit: text('unit').notNull(),
+  specification: text('specification'),
+  targetPrice: numeric('target_price', { precision: 18, scale: 4 }),
+}, (t) => [index('sourcing_lines_lot_idx').on(t.lotId, t.position)]);
+
+export const sourcingBidders = pgTable('sourcing_bidders', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  vendorId: text('vendor_id').notNull().references(() => vendors.id),
+  /** Name shown to the buyer side only; other bidders see "Bidder 3". */
+  alias: text('alias').notNull(),
+  /** INVITED · ACCEPTED · DECLINED · QUALIFIED · DISQUALIFIED · WITHDRAWN */
+  status: text('status').notNull().default('INVITED'),
+  /** Invited from outside VendorGate (light onboarding). */
+  outside: boolean('outside').notNull().default(false),
+  invitedAt: timestamp('invited_at', { withTimezone: true }).notNull().defaultNow(),
+  respondedAt: timestamp('responded_at', { withTimezone: true }),
+  /** Terms accepted and conflict-of-interest declaration. */
+  declaration: jsonb('declaration').$type<{ acceptedTermsVersion?: number; noConflict?: boolean; conflictNote?: string; at: string; by: string }>(),
+  technicalScore: numeric('technical_score', { precision: 6, scale: 2 }),
+  remarks: text('remarks'),
+}, (t) => [uniqueIndex('sourcing_bidders_vendor_idx').on(t.eventId, t.vendorId), index('sourcing_bidders_vendor2_idx').on(t.vendorId)]);
+
+/** Sealed offers (RFQ / first round). The content is encrypted and only shown after opening. */
+export const sourcingSubmissions = pgTable('sourcing_submissions', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  bidderId: text('bidder_id').notNull().references(() => sourcingBidders.id, { onDelete: 'cascade' }),
+  /** single · technical · commercial */
+  envelope: text('envelope').notNull(),
+  version: integer('version').notNull().default(1),
+  /** Prices per line, terms, answers — encrypted at rest. */
+  content: sealedJson<Record<string, unknown>>()('content').notNull(),
+  attachments: jsonb('attachments').$type<{ documentId: string; fileName: string }[]>().notNull().default([]),
+  /** SHA-256 of the content at submission, shown on the bidder's receipt. */
+  contentHash: text('content_hash').notNull(),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+  submittedByName: text('submitted_by_name').notNull(),
+  withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
+  openedAt: timestamp('opened_at', { withTimezone: true }),
+}, (t) => [index('sourcing_submissions_bidder_idx').on(t.bidderId, t.envelope, t.version)]);
+
+/** Live bids: append-only. seq orders bids within an event; hash = sha256(prevHash + bid), so history can be verified. */
+export const sourcingBids = pgTable('sourcing_bids', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  lotId: text('lot_id').notNull().references(() => sourcingLots.id, { onDelete: 'cascade' }),
+  bidderId: text('bidder_id').notNull().references(() => sourcingBidders.id, { onDelete: 'cascade' }),
+  seq: integer('seq').notNull(),
+  amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+  lineAmounts: jsonb('line_amounts').$type<Record<string, string>>(),
+  placedAt: timestamp('placed_at', { withTimezone: true, precision: 3 }).notNull().defaultNow(),
+  prevHash: text('prev_hash').notNull(),
+  hash: text('hash').notNull(),
+  /** Set (with a reason and a second approver) when an obviously mistaken bid is struck out; the row stays. */
+  invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+  invalidatedReason: text('invalidated_reason'),
+}, (t) => [uniqueIndex('sourcing_bids_seq_idx').on(t.eventId, t.seq), index('sourcing_bids_lot_idx').on(t.lotId, t.amount)]);
+
+export const sourcingAwards = pgTable('sourcing_awards', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  lotId: text('lot_id').notNull().references(() => sourcingLots.id, { onDelete: 'cascade' }),
+  bidderId: text('bidder_id').notNull().references(() => sourcingBidders.id),
+  amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+  /** Share of the lot quantity (100 unless split). */
+  sharePct: numeric('share_pct', { precision: 5, scale: 2 }).notNull().default('100'),
+  /** PROPOSED · APPROVED · REJECTED */
+  status: text('status').notNull().default('PROPOSED'),
+  reason: text('reason'),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  /** Purchase order / contract reference returned by the ERP. */
+  erpReference: text('erp_reference'),
+  createdAt: createdAt(),
+}, (t) => [index('sourcing_awards_event_idx').on(t.eventId)]);

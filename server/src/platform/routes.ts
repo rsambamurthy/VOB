@@ -4,6 +4,7 @@
  * sign-up settings and other platform admins. Every change is written to platform_audit.
  */
 import { Router } from 'express';
+import { FEATURE_KEYS, isAddOn, SOURCING_FORMATS, SOURCING_FORMAT_KEYS, type SourcingFormat } from '../lib/features.js';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import QRCode from 'qrcode';
@@ -168,7 +169,7 @@ platformRouter.post('/auth/change-password', sensitiveLimiter, ah(async (req, re
 platformRouter.use(requirePlatform);
 const actor = (req: Parameters<typeof platformCtx>[0]) => platformCtx(req).admin.email;
 
-platformRouter.get('/plans', (_req, res) => { res.json({ plans: PLANS, features: FEATURE_LABELS, countries: homeCountries() }); });
+platformRouter.get('/plans', (_req, res) => { res.json({ plans: PLANS, features: FEATURE_LABELS, addOns: FEATURE_KEYS.filter(isAddOn), sourcingFormats: SOURCING_FORMATS, countries: homeCountries() }); });
 
 platformRouter.get('/overview', ah(async (_req, res) => {
   const now = new Date(), in7 = new Date(Date.now() + 7 * DAY), ago30 = new Date(Date.now() - 30 * DAY);
@@ -223,7 +224,8 @@ const limitsSchema = z.object({
   maxUsers: z.number().int().min(1).max(100000).nullable().optional(),
   maxVendors: z.number().int().min(1).max(10000000).nullable().optional(),
   emailsPerDay: z.number().int().min(1).max(1000000).nullable().optional(),
-  features: z.object({ erp: z.boolean().optional(), ai: z.boolean().optional(), kyc: z.boolean().optional(), collab: z.boolean().optional() }).optional(),
+  features: z.object(Object.fromEntries(FEATURE_KEYS.map((k) => [k, z.boolean().optional()]))).optional(),
+  sourcingFormats: z.array(z.enum(SOURCING_FORMAT_KEYS as [SourcingFormat, ...SourcingFormat[]])).nullable().optional(),
 });
 
 platformRouter.post('/tenants', ah(async (req, res) => {

@@ -18,7 +18,7 @@ export interface HelpArticle {
   /** Staff only: shown when the user has ANY of these permissions. */
   perms?: Permission[];
   /** Hidden when the workspace's plan doesn't include the feature. */
-  feature?: 'erp' | 'ai' | 'kyc' | 'collab';
+  feature?: 'erp' | 'ai' | 'kyc' | 'collab' | 'sourcing';
   /** Regexes on the URL path; the first matching article is the screen's main topic. */
   screens?: string[];
   /** In-page contexts (set by a screen with useHelpContext), e.g. a configuration tab. */
@@ -472,6 +472,37 @@ The **Approval flow** card on the right shows every level and its status. When a
 - **Reminders** go to the supplier before the due date and when overdue (the person who raised it is told too). Overdue actions add to the supplier's **risk score**; under Risk → *Monitoring settings* you can also **put the supplier on hold** when a high-priority action is overdue.
 
 Vendors → **Corrective actions** lists every action: open, evidence to review, overdue, raised by you, closed.`,
+  },
+  {
+    id: 'sourcing-settings', title: 'Sourcing settings', audience: ['staff'], perms: ['tenant.settings'], feature: 'sourcing',
+    summary: 'Switch Sourcing (RFQs and e-auctions) on, choose formats and options, and set the rules every event starts with.',
+    screens: ['^/staff/admin/sourcing'], contexts: ['sourcing-settings'],
+    keywords: 'sourcing rfq auction reverse auction e-auction tender bid settings formats lock rules decrement extension',
+    related: ['sourcing'],
+    body: `Administration → **Sourcing** decides what buyers can do. Settings work in layers, and each layer can only narrow the one above:
+
+1. **Your plan or licence** includes Sourcing and some or all of its formats (Integratatech switches this on).
+2. **Switch Sourcing on** for the workspace. When it is off there are no Sourcing menus, screens or emails — your choices are kept.
+3. **Formats**: sealed bid / RFQ and reverse auction today; forward, Japanese and Dutch auctions are shown as *coming later*.
+4. **Options**: each capability on or off — outside bidders, two-envelope bids, clarifications, auto-extension, technical scoring, award letters, sending awards to the ERP and more. Some need another part of your plan (for example ERP integration).
+5. **Rule defaults**: what bidders see, the minimum bid step, auto-extension minutes, envelopes, how many people must open sealed bids. **Lock** a rule so buyers can't change it for an event.
+
+> Changing a setting never changes an event that has already been published — each event keeps the rules it was published with. Every change is in the audit log.
+
+People also need permissions (Administration → Roles): *View sourcing events*, *Create sourcing events*, *Opening committee*, *Evaluate bids*, *Control live auctions*.`,
+  },
+  {
+    id: 'sourcing', title: 'Sourcing events', audience: ['staff'], perms: ['sourcing.view'], feature: 'sourcing',
+    summary: 'RFQs and e-auctions with your approved suppliers and invited bidders.',
+    screens: ['^/staff/sourcing'], contexts: ['sourcing'],
+    keywords: 'sourcing rfq auction reverse auction e-auction tender bid event quotation',
+    related: ['sourcing-settings'],
+    body: `Sourcing → **Events** lists every RFQ and auction in your workspace with its status, number of bidders and closing or start time.
+
+- **Sealed bid / RFQ**: bidders send one offer before a deadline; offers stay sealed until the opening committee opens them.
+- **Reverse auction**: suppliers bid prices down during a live window; the lowest (L1) wins. Bidders never see each other's names.
+
+Which formats and options are available is set by your administrator in [Sourcing settings](#sourcing-settings).`,
   },
   {
     id: 'pre-review', title: 'Pre-review for approvers', audience: ['staff'], perms: ['vendors.view'],

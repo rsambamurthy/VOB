@@ -39,6 +39,7 @@ import { agreementsRouter } from './routes/agreements.js';
 import { questionnairesRouter } from './routes/questionnaires.js';
 import { riskRouter } from './routes/risk.js';
 import { actionsRouter } from './routes/correctiveActions.js';
+import { sourcingAdminRouter, sourcingRouter } from './routes/sourcing.js';
 import { applicationsRouter, applyRouter, registrationLinksRouter } from './routes/applications.js';
 import { configRouter } from './routes/config.js';
 
@@ -110,6 +111,7 @@ export function createApp() {
   app.use('/api/staff/applications', applicationsRouter);
   app.use('/api/staff/risk', riskRouter);
   app.use('/api/staff/actions', actionsRouter);
+  app.use('/api/staff/sourcing', sourcingRouter);
   app.use('/api/staff/registration-links', registrationLinksRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);
@@ -117,6 +119,7 @@ export function createApp() {
   app.use('/api/help', helpRouter);
   app.use('/api/ask', askRouter);
   app.use('/api/admin/billing', billingRouter);
+  app.use('/api/admin/sourcing', sourcingAdminRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/v1', erpApiRouter);
   app.use('/api/vendor/orders', supplierOrdersRouter);

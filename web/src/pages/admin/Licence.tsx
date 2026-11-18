@@ -7,13 +7,12 @@ import { useSession } from '../../lib/session';
 interface Status {
   state: 'valid' | 'expiring' | 'grace' | 'readonly' | 'missing' | 'notYetValid'; readOnly: boolean; daysLeft: number | null; graceEndsOn: string | null; message: string | null;
   licence: { id: string; customer: string; validFrom: string; validUntil: string; maxUsers: number | null; maxVendors: number | null; features: Record<string, boolean>; graceDays: number } | null;
-  installedAt: string | null; installedBy: string | null; usage: { users: number; vendors: number }; version: string;
+  installedAt: string | null; installedBy: string | null; usage: { users: number; vendors: number }; version: string; featureLabels?: Record<string, string>;
 }
 const STATE: Record<Status['state'], { label: string; cls: string }> = {
   valid: { label: 'Valid', cls: 'badge-approved' }, expiring: { label: 'Ending soon', cls: 'flag-medium' }, grace: { label: 'Ended — grace period', cls: 'flag-high' },
   readonly: { label: 'Expired — read-only', cls: 'flag-high' }, missing: { label: 'Not installed', cls: 'flag-high' }, notYetValid: { label: 'Not started yet', cls: 'flag-medium' },
 };
-const FEATURES: Record<string, string> = { erp: 'ERP integration', ai: 'AI features', kyc: 'Verification checks', collab: 'Purchase orders and invoices' };
 
 /** Administration → Licence (on-premises installations). */
 export function Licence() {
@@ -44,7 +43,7 @@ export function Licence() {
               <dt>Valid</dt><dd>{fmtDate(s.licence.validFrom)} to {fmtDate(s.licence.validUntil)}{s.daysLeft !== null && s.daysLeft >= 0 && <span className="muted"> · {s.daysLeft} days left</span>}</dd>
               <dt>Staff users</dt><dd>{lim(s.licence.maxUsers, s.usage.users)}</dd>
               <dt>Suppliers</dt><dd>{lim(s.licence.maxVendors, s.usage.vendors)}</dd>
-              <dt>Included</dt><dd>{Object.entries(FEATURES).map(([k, l]) => <span key={k} className={`badge sm ${s.licence!.features[k] === false ? '' : 'badge-approved'}`} style={{ marginInlineEnd: 6 }}>{s.licence!.features[k] === false ? `No ${l.toLowerCase()}` : l}</span>)}</dd>
+              <dt>Included</dt><dd>{Object.entries(s.featureLabels ?? {}).map(([k, l]) => <span key={k} className={`badge sm ${s.licence!.features[k] === false ? '' : 'badge-approved'}`} style={{ marginInlineEnd: 6 }}>{s.licence!.features[k] === false ? `No ${l.toLowerCase()}` : l}</span>)}</dd>
               <dt>Installed</dt><dd>{s.installedAt ? `${fmtDateTime(s.installedAt)} by ${s.installedBy}` : '—'}</dd>
               <dt>VendorGate version</dt><dd className="mono">{s.version}</dd>
             </dl>

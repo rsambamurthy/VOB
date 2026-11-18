@@ -4,10 +4,12 @@
  */
 import type { Tenant, TenantLimits } from '../db/schema.js';
 import { licenceLimits } from './licence.js';
+import { FEATURE_LABELS, resolveFeatures, type Feature, type SourcingFormat } from './features.js';
+
+export { FEATURE_LABELS, type Feature };
 
 const onPrem = () => process.env.DEPLOYMENT_MODE === 'onprem';
 
-export type Feature = 'erp' | 'ai' | 'kyc' | 'collab';
 export interface PlanDef {
   label: string;
   maxUsers: number | null;
@@ -18,23 +20,24 @@ export interface PlanDef {
   /** "Ask VendorGate" questions per day (AI search). */
   askPerDay?: number | null;
   features: Record<Feature, boolean>;
+  /** Sourcing formats included (null = all). Only matters when the sourcing feature is on. */
+  sourcingFormats?: SourcingFormat[] | null;
 }
 
 export const PLANS: Record<string, PlanDef> = {
-  trial: { label: 'Trial', maxUsers: 5, maxVendors: 25, emailsPerDay: 200, helpAnswersPerDay: 30, askPerDay: 30, features: { erp: false, ai: false, kyc: true, collab: true } },
-  standard: { label: 'Standard', maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 300, features: { erp: true, ai: true, kyc: true, collab: true } },
-  enterprise: { label: 'Enterprise', maxUsers: null, maxVendors: null, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: { erp: true, ai: true, kyc: true, collab: true } },
+  trial: { label: 'Trial', maxUsers: 5, maxVendors: 25, emailsPerDay: 200, helpAnswersPerDay: 30, askPerDay: 30, features: { erp: false, ai: false, kyc: true, collab: true, sourcing: false } },
+  standard: { label: 'Standard', maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 300, features: { erp: true, ai: true, kyc: true, collab: true, sourcing: false } },
+  enterprise: { label: 'Enterprise', maxUsers: null, maxVendors: null, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: { erp: true, ai: true, kyc: true, collab: true, sourcing: false } },
 };
 export const PLAN_KEYS = Object.keys(PLANS) as [string, ...string[]];
-export const FEATURE_LABELS: Record<Feature, string> = { erp: 'ERP integration', ai: 'AI document reading', kyc: 'Verification checks (GSTIN, PAN, bank)', collab: 'Supplier collaboration (purchase orders)' };
 
 export function effectiveLimits(t: Pick<Tenant, 'plan' | 'limits'>): PlanDef {
   // On-prem: the licence sets users, suppliers and features; nothing else is limited.
-  if (onPrem()) { const l = licenceLimits(); return { label: 'On-premises licence', maxUsers: l.maxUsers, maxVendors: l.maxVendors, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: l.features }; }
+  if (onPrem()) { const l = licenceLimits(); return { label: 'On-premises licence', maxUsers: l.maxUsers, maxVendors: l.maxVendors, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: l.features, sourcingFormats: l.sourcingFormats }; }
   const p = PLANS[t.plan] ?? PLANS.standard;
   const o: TenantLimits = t.limits ?? {};
   const pick = (k: 'maxUsers' | 'maxVendors' | 'emailsPerDay') => (o[k] === undefined ? p[k] : o[k] ?? null);
-  return { label: p.label, maxUsers: pick('maxUsers'), maxVendors: pick('maxVendors'), emailsPerDay: pick('emailsPerDay'), helpAnswersPerDay: p.helpAnswersPerDay ?? null, askPerDay: p.askPerDay ?? null, features: { ...p.features, ...(o.features ?? {}) } };
+  return { label: p.label, maxUsers: pick('maxUsers'), maxVendors: pick('maxVendors'), emailsPerDay: pick('emailsPerDay'), helpAnswersPerDay: p.helpAnswersPerDay ?? null, askPerDay: p.askPerDay ?? null, features: resolveFeatures(p.features, o.features), sourcingFormats: o.sourcingFormats === undefined ? (p.sourcingFormats ?? null) : o.sourcingFormats };
 }
 
 export const trialExpired = (t: Pick<Tenant, 'plan' | 'trialEndsAt'>) => t.plan === 'trial' && !!t.trialEndsAt && t.trialEndsAt < new Date();

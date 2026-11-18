@@ -59,6 +59,8 @@ import { Apply } from './pages/Apply';
 import { Applications } from './pages/Applications';
 import { Risk } from './pages/Risk';
 import { Licence } from './pages/admin/Licence';
+import { SourcingSettings } from './pages/admin/Sourcing';
+import { SourcingEvents } from './pages/sourcing/Events';
 import { CorrectiveActions } from './pages/CorrectiveActions';
 import { LangGate } from './i18n/LangGate';
 
@@ -89,6 +91,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/erp" element={<ErpSettings />} />
               <Route path="admin/billing" element={<Billing />} />
               <Route path="admin/licence" element={<Licence />} />
+              <Route path="admin/sourcing" element={<SourcingSettings />} />
+              <Route path="sourcing" element={<SourcingEvents />} />
               <Route path="admin/help-topics" element={<HelpTopics />} />
               <Route path="account" element={<Account />} />
               <Route path="admin/users" element={<Users />} />
