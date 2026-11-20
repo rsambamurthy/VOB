@@ -23,6 +23,8 @@ const PATHS: Record<string, string> = {
   sourcing: 'M14 13l-7.5 7.5a2.12 2.12 0 0 1-3-3L11 10M16 16l6-6M8 8l6-6M9 7l8 8M21 11l-8-8',
   actions: 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9',
   questionnaire: 'M9 4h6v3H9zM7 5H5v16h14V5h-2M8 11h1M11 11h5M8 15h1M11 15h5',
+  contracts: 'M8 2h8l4 4v16H4V2zM16 2v4h4M8 10h8M8 14h8M8 18h5',
+  parties: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M23 11h-6M20 8v6',
   agreement: 'M7 3h7l5 5v13H7zM14 3v5h5M9.5 17.5c1-1.5 1.8-1.5 2.5 0s1.5 1.5 2.5 0',
   mail: 'M3 5h18v14H3zM3 6l9 7 9-7',
   billing: 'M2 6h20v12H2zM2 10h20M6 15h4',

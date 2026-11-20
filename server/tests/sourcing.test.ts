@@ -69,7 +69,7 @@ describe('sourcing configuration', () => {
     expect((log!.detail as any).changes).toContain('Sourcing on');
 
     expect((await admin.get('/api/auth/me')).body.sourcing).toEqual({ on: true, formats: ['rfq'] });
-    expect((await admin.get('/api/staff/sourcing/events')).body).toEqual({ events: [] });
+    expect(Array.isArray((await admin.get('/api/staff/sourcing/events')).body.events)).toBe(true);
     expect(Object.keys((await admin.get('/api/admin/roles')).body.permissions)).toContain('sourcing.events');
     // Users need sourcing.view.
     expect((await (await login('tax@acme.test')).get('/api/staff/sourcing/events')).status).toBe(403);

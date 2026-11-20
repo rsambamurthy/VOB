@@ -21,7 +21,7 @@ export function decrypt(payload: string): string {
   let lastErr: unknown;
   for (const key of [env.encryptionKey, ...env.previousEncryptionKeys]) {
     try {
-      const d = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      const d = crypto.createDecipheriv('aes-256-gcm', key, iv, { authTagLength: 16 });
       d.setAuthTag(tag);
       return Buffer.concat([d.update(ct), d.final()]).toString('utf8');
     } catch (e) { lastErr = e; }
@@ -47,7 +47,7 @@ export function decryptBuffer(data: Buffer): Buffer {
   const iv = data.subarray(4, 16), tag = data.subarray(16, 32), ct = data.subarray(32);
   let lastErr: unknown;
   for (const key of [env.encryptionKey, ...env.previousEncryptionKeys]) {
-    try { const d = crypto.createDecipheriv('aes-256-gcm', key, iv); d.setAuthTag(tag); return Buffer.concat([d.update(ct), d.final()]); }
+    try { const d = crypto.createDecipheriv('aes-256-gcm', key, iv, { authTagLength: 16 }); d.setAuthTag(tag); return Buffer.concat([d.update(ct), d.final()]); }
     catch (e) { lastErr = e; }
   }
   throw lastErr;

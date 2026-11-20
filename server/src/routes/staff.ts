@@ -24,7 +24,7 @@ import { bankChangeRisk, refreshRisk } from '../services/risk.js';
 import { latestPreReview, regeneratePreReview } from '../services/preReview.js';
 import { getPublished } from '../services/config.js';
 import { storeUpload, removeStored } from '../integrations/storage/index.js';
-import { cancelStaffChange, changeRequestsForVendor, decideChange, flagsForMany, openChangeRequest, reassignChangeStep, reviewVendor, setBlocked, submitChangeRequest } from '../services/lifecycle.js';
+import { approvedVendorFlags, cancelStaffChange, changeRequestsForVendor, decideChange, flagsForMany, openChangeRequest, reassignChangeStep, reviewVendor, setBlocked, submitChangeRequest } from '../services/lifecycle.js';
 import { approverIds } from '../services/approvers.js';
 import { CSV_COLUMNS, toCsv, toCsvRow, toOracleSupplier } from '../lib/erpMapper.js';
 import { queueErpPush, recentSyncs, retrySync, syncsForVendor, syncSummary } from '../integrations/erp/index.js';
@@ -69,36 +69,55 @@ export const staffRouter = Router();
 
 const findVendor = (tenantId: string, id: string) => db.query.vendors.findFirst({ where: and(eq(vendors.tenantId, tenantId), eq(vendors.id, id)) });
 
+/** The vendor list, one page at a time (50 by default). Status counts and "needs attention" cover the whole workspace. */
 staffRouter.get('/vendors', requireStaff('vendors.view'), ah(async (req, res) => {
   const s = staffCtx(req);
   const { q, status, mine, attention } = req.query as Record<string, string | undefined>;
+  const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
+  const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
   const filters: SQL[] = [eq(vendors.tenantId, s.tenant.id)];
   if (status) filters.push(eq(vendors.status, status as VendorStatus));
   if (q) filters.push(or(ilike(vendors.name, `%${q}%`), ilike(vendors.code, `%${q}%`), ilike(vendors.contactEmail, `%${q}%`))!);
   const pendingForMe = await db.selectDistinct({ id: approvalSteps.vendorId }).from(approvalSteps).where(await actionableStepFilter(s.tenant.id, s.user.id));
   const mineIds = new Set(pendingForMe.map((p) => p.id));
   if (mine === 'true') {
-    if (!pendingForMe.length) return res.json({ vendors: [], counts: {}, myQueue: 0 });
+    if (!pendingForMe.length) return res.json({ vendors: [], counts: {}, myQueue: 0, total: 0, page, pageSize });
     filters.push(inArray(vendors.id, pendingForMe.map((p) => p.id)));
   }
+  // "Needs attention" is about approved vendors: one shared, briefly cached answer for the whole workspace.
+  const { flags: approvedFlags } = await approvedVendorFlags(s.tenant.id);
+  const attentionIds = [...approvedFlags].filter(([, f]) => f.length).map(([id]) => id);
+  if (attention === 'true') filters.push(attentionIds.length ? inArray(vendors.id, attentionIds) : sql`false`);
+  const where = and(...filters);
+  const [{ n: total }] = await db.select({ n: count() }).from(vendors).where(where);
   const rows = await db.query.vendors.findMany({
-    where: and(...filters), orderBy: desc(vendors.updatedAt), limit: 500,
-    columns: { profile: false, inviteToken: false },
+    where, orderBy: [desc(vendors.updatedAt), asc(vendors.id)], limit: pageSize, offset: (page - 1) * pageSize,
+    columns: { id: true, code: true, name: true, vendorType: true, contactFirstName: true, contactLastName: true, contactEmail: true, contactMobile: true, status: true, reviewCycle: true,
+      createdAt: true, updatedAt: true, submittedAt: true, decidedAt: true, blockedAt: true, reviewStatus: true, nextReviewAt: true, erasureRequestedAt: true, blockSource: true,
+      emailBouncedAt: true, emailBounceReason: true, riskBand: true },
     with: { steps: { where: eq(approvalSteps.status, 'PENDING'), columns: { label: true, roleId: true, dueAt: true }, with: { assignee: { columns: { name: true } } } }, createdBy: { columns: { name: true } } },
   });
   const counts = await db.select({ status: vendors.status, n: count() }).from(vendors).where(eq(vendors.tenantId, s.tenant.id)).groupBy(vendors.status);
-  const flags = await flagsForMany(s.tenant.id, rows);
+  const flags = await flagsForMany(s.tenant.id, rows.filter((v) => v.status !== 'APPROVED'));
+  const flagsOf = (id: string) => approvedFlags.get(id) ?? flags.get(id) ?? [];
   const myChanges = await myPendingChangeIds(s.tenant.id, s.user.id);
-  const list = attention === 'true' ? rows.filter((v) => (flags.get(v.id) ?? []).length) : rows;
-  // How many approved vendors need attention (for the stat tile), computed over the whole workspace
-  const allApproved = attention === 'true' || status || q || mine ? null : rows.filter((v) => (flags.get(v.id) ?? []).length).length;
   res.json({
-    attentionCount: allApproved ?? undefined,
+    attentionCount: attentionIds.length,
     myChangeQueue: myChanges.size,
-    vendors: list.map(({ steps, ...v }) => ({ ...v, flags: flags.get(v.id) ?? [], pendingStep: steps[0] ? { label: steps[0].label, mine: mineIds.has(v.id), dueAt: steps[0].dueAt, overdue: !!steps[0].dueAt && steps[0].dueAt < new Date(), assignee: steps[0].assignee?.name ?? null } : null })),
+    total, page, pageSize,
+    vendors: rows.map(({ steps, ...v }) => ({ ...v, flags: flagsOf(v.id), pendingStep: steps[0] ? { label: steps[0].label, mine: mineIds.has(v.id), dueAt: steps[0].dueAt, overdue: !!steps[0].dueAt && steps[0].dueAt < new Date(), assignee: steps[0].assignee?.name ?? null } : null })),
     counts: Object.fromEntries(counts.map((c) => [c.status, c.n])),
     myQueue: pendingForMe.length,
   });
+}));
+
+/** Name and code of every vendor with a status, for pickers (e.g. linking ERP supplier codes). */
+staffRouter.get('/vendors/options', requireStaff('vendors.view'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const status = typeof req.query.status === 'string' ? req.query.status as VendorStatus : undefined;
+  const rows = await db.select({ id: vendors.id, name: vendors.name, code: vendors.code }).from(vendors)
+    .where(and(eq(vendors.tenantId, s.tenant.id), isNull(vendors.erasedAt), status ? eq(vendors.status, status) : undefined)).orderBy(asc(vendors.name)).limit(5000);
+  res.json({ vendors: rows });
 }));
 
 staffRouter.post('/vendors', requireStaff('vendors.create'), ah(async (req, res) => {

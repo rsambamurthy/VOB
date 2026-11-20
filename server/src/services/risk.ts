@@ -111,7 +111,12 @@ export async function refreshRisk(vendorId: string, opts: { alert?: boolean } = 
   const band = bandOf(score, signals);
   const before = new Set(((v.riskSignals as Signal[] | null) ?? []).filter((s) => s.critical).map((s) => s.code));
   const newCritical = signals.filter((s) => s.critical && !before.has(s.code));
-  await db.update(vendors).set({ riskScore: score, riskBand: band, riskSignals: signals, riskUpdatedAt: new Date() }).where(eq(vendors.id, v.id));
+  // Opening a supplier recalculates its risk; write only when something changed (or the stamp is an hour old), and never
+  // touch updated_at — a recalculation isn't an edit, and the vendor list is ordered by it.
+  const same = v.riskScore === score && v.riskBand === band && JSON.stringify(v.riskSignals ?? []) === JSON.stringify(signals);
+  if (!same || !v.riskUpdatedAt || Date.now() - v.riskUpdatedAt.getTime() > 3_600_000) {
+    await db.update(vendors).set({ riskScore: score, riskBand: band, riskSignals: signals, riskUpdatedAt: new Date(), updatedAt: v.updatedAt }).where(eq(vendors.id, v.id));
+  }
   const worse = band === 'HIGH' && v.riskBand !== 'HIGH';
   if ((worse || newCritical.length) && v.status === 'APPROVED') {
     await audit({ tenantId: v.tenantId, vendorId: v.id, actor: 'system (risk monitoring)', action: 'RISK_RAISED', detail: { band, score, from: v.riskBand ?? 'none', signals: (newCritical.length ? newCritical : signals).map((s) => s.label).join(' · ').slice(0, 500) } });

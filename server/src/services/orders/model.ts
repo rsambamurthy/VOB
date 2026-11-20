@@ -60,7 +60,7 @@ export const canonicalPo = z.object({
   incoterms: z.string().trim().max(200).optional().nullable(),
   notes: z.string().max(4000).optional().nullable(),
   status: z.enum(['OPEN', 'CLOSED', 'CANCELLED']).default('OPEN'),
-  attachments: z.array(z.object({ name: z.string().max(200), url: z.string().url().max(2000) })).max(50).optional(),
+  attachments: z.array(z.object({ name: z.string().max(200), url: z.string().url().max(2000).regex(/^https?:\/\//i, 'Attachment links must start with http:// or https://') })).max(50).optional(),
   lines: z.array(canonicalLine).min(1, 'A purchase order needs at least one line').max(2000),
   receipts: z.array(canonicalReceipt).max(5000).optional(),
 });

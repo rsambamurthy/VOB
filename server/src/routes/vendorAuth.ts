@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { and, count, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, sql, type SQL } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { env } from '../lib/env.js';
@@ -40,6 +40,7 @@ vendorAuthRouter.post('/request-otp', sensitiveLimiter, ah(async (req, res) => {
   const lang = language && supplierLanguages(tenant).includes(language) ? language : vendorLanguage(tenant, v);
   const [{ recent }] = await db.select({ recent: count() }).from(otpCodes).where(and(eq(otpCodes.vendorId, v.id), gt(otpCodes.createdAt, new Date(Date.now() - 60_000))));
   if (recent >= 3) throw new HttpError(429, 'Too many codes requested. Please wait a minute.');
+  await assertCodeQuota(eq(otpCodes.vendorId, v.id));
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   await db.insert(otpCodes).values({ tenantId: tenant.id, vendorId: v.id, codeHash: await bcrypt.hash(code, 8), expiresAt: new Date(Date.now() + 10 * 60_000) });
   const channel = tenant.settings.vendorOtpChannel ?? 'email';
@@ -63,9 +64,24 @@ vendorAuthRouter.post('/request-otp', sensitiveLimiter, ah(async (req, res) => {
   res.json({ sentTo: sentTo.join(' and '), ...(env.devShowOtp ? { devOtp: code } : {}) });
 }));
 
+/**
+ * Spreading guesses over many codes (and many IP addresses) is cut off per supplier: at most 20 wrong codes and
+ * 10 new codes in a day / an hour. Six digits is a million combinations; this keeps a guess-the-code attack hopeless.
+ */
+const WRONG_CODES_PER_DAY = 20, CODES_PER_HOUR = 10;
+async function assertNotGuessing(where: SQL) {
+  const [{ wrong }] = await db.select({ wrong: sql<number>`coalesce(sum(${otpCodes.attempts}), 0)::int` }).from(otpCodes).where(and(where, gt(otpCodes.createdAt, new Date(Date.now() - 86_400_000))));
+  if (wrong >= WRONG_CODES_PER_DAY) throw new HttpError(429, 'Too many wrong codes. Try again tomorrow, or ask the buyer to send your invitation again.');
+}
+async function assertCodeQuota(where: SQL, per = 1) {
+  const [{ n }] = await db.select({ n: count() }).from(otpCodes).where(and(where, gt(otpCodes.createdAt, new Date(Date.now() - 3_600_000))));
+  if (n >= CODES_PER_HOUR * per) throw new HttpError(429, 'Too many codes requested. Please try again in an hour.');
+}
+
 vendorAuthRouter.post('/verify-otp', loginLimiter, ah(async (req, res) => {
   const { token, code, language } = z.object({ token: z.string(), code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code'), language: z.enum(['en', 'ar']).optional() }).parse(req.body);
   const { v, tenant } = await byInvite(token);
+  await assertNotGuessing(eq(otpCodes.vendorId, v.id));
   const otp = await db.query.otpCodes.findFirst({ where: and(eq(otpCodes.vendorId, v.id), eq(otpCodes.used, false), gt(otpCodes.expiresAt, new Date())), orderBy: desc(otpCodes.createdAt) });
   if (!otp || otp.attempts >= 5) throw new HttpError(401, 'Code expired — request a new one');
   if (!(await bcrypt.compare(code, otp.codeHash))) {
@@ -111,6 +127,7 @@ vendorAuthRouter.post('/email/request', sensitiveLimiter, ah(async (req, res) =>
   if (vs.length) {
     const [{ recent }] = await db.select({ recent: count() }).from(otpCodes).where(and(eq(otpCodes.tenantId, t.id), eq(otpCodes.email, email), gt(otpCodes.createdAt, new Date(Date.now() - 60_000))));
     if (recent >= 3 * vs.length) throw new HttpError(429, 'Too many codes requested. Please wait a minute.');
+    await assertCodeQuota(and(eq(otpCodes.tenantId, t.id), eq(otpCodes.email, email))!, vs.length);
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const hash = await bcrypt.hash(code, 8);
     await db.insert(otpCodes).values(vs.map((v) => ({ tenantId: t.id, vendorId: v.id, email, codeHash: hash, expiresAt: new Date(Date.now() + 10 * 60_000) })));
@@ -125,6 +142,7 @@ vendorAuthRouter.post('/email/request', sensitiveLimiter, ah(async (req, res) =>
 vendorAuthRouter.post('/email/verify', loginLimiter, ah(async (req, res) => {
   const { workspace, email, code, vendorId, language } = z.object({ workspace: z.string().min(1), email: z.string().trim().toLowerCase().email(), code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code'), vendorId: z.string().optional(), language: z.enum(['en', 'ar']).optional() }).parse(req.body);
   const t = await activeTenant(workspace);
+  await assertNotGuessing(and(eq(otpCodes.tenantId, t.id), eq(otpCodes.email, email))!);
   const rows = await db.select().from(otpCodes).where(and(eq(otpCodes.tenantId, t.id), eq(otpCodes.email, email), eq(otpCodes.used, false), gt(otpCodes.expiresAt, new Date()))).orderBy(desc(otpCodes.createdAt));
   const latest = rows[0];
   if (!latest || latest.attempts >= 5) throw new HttpError(401, 'Code expired — request a new one');

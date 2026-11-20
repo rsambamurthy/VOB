@@ -63,7 +63,7 @@ export async function listLinks(tenantId: string) {
 /* ---------------- The public page ---------------- */
 
 /** The home country's main registration number (GSTIN in India, CR number in Saudi Arabia…) and the form field it fills. */
-function registrationIdFor(tenant: Pick<Tenant, 'country'>, config: OnboardingConfig) {
+export function registrationIdFor(tenant: Pick<Tenant, 'country'>, config: OnboardingConfig) {
   const id = packFor(tenant.country).registerIds?.find((r) => !r.masked);
   if (!id) return null;
   const [sec, key] = id.field.split('.');
@@ -186,7 +186,7 @@ async function hintsFor(tenant: Tenant, config: OnboardingConfig, a: Application
 }
 
 /** The form answers an application gives (registration number, website, what they supply). */
-function prefillOf(a: Pick<Application, 'registrationId' | 'website' | 'supplies'>, regField: string | undefined, homeCountry: string): Profile {
+export function prefillOf(a: Pick<Application, 'registrationId' | 'website' | 'supplies'>, regField: string | undefined, homeCountry: string): Profile {
   const p: Profile = { basic: { supplierCountry: homeCountry } };
   if (a.registrationId && regField) { const [s, k] = regField.split('.'); p[s] = { ...(p[s] ?? {}), [k]: a.registrationId }; }
   if (a.website) p.basic.websiteUrl = a.website;

@@ -187,7 +187,7 @@ adminRouter.patch('/tenant', requireStaff('tenant.settings'), ah(async (req, res
     branding: z.object({
       productName: z.string().max(40).optional(),
       primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value like #6d1a73').optional(),
-      logoUrl: z.string().url().max(500).optional().or(z.literal('')),
+      logoUrl: z.string().url().max(500).regex(/^https:\/\//i, 'The logo address must start with https://').optional().or(z.literal('')),
     }).optional(),
     email: z.object({ fromName: z.string().trim().max(80).optional(), replyTo: z.string().trim().email('Enter a valid reply-to address').max(200).optional().or(z.literal('')) }).optional(),
     settings: z.object({ requireMfa: z.boolean().optional(), sessionHours: z.number().int().min(1).max(72).optional(), aiExtraction: z.boolean().optional(), dataEntry: z.enum(['assisted', 'automatic']).optional(), vendorOtpChannel: z.enum(['email', 'sms', 'both']).optional(), helpAi: z.boolean().optional(), askAi: z.boolean().optional(), aiPreReview: z.boolean().optional(), aiPrecision: z.enum(['ranges', 'exact']).optional(), aiGuide: z.boolean().optional(), supplierLanguage: z.enum(['en', 'ar']).optional(), priceTolerancePct: z.number().min(0).max(50).optional(), einvoiceRequired: z.boolean().optional(), reKycMonths: z.number().int().min(0).max(60).optional(), skipWeekends: z.boolean().optional() }).optional(),

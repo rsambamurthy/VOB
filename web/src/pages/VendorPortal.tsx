@@ -19,13 +19,13 @@ import { AgreementsPanel } from '../components/Agreements';
 import { QuestionnairesPanel } from '../components/Questionnaires';
 import { fieldSources, formTabs, useRefreshWhileReading, type DataEntryMode } from '../lib/documentsFirst';
 import { useHelp, useHelpExtra } from '../help/HelpPanel';
-import { rememberWorkspace, saveLanguage, SupplierFrame, supplierSignOut } from '../orders/SupplierShell';
+import { rememberWorkspace, saveLanguage, SupplierFrame, supplierSignOut, type SupplierInfo } from '../orders/SupplierShell';
 import { PoweredBy } from '../components/Brand';
 import { setLang, t, useLang, type Lang } from '../i18n';
 import { Rich } from '../i18n/Rich';
 import { TabStrip } from '../components/TabStrip';
 
-type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; correctiveActions: ActionView[] };
+type Me = { config: { sections: SectionDef[]; guide: { title: string; body: string }[]; levels: string[] }; vendor: VendorFull; checklist: ChecklistItem[]; docRequirements: DocRequirement[]; editable: boolean; sendBackRemarks?: string; buyer: { name: string; branding: Branding; workspace?: string; languages?: Lang[] } & Partial<LocaleInfo>; language?: Lang; verifiable: Verifiable[]; orders: { enabled: boolean; pending: number }; signedInAs?: string; checks: Check[]; extractions: Extraction[]; lifecycle: Lifecycle | null; privacy: Privacy; dataEntry?: DataEntryMode; agreements: AgreementView[]; questionnaires: QuestionnaireView[]; correctiveActions: ActionView[]; sourcing?: SupplierInfo['sourcing'] };
 type Privacy = { version: number; text: string; contactEmail: string | null; needsConsent: boolean; consentAt: string | null; consentVersion: number | null; erasureRequestedAt: string | null };
 type Lifecycle = { blocked: boolean; hold: { reason: string | null } | null; flags: Flag[]; lastConfirmedAt: string | null; nextReviewAt: string | null; changeRequests: ChangeRequest[] };
 
@@ -67,6 +67,8 @@ export function VendorPortal() {
       const r = await api<Me>('/vendor');
       // Automatic data entry: the supplier always starts on the documents (the first step), also on return visits.
       if (!startedRef.current) { startedRef.current = true; if (r.dataEntry === 'automatic' && r.editable) setTab('documents'); }
+      // Outside bidders (sourcing) go to their events instead of the onboarding form, once the privacy notice is accepted.
+      if (r.sourcing?.bidderOnly && !r.privacy.needsConsent) { nav('/vendor/events', { replace: true }); return; }
       setMe(r); setLocaleInfo(r.buyer); setLang(r.language ?? 'en'); rememberWorkspace(r.buyer.workspace); setProfile((p) => (!reset && Object.keys(p).length && dirtyRef.current.size ? p : r.vendor.profile)); applyBranding(r.buyer.branding);
     } catch (e) { if (e instanceof ApiError && e.status === 401) nav('/vendor/expired'); }
   }, [nav]);

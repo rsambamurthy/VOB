@@ -225,6 +225,55 @@
       "when": 1794986182660,
       "tag": "0031_sourcing_foundations",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794990809329,
+      "tag": "0032_sourcing_events_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795112427378,
+      "tag": "0033_sourcing_bidders",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795113960436,
+      "tag": "0034_sourcing_sealed_bids",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795115564343,
+      "tag": "0035_sourcing_live",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795117628537,
+      "tag": "0036_sourcing_awards",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795124754081,
+      "tag": "0037_performance_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795153411809,
+      "tag": "0038_contracts_foundations",
+      "breakpoints": true
     }
   ]
 }

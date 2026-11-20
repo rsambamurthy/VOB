@@ -23,23 +23,25 @@ export function StaffShell() {
   if (!me) return null;
   const product = me.tenant.branding.productName ?? 'VendorGate';
   const initials = me.user.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
-  const collab = me.plan?.features.collab ?? false;
+  const onb = me.plan?.features.onboarding !== false;
+  const collab = onb && (me.plan?.features.collab ?? false);
+  const contracts = !!me.contracts?.on && can('contracts.view');
 
   const keep = (items: L[]) => items.filter((i) => i.show).map(({ show: _s, ...l }) => l);
   const group = (key: string, label: string, icon: string, items: L[]): FrameGroup | null => { const k = keep(items); return k.length ? { key, label, icon, items: k } : null; };
   const entries = [
     ...keep([
-      { to: '/staff/dashboard', label: 'Dashboard', icon: 'dashboard', show: can('reports.view') },
-      { to: '/staff/ask', label: `Ask ${product}`, icon: 'ask', tag: 'AI', show: can('vendors.view') && me.tenant.settings.askAi !== false },
+      { to: '/staff/dashboard', label: 'Dashboard', icon: 'dashboard', show: onb && can('reports.view') },
+      { to: '/staff/ask', label: `Ask ${product}`, icon: 'ask', tag: 'AI', show: onb && can('vendors.view') && me.tenant.settings.askAi !== false },
     ]),
     group('vendors', 'Vendors', 'vendors', [
-      { to: '/staff/vendors', label: 'All vendors', icon: 'vendors', end: true, show: can('vendors.view') },
-      { to: '/staff/applications', label: 'Applications', icon: 'apply', count: applications || undefined, countLabel: 'waiting for review', show: can('vendors.create') },
-      { to: '/staff/queue', label: 'My approvals', icon: 'approvals', show: can('vendors.view') },
-      { to: '/staff/changes', label: 'Change requests', icon: 'changes', show: can('vendors.view') },
-      { to: '/staff/scorecards', label: 'Scorecards', icon: 'scorecard', show: can('vendors.view') },
-      { to: '/staff/risk', label: 'Risk', icon: 'risk', show: can('vendors.view') },
-      { to: '/staff/actions', label: 'Corrective actions', icon: 'actions', show: can('vendors.view') },
+      { to: '/staff/vendors', label: 'All vendors', icon: 'vendors', end: true, show: onb && can('vendors.view') },
+      { to: '/staff/applications', label: 'Applications', icon: 'apply', count: applications || undefined, countLabel: 'waiting for review', show: onb && can('vendors.create') },
+      { to: '/staff/queue', label: 'My approvals', icon: 'approvals', show: onb && can('vendors.view') },
+      { to: '/staff/changes', label: 'Change requests', icon: 'changes', show: onb && can('vendors.view') },
+      { to: '/staff/scorecards', label: 'Scorecards', icon: 'scorecard', show: onb && can('vendors.view') },
+      { to: '/staff/risk', label: 'Risk', icon: 'risk', show: onb && can('vendors.view') },
+      { to: '/staff/actions', label: 'Corrective actions', icon: 'actions', show: onb && can('vendors.view') },
     ]),
     group('purchasing', 'Purchasing', 'orders', [
       { to: '/staff/orders', label: 'Purchase orders', icon: 'orders', show: collab && can('orders.view') },
@@ -47,17 +49,22 @@ export function StaffShell() {
       { to: '/staff/payments', label: 'Payments', icon: 'payments', show: collab && can('invoices.manage') },
       { to: '/staff/admin/purchasing', label: 'Purchasing setup', icon: 'setup', show: collab && (can('orders.manage') || can('tenant.settings')) },
     ]),
-    group('sourcing', 'Sourcing', 'sourcing', [
-      { to: '/staff/sourcing', label: 'Events', icon: 'sourcing', end: true, show: !!me.sourcing?.on && can('sourcing.view') },
+    group('contracts', 'Contracts', 'contracts', [
+      { to: '/staff/contracts', label: 'All contracts', icon: 'contracts', end: true, show: contracts },
+      { to: '/staff/parties', label: 'Parties', icon: 'parties', show: contracts },
     ]),
-    ...keep([{ to: '/staff/reports', label: 'Reports', icon: 'reports', show: can('reports.view') }]),
+    group('sourcing', 'Sourcing', 'sourcing', [
+      { to: '/staff/sourcing', label: 'Events', icon: 'sourcing', end: true, show: onb && !!me.sourcing?.on && can('sourcing.view') },
+    ]),
+    ...keep([{ to: '/staff/reports', label: 'Reports', icon: 'reports', show: onb && can('reports.view') }]),
     group('admin', 'Administration', 'config', [
       { to: '/staff/admin/users', label: 'Users', icon: 'users', show: can('users.manage') },
       { to: '/staff/admin/roles', label: 'Roles', icon: 'roles', show: can('users.manage') },
-      { to: '/staff/admin/config', label: 'Configuration', icon: 'config', show: can('config.manage') },
-      { to: '/staff/admin/agreements', label: 'Agreements', icon: 'agreement', show: can('config.manage') },
-      { to: '/staff/admin/questionnaires', label: 'Questionnaires', icon: 'questionnaire', show: can('config.manage') },
+      { to: '/staff/admin/config', label: 'Configuration', icon: 'config', show: onb && can('config.manage') },
+      { to: '/staff/admin/agreements', label: 'Agreements', icon: 'agreement', show: onb && can('config.manage') },
+      { to: '/staff/admin/questionnaires', label: 'Questionnaires', icon: 'questionnaire', show: onb && can('config.manage') },
       { to: '/staff/admin/sourcing', label: 'Sourcing', icon: 'sourcing', show: can('tenant.settings') && !!me.plan?.features.sourcing },
+      { to: '/staff/admin/contracts', label: 'Contracts', icon: 'contracts', show: can('tenant.settings') && !!me.plan?.features.contracts },
       { to: '/staff/admin/workspace', label: 'Workspace', icon: 'workspace', show: can('tenant.settings') },
       { to: '/staff/admin/sign-in', label: 'Sign-in & SSO', icon: 'signin', show: can('tenant.settings') },
       { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },
@@ -77,7 +84,7 @@ export function StaffShell() {
       product={product}
       workspace={me.tenant.name}
       entries={entries}
-      search={can('vendors.view') && me.tenant.settings.askAi !== false ? <AskBox /> : undefined}
+      search={onb && can('vendors.view') && me.tenant.settings.askAi !== false ? <AskBox /> : undefined}
       navLabel="Navigation"
       menuLabels={{ open: 'Open menu', close: 'Close menu', collapse: 'Collapse sidebar', expand: 'Expand sidebar' }}
       actions={<>

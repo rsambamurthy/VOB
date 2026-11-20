@@ -85,8 +85,8 @@ export async function seed() {
   });
   const { tenant: acme, role } = await makeTenant('acme', 'Acme Industries Ltd', { productName: 'VendorGate', primaryColor: '#1f2758' },
     [{ key: 'COMPLIANCE', name: 'Compliance Officer', description: 'Extra checks for foreign vendors', permissions: ['vendors.view'] }], acmeConfig);
-  // Demo workspace includes the Sourcing add-on (switched off until the administrator turns it on).
-  await db.update(schema.tenants).set({ limits: { features: { sourcing: true } } }).where(eq(schema.tenants.id, acme.id));
+  // Demo workspace includes the Sourcing and Contracts add-ons (switched off until the administrator turns them on).
+  await db.update(schema.tenants).set({ limits: { features: { sourcing: true, contracts: true } } }).where(eq(schema.tenants.id, acme.id));
   const admin = await makeUser(acme, 'Anita Rao', 'admin@acme.test', [role('ADMIN')], hash);
   await makeUser(acme, 'Deepak Menon', 'vendoradmin@acme.test', [role('VENDOR_ADMIN')], hash);
   const tax = await makeUser(acme, 'Suresh Iyer', 'tax@acme.test', [role('TAX_MANAGER')], hash);
@@ -96,6 +96,7 @@ export async function seed() {
   await makeUser(acme, 'Joseph Mathew', 'compliance@acme.test', [role('COMPLIANCE')], hash);
   // A second Master Data Manager, so a change one of them proposes can be approved by the other.
   await makeUser(acme, 'Kiran Patel', 'mdm2@acme.test', [role('MDM_MANAGER')], hash);
+  await makeUser(acme, 'Rahul Verma', 'buyer@acme.test', [role('BUYER')], hash);
 
   const [approved] = await db.insert(vendors).values({
     tenantId: acme.id, code: 'VND-00001', name: 'Precision Valves Pvt Ltd', vendorType: 'DOMESTIC', contactFirstName: 'Rahul', contactLastName: 'Deshmukh',

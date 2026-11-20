@@ -24,6 +24,8 @@ export const PERMISSIONS = {
   'sourcing.open': 'Be on the opening committee for sealed bids',
   'sourcing.evaluate': 'Score technical offers and evaluate bids',
   'sourcing.live': 'Control live auctions (pause, extend, message bidders)',
+  'contracts.view': 'View contracts and contract parties',
+  'contracts.manage': 'Create and edit contracts and parties, upload and import them',
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -31,6 +33,7 @@ export type Permission = keyof typeof PERMISSIONS;
 /** Permissions that only mean something when a plan feature is included; hidden from the Roles screen otherwise. */
 export const PERMISSION_FEATURE: Partial<Record<Permission, import('./features.js').Feature>> = {
   'sourcing.view': 'sourcing', 'sourcing.events': 'sourcing', 'sourcing.open': 'sourcing', 'sourcing.evaluate': 'sourcing', 'sourcing.live': 'sourcing',
+  'contracts.view': 'contracts', 'contracts.manage': 'contracts',
 };
 /** The permission list to show for a workspace, given its plan features. */
 export function visiblePermissions(features: Record<string, boolean>) {
@@ -47,4 +50,5 @@ export const DEFAULT_ROLES: { key: string; name: string; description: string; pe
   { key: 'MDM_MANAGER', name: 'Master Data Manager', description: 'Final approval and ERP export', permissions: ['vendors.view', 'vendors.export', 'vendors.block', 'vendors.edit', 'reports.view', 'actions.manage'] },
   { key: 'BUYER', name: 'Buyer', description: 'Purchase orders and supplier collaboration', permissions: ['vendors.view', 'orders.view', 'orders.manage', 'reports.view', 'sourcing.view', 'sourcing.events', 'sourcing.evaluate', 'sourcing.live'] },
   { key: 'VIEWER', name: 'Viewer', description: 'Read-only access', permissions: ['vendors.view', 'reports.view'] },
+  { key: 'CONTRACT_MANAGER', name: 'Contract Manager', description: 'Supplier and customer contracts', permissions: ['contracts.view', 'contracts.manage', 'reports.view'] },
 ];

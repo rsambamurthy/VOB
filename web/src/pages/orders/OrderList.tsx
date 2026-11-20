@@ -162,7 +162,7 @@ function MapModal({ onClose, onDone }: { onClose: () => void; onDone: () => void
   const [pick, setPick] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
   const load = () => api('/orders/unmapped').then(setCodes);
-  useEffect(() => { load(); api('/staff/vendors?status=APPROVED').then((r) => setVendors(r.vendors)).catch(() => {}); }, []);
+  useEffect(() => { load(); api('/staff/vendors/options?status=APPROVED').then((r) => setVendors(r.vendors)).catch(() => {}); }, []);
   async function link(code: string) {
     try { const r = await api('/orders/map-supplier', { body: { code, vendorId: pick[code] } }); setMsg({ kind: 'success', text: `${code} linked — ${r.attached} order${r.attached === 1 ? '' : 's'} sent to the supplier.` }); load(); onDone(); }
     catch (e: any) { setMsg({ kind: 'error', text: e.message }); }

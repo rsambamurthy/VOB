@@ -6,12 +6,15 @@
  * the others are on unless switched off.
  */
 export const FEATURES = {
+  /** The supplier onboarding product. On for every workspace unless switched off (e.g. a Contracts-only plan). */
+  onboarding: { label: 'Supplier onboarding' },
   erp: { label: 'ERP integration' },
   ai: { label: 'AI features' },
   kyc: { label: 'Verification checks (GSTIN, PAN, bank)' },
-  collab: { label: 'Supplier collaboration (purchase orders)' },
-  sourcing: { label: 'Sourcing (RFQs and e-auctions)', addOn: true },
-} as const satisfies Record<string, { label: string; addOn?: boolean }>;
+  collab: { label: 'Supplier collaboration (purchase orders)', requires: 'onboarding' },
+  sourcing: { label: 'Sourcing (RFQs and e-auctions)', addOn: true, requires: 'onboarding' },
+  contracts: { label: 'Contracts (supplier and customer)', addOn: true },
+} as const satisfies Record<string, { label: string; addOn?: boolean; requires?: string }>;
 
 export type Feature = keyof typeof FEATURES;
 export const FEATURE_KEYS = Object.keys(FEATURES) as Feature[];
@@ -19,9 +22,13 @@ export const FEATURE_LABELS = Object.fromEntries(FEATURE_KEYS.map((k) => [k, FEA
 export const isAddOn = (f: Feature) => 'addOn' in FEATURES[f] && !!(FEATURES[f] as { addOn?: boolean }).addOn;
 
 /** Resolve a partial feature map: add-ons need an explicit true, the rest an explicit false to be off. */
+/** A feature that only works with another (purchase orders and sourcing need the supplier records onboarding keeps). */
+export const requiresOf = (f: Feature) => (FEATURES[f] as { requires?: Feature }).requires;
 export function resolveFeatures(...layers: (Partial<Record<Feature, boolean>> | undefined)[]): Record<Feature, boolean> {
   const merged: Partial<Record<Feature, boolean>> = Object.assign({}, ...layers.filter(Boolean));
-  return Object.fromEntries(FEATURE_KEYS.map((k) => [k, isAddOn(k) ? merged[k] === true : merged[k] !== false])) as Record<Feature, boolean>;
+  const on = Object.fromEntries(FEATURE_KEYS.map((k) => [k, isAddOn(k) ? merged[k] === true : merged[k] !== false])) as Record<Feature, boolean>;
+  for (const k of FEATURE_KEYS) { const r = requiresOf(k); if (r && !on[r]) on[k] = false; }
+  return on;
 }
 
 /**

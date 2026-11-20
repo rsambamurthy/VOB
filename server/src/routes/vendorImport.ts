@@ -7,8 +7,9 @@
  * the whole file is clean, then all rows are created together.
  */
 import { Router } from 'express';
-import multer from 'multer';
 import ExcelJS from 'exceljs';
+import { cellValue, colName } from '../lib/excel.js';
+import { excelUpload } from '../lib/upload.js';
 import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
@@ -27,7 +28,7 @@ import type { FieldDef, OnboardingConfig } from '../config/types.js';
 import type { Tenant } from '../db/schema.js';
 
 export const vendorImportRouter = Router();
-const fileUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+
 const MAX_ROWS = 1000;
 type Mode = 'invite' | 'approved';
 const modeOf = (q: unknown): Mode => (q === 'approved' ? 'approved' : 'invite');
@@ -102,13 +103,12 @@ vendorImportRouter.get('/template.xlsx', requireStaff('vendors.create'), ah(asyn
   await wb.xlsx.write(res);
   res.end();
 }));
-const colName = (n: number) => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
 
 /* ---------- Upload: preview, then create ---------- */
 
 interface RowResult { row: number; name: string; errors: string[]; warnings: string[] }
 
-vendorImportRouter.post('/', requireStaff('vendors.create'), fileUpload.single('file'), ah(async (req, res) => {
+vendorImportRouter.post('/', requireStaff('vendors.create'), excelUpload.single('file'), ah(async (req, res) => {
   const s = staffCtx(req);
   const mode = modeOf(req.query.mode);
   if (!req.file) throw new HttpError(400, 'Choose the Excel file to upload');
@@ -232,13 +232,3 @@ vendorImportRouter.post('/', requireStaff('vendors.create'), fileUpload.single('
   res.json({ ok: true, applied: true, mode, summary, created, rows: results });
 }));
 
-/** A cell as text: dates as YYYY-MM-DD, numbers without Excel's formatting, formulas by their result. */
-function cellValue(c: ExcelJS.Cell, type?: string): string {
-  let v: any = c.value;
-  if (v && typeof v === 'object' && 'result' in v) v = v.result;
-  if (v && typeof v === 'object' && 'richText' in v) v = v.richText.map((t: any) => t.text).join('');
-  if (v && typeof v === 'object' && 'text' in v) v = v.text; // hyperlink cells (emails, websites)
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  if (typeof v === 'number') return type === 'date' && v > 20000 && v < 80000 ? new Date(Math.round((v - 25569) * 86_400_000)).toISOString().slice(0, 10) : String(v);
-  return String(v ?? '').trim();
-}

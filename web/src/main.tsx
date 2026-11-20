@@ -61,7 +61,14 @@ import { Risk } from './pages/Risk';
 import { Licence } from './pages/admin/Licence';
 import { SourcingSettings } from './pages/admin/Sourcing';
 import { SourcingEvents } from './pages/sourcing/Events';
+import { EventDetail } from './pages/sourcing/EventDetail';
+import { BidderEvent, BidderEventList } from './pages/sourcing/BidderEvents';
 import { CorrectiveActions } from './pages/CorrectiveActions';
+import { ContractsSettings } from './pages/admin/Contracts';
+import { ContractsList } from './pages/contracts/Contracts';
+import { ContractDetail } from './pages/contracts/ContractDetail';
+import { PartiesList, PartyDetail } from './pages/contracts/Parties';
+import { StaffHome } from './components/StaffHome';
 import { LangGate } from './i18n/LangGate';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -71,13 +78,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <SessionProvider>
           <HelpProvider>
           <Routes>
-            <Route path="/" element={<Navigate to="/staff/vendors" replace />} />
+            <Route path="/" element={<Navigate to="/staff" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/accept-invite/:token" element={<AcceptInvite />} />
             <Route path="/staff" element={<RequireStaff><ConfigProvider><StaffShell /></ConfigProvider></RequireStaff>}>
-              <Route index element={<Navigate to="vendors" replace />} />
+              <Route index element={<StaffHome />} />
               <Route path="vendors" element={<VendorList />} />
               <Route path="queue" element={<VendorList mine />} />
               <Route path="vendors/import" element={<VendorImport />} />
@@ -93,6 +100,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/licence" element={<Licence />} />
               <Route path="admin/sourcing" element={<SourcingSettings />} />
               <Route path="sourcing" element={<SourcingEvents />} />
+              <Route path="sourcing/events/:id" element={<EventDetail />} />
+              <Route path="admin/contracts" element={<ContractsSettings />} />
+              <Route path="contracts" element={<ContractsList />} />
+              <Route path="contracts/:id" element={<ContractDetail />} />
+              <Route path="parties" element={<PartiesList />} />
+              <Route path="parties/:id" element={<PartyDetail />} />
               <Route path="admin/help-topics" element={<HelpTopics />} />
               <Route path="account" element={<Account />} />
               <Route path="admin/users" element={<Users />} />
@@ -145,6 +158,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/vendor/invoices/:id" element={<SupplierShell><SupplierInvoiceDetail /></SupplierShell>} />
             <Route path="/vendor/payments" element={<SupplierShell><SupplierPayments /></SupplierShell>} />
             <Route path="/vendor/performance" element={<SupplierShell><SupplierPerformance /></SupplierShell>} />
+            <Route path="/vendor/events" element={<SupplierShell><BidderEventList /></SupplierShell>} />
+            <Route path="/vendor/events/:id" element={<SupplierShell><BidderEvent /></SupplierShell>} />
             <Route path="/s/:workspace" element={<SupplierLogin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

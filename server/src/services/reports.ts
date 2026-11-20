@@ -7,7 +7,8 @@ import ExcelJS from 'exceljs';
 import { db, schema } from '../lib/db.js';
 import type { Profile } from '../lib/profileEngine.js';
 import { directApprovers } from './approvers.js';
-import { flagsForMany, daysUntil } from './lifecycle.js';
+import { approvedVendorFlags, daysUntil } from './lifecycle.js';
+import { cached } from '../lib/cache.js';
 import { getConfig } from './config.js';
 import { DEFAULT_HOME, packFor, vendorTypesFor } from '../countries/registry.js';
 import { maskField } from '../lib/fieldCrypto.js';
@@ -46,7 +47,12 @@ const str = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 
 /* =========================== Dashboard =========================== */
 
-export async function dashboard(tenantId: string, f: Filters) {
+/** Dashboard figures: cached for 15 seconds per workspace and filter (they are trends, and the busiest screen). */
+const minute = (d: Date) => Math.floor(d.getTime() / 60_000);
+export const dashboard = (tenantId: string, f: Filters) =>
+  cached(`vendors:${tenantId}:dashboard:${minute(f.from)}:${minute(f.to)}:${f.vendorType ?? ''}`, 15_000, () => computeDashboard(tenantId, f));
+
+async function computeDashboard(tenantId: string, f: Filters) {
   const now = new Date();
   const T = eq(vendors.tenantId, tenantId);
 
@@ -138,9 +144,8 @@ export async function dashboard(tenantId: string, f: Filters) {
   });
 
   // Headline tiles.
-  const approvedAll = await db.select({ id: vendors.id, status: vendors.status, blockedAt: vendors.blockedAt, reviewStatus: vendors.reviewStatus, nextReviewAt: vendors.nextReviewAt })
-    .from(vendors).where(and(T, eq(vendors.status, 'APPROVED'), ...vt(f)));
-  const flags = await flagsForMany(tenantId, approvedAll);
+  const { rows: approvedRows, flags } = await approvedVendorFlags(tenantId);
+  const approvedAll = f.vendorType ? approvedRows.filter((v) => v.vendorType === f.vendorType) : approvedRows;
   const tiles = {
     approvedInRange: approved.length,
     invitedInRange: cohort.length,

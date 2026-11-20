@@ -88,3 +88,14 @@ export async function approvedVendor(name: string, email: string, opts: Paramete
   return r;
 }
 
+
+/** Sign an existing supplier in to the portal (one-time code) with the privacy notice accepted. */
+export async function portalAs(vendorId: string) {
+  const v = (await db.query.vendors.findFirst({ where: eq(schema.vendors.id, vendorId) }))!;
+  const c = client();
+  const { devOtp } = (await c.post('/api/vendor-auth/request-otp', { token: v.inviteToken })).body;
+  await c.post('/api/vendor-auth/verify-otp', { token: v.inviteToken, code: devOtp });
+  const me = (await c.get('/api/vendor')).body;
+  if (me.privacy?.needsConsent) await c.post('/api/vendor/consent', { version: me.privacy.version });
+  return c;
+}

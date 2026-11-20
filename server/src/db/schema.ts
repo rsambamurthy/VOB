@@ -26,7 +26,7 @@ function sealedJson<T>() {
     fromDriver: (v) => openJson<T>(parse(v)),
   });
 }
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import type { OnboardingConfig } from '../config/types.js';
 
@@ -94,6 +94,8 @@ export interface TenantSettings {
   requireMfa?: boolean;
   /** Sourcing (RFQs and e-auctions): workspace switch, formats, sub-features, rule defaults and locks. See services/sourcing/config.ts. */
   sourcing?: import('../services/sourcing/config.js').SourcingSettings;
+  /** Contracts: workspace switch, contract types, options, rule defaults and locks. See services/contracts/config.ts. */
+  contracts?: import('../lib/moduleConfig.js').ModuleSettings;
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
   reKycMonths?: number;
   sessionHours?: number;
@@ -302,13 +304,17 @@ export const vendors = pgTable('vendors', {
   identityKeys: text('identity_keys').array(),
   /* ---- Risk monitoring (services/risk.ts) ---- */
   /** 0–100, higher = riskier; LOW · MEDIUM · HIGH; the signals behind it. Recomputed daily and when the supplier is opened. */
+  /** Created to bid in a sourcing event (outside bidder): not asked to onboard until awarded or the buyer starts onboarding. */
+  bidderOnly: boolean('bidder_only').notNull().default(false),
+  /** When an outside bidder completed the short bidder registration. */
+  bidderRegisteredAt: timestamp('bidder_registered_at', { withTimezone: true }),
   riskScore: integer('risk_score'),
   riskBand: text('risk_band'),
   riskSignals: jsonb('risk_signals'),
   riskUpdatedAt: timestamp('risk_updated_at', { withTimezone: true }),
   /** When registration status and sanctions were last re-checked by monitoring. */
   lastMonitoredAt: timestamp('last_monitored_at', { withTimezone: true }),
-}, (t) => [uniqueIndex('vendors_tenant_code_uq').on(t.tenantId, t.code), index('vendors_tenant_status_idx').on(t.tenantId, t.status), index('vendors_identity_keys_idx').using('gin', t.identityKeys), index('vendors_tenant_risk_idx').on(t.tenantId, t.riskScore)]);
+}, (t) => [uniqueIndex('vendors_tenant_code_uq').on(t.tenantId, t.code), index('vendors_tenant_status_idx').on(t.tenantId, t.status), index('vendors_identity_keys_idx').using('gin', t.identityKeys), index('vendors_tenant_risk_idx').on(t.tenantId, t.riskScore), index('vendors_tenant_updated_idx').on(t.tenantId, t.updatedAt)]);
 
 export const otpCodes = pgTable('otp_codes', {
   id: id(),
@@ -347,7 +353,7 @@ export const documents = pgTable('documents', {
   uploadedById: text('uploaded_by_id'),
   supersededAt: timestamp('superseded_at', { withTimezone: true }),
   uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index('documents_vendor_idx').on(t.vendorId, t.status)]);
 
 /** Online checks (GSTIN, PAN, bank penny-drop, CIN). Inputs are stored masked + hashed, never in full. */
 export const verifications = pgTable('verifications', {
@@ -474,7 +480,9 @@ export const auditLogs = pgTable('audit_logs', {
   detail: jsonb('detail'),
   ip: text('ip'),
   createdAt: createdAt(),
-}, (t) => [index('audit_tenant_created_idx').on(t.tenantId, t.createdAt)]);
+}, (t) => [index('audit_tenant_created_idx').on(t.tenantId, t.createdAt), index('audit_vendor_idx').on(t.vendorId, t.createdAt),
+  // Sourcing history and the approval engine look up audit rows by the event / subject in `detail`.
+  index('audit_event_idx').on(sql`(${t.detail}->>'eventId')`), index('audit_subject_idx').on(sql`(${t.detail}->>'subjectId')`)]);
 
 /** Versioned onboarding configuration. One PUBLISHED and at most one DRAFT per tenant. */
 export const tenantConfigs = pgTable('tenant_configs', {
@@ -689,7 +697,10 @@ export const poReceipts = pgTable('po_receipts', {
 /** Outbound messages to the ERP about orders: ACCEPTANCE · ASN · ASN_CANCEL · INVOICE. */
 export const poMessages = pgTable('po_messages', {
   id: id(), tenantId: tenantId(),
-  poId: text('po_id').notNull().references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  poId: text('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  /** Award messages (kind AWARD): the sourcing event and the winning supplier, instead of a purchase order. */
+  eventId: text('event_id'),
+  vendorId: text('vendor_id'),
   kind: text('kind').notNull(),
   connector: text('connector').notNull(),
   /** PENDING · SENT · TEST · FAILED · NO_CONNECTOR */
@@ -833,6 +844,8 @@ export const agreements = pgTable('agreements', {
   sortOrder: integer('sort_order').notNull().default(0),
   /** ACTIVE · ARCHIVED (no longer asked for; past acceptances kept) */
   status: text('status').notNull().default('ACTIVE'),
+  /** onboarding: asked of suppliers during onboarding · sourcing: terms a buyer picks for a sourcing event */
+  purpose: text('purpose').notNull().default('onboarding'),
   createdAt: createdAt(),
 }, (t) => [index('agreements_tenant_idx').on(t.tenantId, t.status)]);
 
@@ -1309,6 +1322,32 @@ export const sourcingEvents = pgTable('sourcing_events', {
   features: jsonb('features').$type<string[]>().notNull().default([]),
   /** Event terms (an agreement version bidders accept) and the technical questionnaire, when used. */
   termsAgreementId: text('terms_agreement_id'),
+  /** Extra terms for this event only, shown under the agreement. */
+  termsNote: text('terms_note'),
+  /** A template: not an event, copied into new events (number TPL-…). */
+  isTemplate: boolean('is_template').notNull().default(false),
+  /** The buyer's rule choices while drafting; resolved into `rules` when submitted. */
+  ruleChoices: jsonb('rule_choices').$type<Record<string, string | number | null>>().notNull().default({}),
+  /** Approval cycles (each submission starts a new one; see services/approvalFlow.ts). */
+  approvalCycle: integer('approval_cycle').notNull().default(0),
+  /** Technical evaluation (two envelopes): weighted criteria scored 0–10 and the pass mark (%). */
+  scoring: jsonb('scoring').$type<{ criteria: { id: string; label: string; weight: number }[]; passMark: number } | null>(),
+  /** When each envelope was opened by the committee: { single | technical | commercial: ISO time }. */
+  opened: jsonb('opened').$type<Partial<Record<'single' | 'technical' | 'commercial', string>>>().notNull().default({}),
+  technicalDoneAt: timestamp('technical_done_at', { withTimezone: true }),
+  /** Live auction: when it was paused (null = running); resuming moves liveEndsAt out by the pause. */
+  pausedAt: timestamp('paused_at', { withTimezone: true }),
+  liveStartedAt: timestamp('live_started_at', { withTimezone: true }),
+  /** Reminders already sent to bidders before a live auction ("day", "hour"). */
+  reminders: jsonb('reminders').$type<string[]>().notNull().default([]),
+  /** Award: the proposal's note, who proposed it, the status to return to if it is sent back, and when it was approved. */
+  awardNote: text('award_note'),
+  awardProposedById: text('award_proposed_by_id'),
+  awardProposedByName: text('award_proposed_by_name'),
+  awardFromStatus: text('award_from_status'),
+  awardedAt: timestamp('awarded_at', { withTimezone: true }),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
   questionnaireId: text('questionnaire_id'),
   /** Schedule. liveEndsAt moves with auto-extensions. */
   bidDeadline: timestamp('bid_deadline', { withTimezone: true }),
@@ -1364,11 +1403,17 @@ export const sourcingBidders = pgTable('sourcing_bidders', {
   /** Invited from outside VendorGate (light onboarding). */
   outside: boolean('outside').notNull().default(false),
   invitedAt: timestamp('invited_at', { withTimezone: true }).notNull().defaultNow(),
+  invitedByName: text('invited_by_name'),
+  /** When the invitation email went (null = picked but not sent yet). */
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  declineReason: text('decline_reason'),
   respondedAt: timestamp('responded_at', { withTimezone: true }),
   /** Terms accepted and conflict-of-interest declaration. */
   declaration: jsonb('declaration').$type<{ acceptedTermsVersion?: number; noConflict?: boolean; conflictNote?: string; at: string; by: string }>(),
   technicalScore: numeric('technical_score', { precision: 6, scale: 2 }),
   remarks: text('remarks'),
+  /** Why a bidder was qualified or not after the technical evaluation (always set when it differs from the pass mark). */
+  qualificationNote: text('qualification_note'),
 }, (t) => [uniqueIndex('sourcing_bidders_vendor_idx').on(t.eventId, t.vendorId), index('sourcing_bidders_vendor2_idx').on(t.vendorId)]);
 
 /** Sealed offers (RFQ / first round). The content is encrypted and only shown after opening. */
@@ -1402,10 +1447,55 @@ export const sourcingBids = pgTable('sourcing_bids', {
   placedAt: timestamp('placed_at', { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   prevHash: text('prev_hash').notNull(),
   hash: text('hash').notNull(),
-  /** Set (with a reason and a second approver) when an obviously mistaken bid is struck out; the row stays. */
+  /** Bidder name as typed by the person placing it (who, at the supplier). */
+  placedByName: text('placed_by_name'),
+  /** Struck out as an obvious mistake: requested by one person (sourcing.live), confirmed by another. The row stays. */
+  strikeRequestedById: text('strike_requested_by_id'),
+  strikeRequestedByName: text('strike_requested_by_name'),
+  strikeReason: text('strike_reason'),
   invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
   invalidatedReason: text('invalidated_reason'),
-}, (t) => [uniqueIndex('sourcing_bids_seq_idx').on(t.eventId, t.seq), index('sourcing_bids_lot_idx').on(t.lotId, t.amount)]);
+  invalidatedByName: text('invalidated_by_name'),
+}, (t) => [uniqueIndex('sourcing_bids_seq_idx').on(t.eventId, t.seq), index('sourcing_bids_lot_idx').on(t.lotId, t.amount),
+  // Ranking reads each bidder's best valid bid per lot (bestBids in live.ts).
+  index('sourcing_bids_best_idx').on(t.eventId, t.lotId, t.bidderId, t.amount, t.placedAt).where(sql`${t.invalidatedAt} is null`)]);
+
+/** The opening committee: each member's confirmation to open an envelope; it opens when the event's quorum is reached. */
+export const sourcingOpenings = pgTable('sourcing_openings', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  envelope: text('envelope').notNull(),
+  userId: text('user_id').notNull().references(() => users.id),
+  userName: text('user_name').notNull(),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('sourcing_openings_uq').on(t.eventId, t.envelope, t.userId)]);
+
+/** Technical scores: one row per evaluator and bidder, a score 0–10 per criterion. */
+export const sourcingScores = pgTable('sourcing_scores', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  bidderId: text('bidder_id').notNull().references(() => sourcingBidders.id, { onDelete: 'cascade' }),
+  evaluatorId: text('evaluator_id').notNull().references(() => users.id),
+  evaluatorName: text('evaluator_name').notNull(),
+  scores: jsonb('scores').$type<Record<string, number>>().notNull(),
+  comment: text('comment'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('sourcing_scores_uq').on(t.eventId, t.bidderId, t.evaluatorId)]);
+
+/** Clarifications: a bidder's question (or the buyer's own announcement) and the answer, which goes to every bidder without saying who asked. */
+export const sourcingQuestions = pgTable('sourcing_questions', {
+  id: id(), tenantId: tenantId(),
+  eventId: text('event_id').notNull().references(() => sourcingEvents.id, { onDelete: 'cascade' }),
+  /** null = an announcement by the buyer */
+  bidderId: text('bidder_id').references(() => sourcingBidders.id, { onDelete: 'cascade' }),
+  question: text('question'),
+  answer: text('answer'),
+  askedByName: text('asked_by_name'),
+  answeredByName: text('answered_by_name'),
+  /** Set when the answer was shared with every bidder. */
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('sourcing_questions_event_idx').on(t.eventId, t.createdAt)]);
 
 export const sourcingAwards = pgTable('sourcing_awards', {
   id: id(), tenantId: tenantId(),
@@ -1413,8 +1503,15 @@ export const sourcingAwards = pgTable('sourcing_awards', {
   lotId: text('lot_id').notNull().references(() => sourcingLots.id, { onDelete: 'cascade' }),
   bidderId: text('bidder_id').notNull().references(() => sourcingBidders.id),
   amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
-  /** Share of the lot quantity (100 unless split). */
+  /** Share of the lot quantity (100 unless split). The amount is the bidder's price for their share. */
   sharePct: numeric('share_pct', { precision: 5, scale: 2 }).notNull().default('100'),
+  /** The bidder's price for the whole lot, its rank when proposed, and unit prices per line (lineId → price). */
+  lotPrice: numeric('lot_price', { precision: 18, scale: 2 }),
+  rank: integer('rank'),
+  unitPrices: jsonb('unit_prices').$type<Record<string, number>>(),
+  /** ERP: WAITING_ONBOARDING (new supplier not approved yet) · QUEUED · NOT_SENT (no ERP / switched off) */
+  erpStatus: text('erp_status'),
+  letterSentAt: timestamp('letter_sent_at', { withTimezone: true }),
   /** PROPOSED · APPROVED · REJECTED */
   status: text('status').notNull().default('PROPOSED'),
   reason: text('reason'),
@@ -1423,3 +1520,123 @@ export const sourcingAwards = pgTable('sourcing_awards', {
   erpReference: text('erp_reference'),
   createdAt: createdAt(),
 }, (t) => [index('sourcing_awards_event_idx').on(t.eventId)]);
+
+/**
+ * Approval steps for anything that isn't a supplier: sourcing events (and later awards). One generic flow
+ * (services/approvalFlow.ts) — levels and rules are configured like the onboarding approval flow.
+ */
+export const flowSteps = pgTable('flow_steps', {
+  id: id(), tenantId: tenantId(),
+  /** e.g. sourcing_event */
+  subjectType: text('subject_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  cycle: integer('cycle').notNull(),
+  level: integer('level').notNull(),
+  roleId: text('role_id').notNull().references(() => roles.id),
+  label: text('label').notNull(),
+  status: stepStatusEnum('status').notNull(),
+  assigneeUserId: text('assignee_user_id').references(() => users.id),
+  slaHours: integer('sla_hours'),
+  activatedAt: timestamp('activated_at', { withTimezone: true }),
+  dueAt: timestamp('due_at', { withTimezone: true }),
+  remindedAt: timestamp('reminded_at', { withTimezone: true }),
+  remarks: text('remarks'),
+  actedById: text('acted_by_id').references(() => users.id),
+  actedAt: timestamp('acted_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('flow_steps_subject_idx').on(t.subjectType, t.subjectId, t.cycle), index('flow_steps_pending_idx').on(t.tenantId, t.status, t.roleId)]);
+export type FlowStep = typeof flowSteps.$inferSelect;
+
+/* ============================ Contracts (supplier and customer) ============================ */
+
+/**
+ * A contract party: a supplier or a customer. Light on purpose — Contracts works without supplier onboarding. When
+ * onboarding is on, a supplier party can be linked to its supplier record (vendor_id).
+ */
+export const parties = pgTable('parties', {
+  id: id(), tenantId: tenantId(),
+  /** SUPPLIER or CUSTOMER */
+  kind: text('kind').notNull(),
+  /** e.g. "SUP-00012", "CUS-00003" — unique per workspace. */
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  legalName: text('legal_name'),
+  country: text('country').notNull(),
+  registrationNo: text('registration_no'),
+  taxNo: text('tax_no'),
+  address: jsonb('address').$type<{ line1?: string; city?: string; region?: string; postalCode?: string }>().notNull().default({}),
+  email: text('email'),
+  phone: text('phone'),
+  website: text('website'),
+  /** People at the party: who to contact and who signs. */
+  contacts: jsonb('contacts').$type<{ name: string; email?: string; phone?: string; role?: string; signatory?: boolean }[]>().notNull().default([]),
+  vendorId: text('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+  /** ACTIVE or ARCHIVED */
+  status: text('status').notNull().default('ACTIVE'),
+  notes: text('notes'),
+  createdById: text('created_by_id'),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (t) => [uniqueIndex('parties_tenant_code_uq').on(t.tenantId, t.code), index('parties_tenant_kind_idx').on(t.tenantId, t.kind, t.name), index('parties_vendor_idx').on(t.vendorId)]);
+export type Party = typeof parties.$inferSelect;
+
+/** A contract with a supplier (BUY) or a customer (SELL). */
+export const contracts = pgTable('contracts', {
+  id: id(), tenantId: tenantId(),
+  /** e.g. "MSA-2026-0004" — per type and year, unique per workspace. */
+  number: text('number').notNull(),
+  /** The contract's own reference (e.g. from the counterparty or an earlier system). */
+  reference: text('reference'),
+  title: text('title').notNull(),
+  /** BUY (supplier contract) or SELL (customer contract) */
+  direction: text('direction').notNull(),
+  /** Key in CONTRACT_TYPES (services/contracts/config.ts). */
+  type: text('type').notNull(),
+  partyId: text('party_id').notNull().references(() => parties.id),
+  /** DRAFT · ACTIVE · EXPIRED · TERMINATED (later steps add approval, negotiation and signature states). */
+  status: text('status').notNull().default('DRAFT'),
+  value: numeric('value', { precision: 18, scale: 2 }),
+  currency: text('currency').notNull(),
+  startDate: date('start_date', { mode: 'string' }),
+  /** Empty = no fixed end (evergreen). */
+  endDate: date('end_date', { mode: 'string' }),
+  signedDate: date('signed_date', { mode: 'string' }),
+  autoRenew: boolean('auto_renew').notNull().default(false),
+  renewalTermMonths: integer('renewal_term_months'),
+  noticeDays: integer('notice_days'),
+  ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
+  /** A statement of work or order under a master agreement. */
+  parentId: text('parent_id'),
+  /** Created from a sourcing award. */
+  sourcingEventId: text('sourcing_event_id'),
+  description: text('description'),
+  category: text('category'),
+  /** MANUAL · IMPORT · AWARD · TEMPLATE */
+  source: text('source').notNull().default('MANUAL'),
+  terminatedAt: timestamp('terminated_at', { withTimezone: true }),
+  terminationReason: text('termination_reason'),
+  createdById: text('created_by_id'),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (t) => [uniqueIndex('contracts_tenant_number_uq').on(t.tenantId, t.number), index('contracts_tenant_status_idx').on(t.tenantId, t.status, t.endDate), index('contracts_party_idx').on(t.partyId), index('contracts_parent_idx').on(t.parentId)]);
+export type Contract = typeof contracts.$inferSelect;
+
+/** Files on a contract: the signed copy, drafts, annexures. Stored like supplier documents (scanned, random names). */
+export const contractFiles = pgTable('contract_files', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  /** SIGNED · DRAFT · ANNEXURE · OTHER */
+  kind: text('kind').notNull(),
+  fileName: text('file_name').notNull(),
+  mimeType: text('mime_type').notNull(),
+  size: integer('size').notNull(),
+  storagePath: text('storage_path').notNull(),
+  storageDriver: text('storage_driver').notNull().default('local'),
+  sha256: text('sha256'),
+  scanStatus: text('scan_status').notNull().default('SKIPPED'),
+  uploadedByName: text('uploaded_by_name').notNull(),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('contract_files_contract_idx').on(t.contractId)]);
+export type ContractFile = typeof contractFiles.$inferSelect;

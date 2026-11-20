@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { db } from './lib/db.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
+import { moduleGuard } from './lib/modules.js';
 import cookieParser from 'cookie-parser';
 import { pinoHttp } from 'pino-http';
 import path from 'node:path';
@@ -39,6 +40,7 @@ import { agreementsRouter } from './routes/agreements.js';
 import { questionnairesRouter } from './routes/questionnaires.js';
 import { riskRouter } from './routes/risk.js';
 import { actionsRouter } from './routes/correctiveActions.js';
+import { contractsAdminRouter, contractsRouter, partiesRouter } from './routes/contracts.js';
 import { sourcingAdminRouter, sourcingRouter } from './routes/sourcing.js';
 import { applicationsRouter, applyRouter, registrationLinksRouter } from './routes/applications.js';
 import { configRouter } from './routes/config.js';
@@ -86,7 +88,10 @@ export function createApp() {
     try { res.json({ ok: true, result: await handleRazorpayEvent(JSON.parse(body)) }); }
     catch (e) { logger.warn({ err: String(e) }, 'razorpay webhook failed'); res.status(400).json({ error: 'Could not process event' }); }
   });
-  app.use(express.json({ limit: '1mb' }));
+  // NUL characters can't be stored in Postgres text; drop them from JSON bodies and query strings instead of failing with a 500.
+  const noNul = (v: unknown): unknown => (typeof v === 'string' ? v.replace(/\u0000/g, '') : Array.isArray(v) ? v.map(noNul) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, noNul(x)])) : v);
+  app.use(express.json({ limit: '1mb', reviver: (_k, v) => (typeof v === 'string' ? v.replace(/\u0000/g, '') : v) }));
+  app.use((req, _res, next) => { if (req.url.includes('%00')) Object.defineProperty(req, 'query', { value: noNul(req.query), writable: true, configurable: true }); next(); });
   app.use(cookieParser());
 
   // Used by Railway / load balancers: 200 only when the database answers.
@@ -94,7 +99,9 @@ export function createApp() {
     try { await db.execute(sql`select 1`); res.json({ ok: true, version: env.version, mode: env.onPrem ? 'onprem' : 'cloud' }); }
     catch { res.status(503).json({ ok: false, error: 'database unavailable' }); }
   });
-  app.use('/api', apiLimiter, csrfGuard, loadSessions, supportReadOnly, licenceGuard, loadPlatformSession);
+  // API answers carry personal and commercial data: never stored by browsers or shared caches. (Files set their own.)
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use('/api', apiLimiter, csrfGuard, loadSessions, supportReadOnly, licenceGuard, loadPlatformSession, moduleGuard);
   // On-prem: one customer's installation — no platform console, self-service sign-up or subscription billing.
   if (env.onPrem) for (const path of ['/api/platform', '/api/signup', '/api/admin/billing']) app.use(path, (_req, _res, next) => next(new HttpError(404, 'Not available in this installation', undefined, 'NOT_ONPREM')));
   app.use('/api/admin/licence', licenceRouter);
@@ -112,6 +119,8 @@ export function createApp() {
   app.use('/api/staff/risk', riskRouter);
   app.use('/api/staff/actions', actionsRouter);
   app.use('/api/staff/sourcing', sourcingRouter);
+  app.use('/api/staff/contracts', contractsRouter);
+  app.use('/api/staff/parties', partiesRouter);
   app.use('/api/staff/registration-links', registrationLinksRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);
@@ -120,6 +129,7 @@ export function createApp() {
   app.use('/api/ask', askRouter);
   app.use('/api/admin/billing', billingRouter);
   app.use('/api/admin/sourcing', sourcingAdminRouter);
+  app.use('/api/admin/contracts', contractsAdminRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/v1', erpApiRouter);
   app.use('/api/vendor/orders', supplierOrdersRouter);
@@ -145,9 +155,16 @@ export function createApp() {
     const lang = req.get('x-lang') === 'ar' && /^\/api\/(vendor|vendor-auth|help|documents|agreements|apply)(\/|$)/.test(req.originalUrl) ? 'ar' : 'en';
     const tx = (s: string) => translateMessage(s, lang);
     const txDetails = (d: unknown) => (lang === 'en' || !Array.isArray(d) ? d : d.map((x) => (x && typeof x === 'object' ? { ...x, ...('message' in x && typeof x.message === 'string' ? { message: tx(x.message) } : {}), ...('label' in x && typeof x.label === 'string' ? { label: tx(x.label) } : {}) } : x)));
-    if (err instanceof ZodError) return res.status(400).json({ error: tx(err.issues[0]?.message ?? 'Invalid input'), details: txDetails(err.issues) });
+    // At most 20 problems back: a huge invalid body must not turn into a huge error response.
+    if (err instanceof ZodError) return res.status(400).json({ error: tx(err.issues[0]?.message ?? 'Invalid input'), details: txDetails(err.issues.slice(0, 20)) });
     if (err instanceof HttpError) return res.status(err.status).json({ error: tx(err.message), details: txDetails(err.details), code: err.code });
     if (err instanceof multer.MulterError) return res.status(400).json({ error: tx(err.code === 'LIMIT_FILE_SIZE' ? 'File is larger than 5 MB' : err.message) });
+    // Request bodies that are too large or not valid JSON are the caller's mistake, not a server error.
+    const bodyErr = err as { type?: string; status?: number };
+    // An update with no fields to change (e.g. an empty PATCH) is a bad request.
+    if (err instanceof Error && err.message === 'No values to set') return res.status(400).json({ error: tx('Nothing to change.') });
+    if (bodyErr?.type === 'entity.too.large') return res.status(413).json({ error: tx('The request is too large.') });
+    if (bodyErr?.type === 'entity.parse.failed' || bodyErr?.type === 'encoding.unsupported' || bodyErr?.type === 'charset.unsupported') return res.status(400).json({ error: tx('The request could not be read.') });
     req.log?.error({ err }, 'unhandled error');
     res.status(500).json({ error: 'Something went wrong' });
   });

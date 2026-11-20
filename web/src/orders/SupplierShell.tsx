@@ -22,6 +22,8 @@ export interface SupplierInfo {
   orders: { enabled: boolean; pending: number };
   signedInAs?: string;
   privacy?: { needsConsent: boolean };
+  /** Sourcing is on for the buyer: open invitations; outside bidders (bidderOnly) see only their events. */
+  sourcing?: { invitations: number; bidderOnly: boolean; registered: boolean } | null;
 }
 
 export function rememberWorkspace(ws?: string) { if (ws) try { localStorage.setItem('vg.supplierWorkspace', ws); } catch { /* ignore */ } }
@@ -39,14 +41,17 @@ export function SupplierFrame({ info, onLanguage, children }: { info: SupplierIn
   const { openHelp } = useHelp();
   useLang();
   const product = info.buyer.branding.productName ?? PRODUCT;
+  const bidderOnly = !!info.sourcing?.bidderOnly;
   const entries: FrameEntry[] = [
-    { to: '/vendor', end: true, label: info.vendor.status === 'APPROVED' ? t('shell.navProfileApproved') : t('shell.navProfile'), icon: 'workspace' },
-    ...(info.orders.enabled ? [
+    ...(bidderOnly ? [] : [{ to: '/vendor', end: true, label: info.vendor.status === 'APPROVED' ? t('shell.navProfileApproved') : t('shell.navProfile'), icon: 'workspace' }]),
+    ...(info.sourcing ? [{ to: '/vendor/events', label: t('shell.navEvents'), icon: 'sourcing', count: info.sourcing.invitations || undefined, countLabel: t('shell.waiting', { count: info.sourcing.invitations }) }] : []),
+    // Outside bidders only take part in sourcing events until they are onboarded.
+    ...(info.orders.enabled && !bidderOnly ? [
       { to: '/vendor/orders', label: t('shell.navOrders'), icon: 'orders', count: info.orders.pending, countLabel: t('shell.waiting', { count: info.orders.pending }) },
       { to: '/vendor/invoices', label: t('shell.navInvoices'), icon: 'invoices' },
       { to: '/vendor/payments', label: t('shell.navPayments'), icon: 'payments' },
     ] : []),
-    ...(info.scorecard ? [{ to: '/vendor/performance', label: t('shell.navPerformance'), icon: 'scorecard' }] : []),
+    ...(info.scorecard && !bidderOnly ? [{ to: '/vendor/performance', label: t('shell.navPerformance'), icon: 'scorecard' }] : []),
   ];
   return (
     <AppFrame
@@ -62,7 +67,7 @@ export function SupplierFrame({ info, onLanguage, children }: { info: SupplierIn
         <button className="af-hbtn" onClick={() => openHelp()} title={t('shell.helpTitle')} aria-label={t('common.help')}><NavIcon name="help" size={18} /></button>
         <button className="af-hbtn" onClick={() => supplierSignOut(info.buyer.workspace)} title={t('common.signOut')} aria-label={t('common.signOut')}><NavIcon name="logout" size={18} /></button>
       </>}
-      user={{ initials: monogram(info.vendor.name), name: info.vendor.name, role: statusText(info.vendor.status), title: info.signedInAs }}
+      user={{ initials: monogram(info.vendor.name), name: info.vendor.name, role: bidderOnly ? t('shell.bidder') : statusText(info.vendor.status), title: info.signedInAs }}
       sideFoot={<PoweredBy />}
     >
       {children}
@@ -82,7 +87,7 @@ export function SupplierShell({ children }: { children: ReactNode }) {
   const reload = useCallback(() => {
     api<SupplierInfo>('/vendor').then((r) => {
       // Privacy notice must be accepted first; the profile page shows it.
-      if (r.privacy?.needsConsent || (!r.orders.enabled && !(r.scorecard && loc.pathname.startsWith('/vendor/performance')))) { nav('/vendor', { replace: true }); return; }
+      if (r.privacy?.needsConsent || (!r.orders.enabled && !(r.scorecard && loc.pathname.startsWith('/vendor/performance')) && !(r.sourcing && loc.pathname.startsWith('/vendor/events')))) { nav('/vendor', { replace: true }); return; }
       setInfo(r); setLocaleInfo(r.buyer); rememberWorkspace(r.buyer.workspace); applyBranding(r.buyer.branding); setLang(r.language ?? 'en');
     }).catch((e) => { if (e instanceof ApiError && e.status === 401) nav(`/vendor/expired?next=${encodeURIComponent(loc.pathname)}`, { replace: true }); });
   }, [nav, loc.pathname]);

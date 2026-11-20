@@ -1,3 +1,4 @@
+import { useSession } from '../../lib/session';
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Alert, Empty, Modal } from '../../components/ui';
@@ -6,11 +7,11 @@ import { VENDOR_TYPES } from '../../lib/meta';
 import { agreementFileUrl } from '../../components/Agreements';
 
 interface Version { id: string; version: number; kind: 'TEXT' | 'PDF'; body: string | null; bodyAr: string | null; fileName: string | null; changeNote: string | null; reaccept: boolean; publishedByName: string; publishedAt: string }
-interface Agreement { id: string; title: string; titleAr: string | null; vendorTypes: string[]; required: boolean; status: 'ACTIVE' | 'ARCHIVED'; versions: Version[]; accepted: number; outstanding: number }
+interface Agreement { id: string; title: string; titleAr: string | null; vendorTypes: string[]; required: boolean; purpose: 'onboarding' | 'sourcing'; status: 'ACTIVE' | 'ARCHIVED'; versions: Version[]; accepted: number; outstanding: number }
 interface Content { kind: 'TEXT' | 'PDF'; body: string; bodyAr: string; file?: File; changeNote: string; reaccept: boolean }
-interface Settings { title: string; titleAr: string; vendorTypes: string[]; required: boolean }
+interface Settings { title: string; titleAr: string; vendorTypes: string[]; required: boolean; purpose: 'onboarding' | 'sourcing' }
 const blankContent: Content = { kind: 'TEXT', body: '', bodyAr: '', changeNote: '', reaccept: false };
-const blankSettings: Settings = { title: '', titleAr: '', vendorTypes: [], required: true };
+const blankSettings: Settings = { title: '', titleAr: '', vendorTypes: [], required: true, purpose: 'onboarding' };
 const appliesLabel = (types: string[]) => (!types.length ? 'All suppliers' : types.map((x) => VENDOR_TYPES.find((v) => v.value === x)?.label ?? x).join(', '));
 const contentOk = (c: Content) => (c.kind === 'PDF' ? !!c.file : c.body.trim().length >= 20);
 
@@ -18,7 +19,7 @@ function formData(settings: Partial<Settings> | null, c: Content) {
   const fd = new FormData();
   if (settings) {
     fd.append('title', settings.title ?? ''); if (settings.titleAr) fd.append('titleAr', settings.titleAr);
-    fd.append('vendorTypes', (settings.vendorTypes ?? []).join(',')); fd.append('required', String(settings.required));
+    fd.append('vendorTypes', (settings.vendorTypes ?? []).join(',')); fd.append('required', String(settings.required)); fd.append('purpose', settings.purpose ?? 'onboarding');
   }
   fd.append('kind', c.kind); fd.append('reaccept', String(c.reaccept));
   if (c.kind === 'TEXT') { fd.append('body', c.body); if (c.bodyAr.trim()) fd.append('bodyAr', c.bodyAr); }
@@ -56,11 +57,11 @@ export function Agreements() {
               return (
                 <tr key={a.id} className={a.status === 'ARCHIVED' ? 'muted' : ''}>
                   <td><div className="strong">{a.title} {a.status === 'ARCHIVED' && <span className="badge sm">Archived</span>}</div>
-                    <div className="small muted">{a.required ? 'Required before submitting' : 'Optional'}{a.titleAr ? ` · ${a.titleAr}` : ''}</div></td>
-                  <td className="small">{appliesLabel(a.vendorTypes)}</td>
+                    <div className="small muted">{a.purpose === 'sourcing' ? 'For sourcing events' : a.required ? 'Required before submitting' : 'Optional'}{a.titleAr ? ` · ${a.titleAr}` : ''}</div></td>
+                  <td className="small">{a.purpose === 'sourcing' ? 'Sourcing event terms' : appliesLabel(a.vendorTypes)}</td>
                   <td className="small">v{cur?.version} · {cur?.kind === 'PDF' ? <a href={agreementFileUrl(cur.id)} target="_blank" rel="noreferrer">{cur.fileName}</a> : 'Text'}{cur?.bodyAr ? ' + Arabic' : ''}
                     <div className="muted">{fmtDate(cur?.publishedAt)} · {cur?.publishedByName}</div></td>
-                  <td className="small">{a.accepted} accepted{a.outstanding ? <div className="diff-text">{a.outstanding} to accept</div> : null}</td>
+                  <td className="small">{a.purpose === 'sourcing' ? <span className="muted">Accepted per event</span> : <>{a.accepted} accepted{a.outstanding ? <div className="diff-text">{a.outstanding} to accept</div> : null}</>}</td>
                   <td className="actions small">
                     {a.status === 'ACTIVE' && <><button className="link-btn small" onClick={() => setVersionFor(a)}>New version</button> · </>}
                     <button className="link-btn small" onClick={() => setSettingsFor(a)}>Settings</button> · <button className="link-btn small" onClick={() => setHistoryFor(a)}>History</button> · {a.status === 'ACTIVE'
@@ -82,17 +83,22 @@ export function Agreements() {
 }
 
 function SettingsFields({ s, set }: { s: Settings; set: (s: Settings) => void }) {
+  const { me } = useSession();
+  const sourcing = !!me?.plan?.features.sourcing || s.purpose === 'sourcing';
   return (<>
     <div className="field-grid">
       <div className="field"><label htmlFor="ag-title">Name</label><input id="ag-title" value={s.title} maxLength={150} placeholder="e.g. Supplier Code of Conduct" onChange={(e) => set({ ...s, title: e.target.value })} autoFocus /></div>
       <div className="field"><label htmlFor="ag-title-ar">Name in Arabic (optional)</label><input id="ag-title-ar" dir="rtl" value={s.titleAr} maxLength={150} onChange={(e) => set({ ...s, titleAr: e.target.value })} /></div>
     </div>
-    <div className="field"><label>Applies to</label>
+    {sourcing && <div className="field"><label>Used for</label>
+      <label className="radio" style={{ display: 'block' }}><input type="radio" name="ag-purpose" checked={s.purpose === 'onboarding'} onChange={() => set({ ...s, purpose: 'onboarding' })} /> Supplier onboarding — suppliers accept it in the portal</label>
+      <label className="radio" style={{ display: 'block' }}><input type="radio" name="ag-purpose" checked={s.purpose === 'sourcing'} onChange={() => set({ ...s, purpose: 'sourcing' })} /> Sourcing event terms — buyers pick it for an RFQ or auction; bidders accept it per event</label></div>}
+    {s.purpose === 'onboarding' && <><div className="field"><label>Applies to</label>
       <div className="btn-row">{VENDOR_TYPES.map((v) => (
         <label key={v.value} className="check-item"><input type="checkbox" checked={s.vendorTypes.includes(v.value)} onChange={(e) => set({ ...s, vendorTypes: e.target.checked ? [...s.vendorTypes, v.value] : s.vendorTypes.filter((x) => x !== v.value) })} /><span>{v.label}</span></label>
       ))}</div>
       <div className="field-help">Tick none for all suppliers.</div></div>
-    <label className="check-item"><input type="checkbox" checked={s.required} onChange={(e) => set({ ...s, required: e.target.checked })} /><span><strong>Required</strong><span className="muted small block">Suppliers can’t submit for approval until they accept it. Otherwise it’s offered but optional.</span></span></label>
+    <label className="check-item"><input type="checkbox" checked={s.required} onChange={(e) => set({ ...s, required: e.target.checked })} /><span><strong>Required</strong><span className="muted small block">Suppliers can’t submit for approval until they accept it. Otherwise it’s offered but optional.</span></span></label></>}
   </>);
 }
 
@@ -158,7 +164,7 @@ function VersionModal({ a, onClose, onDone }: { a: Agreement; onClose: () => voi
 }
 
 function SettingsModal({ a, onClose, onDone }: { a: Agreement; onClose: () => void; onDone: (m: string) => void }) {
-  const [s, setS] = useState<Settings>({ title: a.title, titleAr: a.titleAr ?? '', vendorTypes: a.vendorTypes, required: a.required });
+  const [s, setS] = useState<Settings>({ title: a.title, titleAr: a.titleAr ?? '', vendorTypes: a.vendorTypes, required: a.required, purpose: a.purpose });
   const [err, setErr] = useState<string>();
   async function save() {
     try { await api(`/agreements/${a.id}`, { method: 'PUT', body: s }); onDone('Saved.'); } catch (e: any) { setErr(e.message); }

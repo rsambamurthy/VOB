@@ -26,7 +26,8 @@ export interface ConfigIssue { path: string; message: string }
 
 
 export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 'vendors.block' | 'vendors.edit' | 'users.manage' | 'tenant.settings' | 'config.manage' | 'approvals.manage' | 'reports.view' | 'audit.view' | 'orders.view' | 'orders.manage' | 'invoices.manage' | 'actions.manage'
-  | 'sourcing.view' | 'sourcing.events' | 'sourcing.open' | 'sourcing.evaluate' | 'sourcing.live';
+  | 'sourcing.view' | 'sourcing.events' | 'sourcing.open' | 'sourcing.evaluate' | 'sourcing.live'
+  | 'contracts.view' | 'contracts.manage';
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
@@ -35,9 +36,10 @@ export interface Me {
   permissions: Permission[];
   mfaSetupRequired: boolean;
   devMailbox: boolean;
-  plan?: { key: string; label: string; trialEndsAt: string | null; trialExpired: boolean; features: { erp: boolean; ai: boolean; kyc: boolean; collab: boolean; sourcing: boolean } };
+  plan?: { key: string; label: string; trialEndsAt: string | null; trialExpired: boolean; features: { onboarding: boolean; erp: boolean; ai: boolean; kyc: boolean; collab: boolean; sourcing: boolean; contracts: boolean } };
   /** Sourcing (RFQs and e-auctions): on for this workspace, and the formats switched on. */
   sourcing?: { on: boolean; formats: string[] };
+  contracts?: { on: boolean; types: { key: string; label: string; directions: ('BUY' | 'SELL')[] }[]; directions: ('BUY' | 'SELL')[]; linkSuppliers: boolean };
   /** Read-only support session opened from the platform console. */
   support?: { by: string; reason: string | null; endsAt: string };
   /** cloud = the VendorGate service; onprem = a customer's own installation (licence instead of plans and billing). */

@@ -25,7 +25,7 @@ export function AcceptInvite() {
       const r = await api('/auth/accept-invite', { body: { token, name, password: pw } });
       lastWorkspace.set(info!.workspace);
       await refresh();
-      nav(r.mfaSetupRequired ? '/staff/account?setup=1' : '/staff/vendors', { replace: true });
+      nav(r.mfaSetupRequired ? '/staff/account?setup=1' : '/staff', { replace: true });
     } catch (err: any) { setError(err.message); setBusy(false); }
   }
   return (

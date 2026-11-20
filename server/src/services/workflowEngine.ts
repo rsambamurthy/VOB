@@ -121,6 +121,8 @@ export async function decide(tenantId: string, vendorId: string, actor: { id: st
     await audit({ tenantId, vendorId, actor: 'system', action: 'VENDOR_APPROVED' });
     await mailSupplier(await langForVendor(vendor, tenant), { tenantId, to: vendor.contactEmail }, 'approved', { first: vendor.contactFirstName, vendor: vendor.name, code: vendor.code });
     await pushLater(tenantId, vendorId, 'CREATE');
+    // A supplier who won a sourcing award as an outside bidder: the award can now go to the ERP.
+    await (await import('./sourcing/awards.js')).releaseAwardsFor(vendorId).catch((err) => logger.warn({ err, vendorId }, 'waiting awards not released'));
     return { status: 'APPROVED' as const };
   }
 
@@ -189,4 +191,4 @@ export async function sweepOverdue(now = new Date()) {
 }
 
 
-defineJob('sla.sweep', async () => { await sweepOverdue(); await sweepOverdueChanges(); }, { retryLimit: 0, expireInSeconds: 240 });
+defineJob('sla.sweep', async () => { await sweepOverdue(); await sweepOverdueChanges(); await (await import('./approvalFlow.js')).sweepOverdueFlows(); }, { retryLimit: 0, expireInSeconds: 240 });

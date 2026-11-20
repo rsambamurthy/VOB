@@ -25,9 +25,11 @@ export interface PlanDef {
 }
 
 export const PLANS: Record<string, PlanDef> = {
-  trial: { label: 'Trial', maxUsers: 5, maxVendors: 25, emailsPerDay: 200, helpAnswersPerDay: 30, askPerDay: 30, features: { erp: false, ai: false, kyc: true, collab: true, sourcing: false } },
-  standard: { label: 'Standard', maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 300, features: { erp: true, ai: true, kyc: true, collab: true, sourcing: false } },
-  enterprise: { label: 'Enterprise', maxUsers: null, maxVendors: null, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: { erp: true, ai: true, kyc: true, collab: true, sourcing: false } },
+  trial: { label: 'Trial', maxUsers: 5, maxVendors: 25, emailsPerDay: 200, helpAnswersPerDay: 30, askPerDay: 30, features: { onboarding: true, erp: false, ai: false, kyc: true, collab: true, sourcing: false, contracts: false } },
+  standard: { label: 'Standard', maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 300, features: { onboarding: true, erp: true, ai: true, kyc: true, collab: true, sourcing: false, contracts: false } },
+  enterprise: { label: 'Enterprise', maxUsers: null, maxVendors: null, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: { onboarding: true, erp: true, ai: true, kyc: true, collab: true, sourcing: false, contracts: false } },
+  /** Contracts on its own: no supplier onboarding, sourcing or purchase orders. */
+  contracts: { label: 'Contracts', maxUsers: 25, maxVendors: 0, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 0, features: { onboarding: false, erp: true, ai: true, kyc: true, collab: false, sourcing: false, contracts: true } },
 };
 export const PLAN_KEYS = Object.keys(PLANS) as [string, ...string[]];
 

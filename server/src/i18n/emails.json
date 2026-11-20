@@ -548,5 +548,175 @@
       "subject": "متأخر: «{action}»",
       "body": "مرحباً {first}،\n\nكان موعد الإجراء التصحيحي «{action}» الذي طلبه {buyer} في {due} ولم يتم الرد عليه بعد. يُرجى تسجيل الدخول إلى بوابة الموردين وإرسال ملاحظتكم وما يثبت ذلك من قسم الإجراءات التصحيحية في أقرب وقت."
     }
+  },
+  "sourcingInvite": {
+    "en": {
+      "subject": "{buyer}: invitation to {kind} {number}",
+      "body": "Dear {first},\n\n{buyer} invites {vendor} to take part in {kind} {number} “{title}”. {closes}\n\nOpen the link below and sign in with the one-time code sent to this email address. Read the event and its terms, then accept or decline the invitation."
+    },
+    "ar": {
+      "subject": "{buyer}: دعوة للمشاركة في {kind} {number}",
+      "body": "مرحباً {first}،\n\nيدعو {buyer} شركة {vendor} للمشاركة في {kind} {number} «{title}». {closes}\n\nافتحوا الرابط أدناه وسجّلوا الدخول برمز التحقق الذي سيُرسل إلى هذا البريد الإلكتروني. اطّلعوا على الفعالية وشروطها، ثم اقبلوا الدعوة أو اعتذروا عنها."
+    }
+  },
+  "sourcingClosesRfq": {
+    "en": {
+      "subject": "",
+      "body": "Bids close on {when}."
+    },
+    "ar": {
+      "subject": "",
+      "body": "آخر موعد لتقديم العروض: {when}."
+    }
+  },
+  "sourcingClosesAuction": {
+    "en": {
+      "subject": "",
+      "body": "The auction runs from {when}."
+    },
+    "ar": {
+      "subject": "",
+      "body": "يبدأ المزاد في {when}."
+    }
+  },
+  "sourcingKindRfq": {
+    "en": {
+      "subject": "",
+      "body": "request for quotation"
+    },
+    "ar": {
+      "subject": "",
+      "body": "طلب عروض أسعار"
+    }
+  },
+  "sourcingKindAuction": {
+    "en": {
+      "subject": "",
+      "body": "auction"
+    },
+    "ar": {
+      "subject": "",
+      "body": "مزاد"
+    }
+  },
+  "sourcingInviteWithdrawn": {
+    "en": {
+      "subject": "{buyer}: invitation to {number} withdrawn",
+      "body": "Dear {first},\n\n{buyer} has withdrawn the invitation for {vendor} to take part in {number} “{title}”. No further action is needed."
+    },
+    "ar": {
+      "subject": "{buyer}: سحب الدعوة إلى {number}",
+      "body": "مرحباً {first}،\n\nسحب {buyer} دعوة {vendor} للمشاركة في {number} «{title}». لا يلزم أي إجراء آخر."
+    }
+  },
+  "sourcingClarification": {
+    "en": {
+      "subject": "{buyer}: new clarification for {number}",
+      "body": "Dear {first},\n\n{buyer} has published a clarification for {number} “{title}”. It is shared with every bidder. Open the link below to read it."
+    },
+    "ar": {
+      "subject": "{buyer}: توضيح جديد بشأن {number}",
+      "body": "مرحباً {first}،\n\nنشر {buyer} توضيحاً بشأن {number} «{title}»، وهو متاح لجميع المشاركين. افتحوا الرابط أدناه للاطلاع عليه."
+    }
+  },
+  "sourcingCancelled": {
+    "en": {
+      "subject": "{buyer}: {number} cancelled",
+      "body": "Dear {first},\n\n{buyer} has cancelled {number} “{title}”. No further action is needed. Thank you for your interest."
+    },
+    "ar": {
+      "subject": "{buyer}: إلغاء {number}",
+      "body": "مرحباً {first}،\n\nألغى {buyer} {number} «{title}». لا يلزم أي إجراء آخر. شكراً لاهتمامكم."
+    }
+  },
+  "sourcingBidReceipt": {
+    "en": {
+      "subject": "{buyer}: offer received for {number}",
+      "body": "Dear {first},\n\nYour offer for {number} “{title}” was received (version {version}, {at}).\n\nReceipt reference: {receipt}\n\nIt stays sealed — nobody at {buyer} can see it until the opening committee opens the offers after the deadline."
+    },
+    "ar": {
+      "subject": "{buyer}: تم استلام عرضكم لـ {number}",
+      "body": "مرحباً {first}،\n\nتم استلام عرضكم لـ {number} «{title}» (الإصدار {version}، {at}).\n\nرقم الإيصال: {receipt}\n\nيبقى العرض مختوماً — لا يمكن لأحد لدى {buyer} الاطلاع عليه حتى تفتح لجنة الفتح العروض بعد الموعد النهائي."
+    }
+  },
+  "sourcingQualified": {
+    "en": {
+      "subject": "{buyer}: you qualified for {number}",
+      "body": "Dear {first},\n\nYour technical offer for {number} “{title}” has qualified. Your commercial offer goes on to the next stage."
+    },
+    "ar": {
+      "subject": "{buyer}: تأهّلتم في {number}",
+      "body": "مرحباً {first}،\n\nتأهّل عرضكم الفني لـ {number} «{title}». ينتقل عرضكم التجاري إلى المرحلة التالية."
+    }
+  },
+  "sourcingNotQualified": {
+    "en": {
+      "subject": "{buyer}: result of the technical evaluation for {number}",
+      "body": "Dear {first},\n\nThank you for your offer for {number} “{title}”. It did not qualify in the technical evaluation, so your commercial offer will not be opened."
+    },
+    "ar": {
+      "subject": "{buyer}: نتيجة التقييم الفني لـ {number}",
+      "body": "مرحباً {first}،\n\nشكراً لعرضكم لـ {number} «{title}». لم يتأهّل العرض في التقييم الفني، ولذلك لن يُفتح عرضكم التجاري."
+    }
+  },
+  "sourcingLiveMessage": {
+    "en": {
+      "subject": "{buyer}: message about {number}",
+      "body": "Dear {first},\n\n{buyer} sent a message to every bidder in {number} “{title}”:\n\n{message}"
+    },
+    "ar": {
+      "subject": "{buyer}: رسالة بشأن {number}",
+      "body": "مرحباً {first}،\n\nأرسل {buyer} رسالة إلى جميع المشاركين في {number} «{title}»:\n\n{message}"
+    }
+  },
+  "sourcingAuctionReminder": {
+    "en": {
+      "subject": "{buyer}: auction {number} starts {when}",
+      "body": "Dear {first},\n\nThe live auction {number} “{title}” starts {when} and is scheduled to end {ends}.\n\nOpen the link below and sign in a few minutes early. Bids are placed on the event page; the time shown there is the server time."
+    },
+    "ar": {
+      "subject": "{buyer}: يبدأ المزاد {number} {when}",
+      "body": "مرحباً {first}،\n\nيبدأ المزاد المباشر {number} «{title}» {when} ومن المقرر أن ينتهي {ends}.\n\nافتحوا الرابط أدناه وسجّلوا الدخول قبل الموعد بدقائق. تُقدَّم العروض في صفحة الفعالية، والوقت المعروض هناك هو وقت الخادم."
+    }
+  },
+  "sourcingAuctionClosed": {
+    "en": {
+      "subject": "{buyer}: auction {number} has closed",
+      "body": "Dear {first},\n\nThe auction {number} “{title}” has closed. Thank you for taking part. {buyer} will let you know the result after the award is approved."
+    },
+    "ar": {
+      "subject": "{buyer}: انتهى المزاد {number}",
+      "body": "مرحباً {first}،\n\nانتهى المزاد {number} «{title}». شكراً لمشاركتكم. سيبلغكم {buyer} بالنتيجة بعد اعتماد الترسية."
+    }
+  },
+  "sourcingAwardWin": {
+    "en": {
+      "subject": "{buyer}: award for {number}",
+      "body": "Dear {first},\n\nWe are pleased to tell you that {buyer} has awarded you the following in {number} “{title}”:\n\n{lines}\n\nThe purchase order follows from {buyer}."
+    },
+    "ar": {
+      "subject": "{buyer}: ترسية {number}",
+      "body": "مرحباً {first}،\n\nيسرّنا إبلاغكم بأن {buyer} قد رسا عليكم ما يلي في {number} «{title}»:\n\n{lines}\n\nسيصلكم أمر الشراء من {buyer}."
+    }
+  },
+  "sourcingAwardWinNew": {
+    "en": {
+      "subject": "{buyer}: award for {number} — please complete your registration",
+      "body": "Dear {first},\n\nWe are pleased to tell you that {buyer} has awarded you the following in {number} “{title}”:\n\n{lines}\n\nBefore the purchase order can be issued, please complete your supplier registration: open the link below, sign in with the one-time code sent to this email address and fill in your company details and documents."
+    },
+    "ar": {
+      "subject": "{buyer}: ترسية {number} — يرجى إكمال تسجيلكم",
+      "body": "مرحباً {first}،\n\nيسرّنا إبلاغكم بأن {buyer} قد رسا عليكم ما يلي في {number} «{title}»:\n\n{lines}\n\nقبل إصدار أمر الشراء، يرجى إكمال تسجيلكم كمورد: افتحوا الرابط أدناه، وسجّلوا الدخول برمز التحقق المرسل إلى هذا البريد الإلكتروني، وأدخلوا بيانات شركتكم ومستنداتها."
+    }
+  },
+  "sourcingAwardRegret": {
+    "en": {
+      "subject": "{buyer}: result of {number}",
+      "body": "Dear {first},\n\nThank you for taking part in {number} “{title}”. After evaluation, {buyer} has awarded it to another bidder this time. We value your participation and look forward to your offers in future events."
+    },
+    "ar": {
+      "subject": "{buyer}: نتيجة {number}",
+      "body": "مرحباً {first}،\n\nشكراً لمشاركتكم في {number} «{title}». بعد التقييم، رسا {buyer} الفعالية على مشارك آخر هذه المرة. نقدّر مشاركتكم ونتطلع إلى عروضكم في الفعاليات القادمة."
+    }
   }
 }

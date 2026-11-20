@@ -51,14 +51,14 @@ async function storeVersion(tenantId: string, agreementId: string, version: numb
   return v;
 }
 
-export async function createAgreement(tenant: Tenant, a: { title: string; titleAr?: string; vendorTypes: string[]; required: boolean }, first: VersionInput, by: { name: string; ip?: string }) {
+export async function createAgreement(tenant: Tenant, a: { title: string; titleAr?: string; vendorTypes: string[]; required: boolean; purpose?: 'onboarding' | 'sourcing' }, first: VersionInput, by: { name: string; ip?: string }) {
   const [{ max }] = await db.select({ max: agreements.sortOrder }).from(agreements).where(eq(agreements.tenantId, tenant.id)).orderBy(desc(agreements.sortOrder)).limit(1).then((r) => (r.length ? r : [{ max: 0 }]));
-  const [ag] = await db.insert(agreements).values({ tenantId: tenant.id, title: a.title.trim(), titleAr: a.titleAr?.trim() || null, vendorTypes: a.vendorTypes, required: a.required, sortOrder: (max ?? 0) + 1 }).returning();
+  const [ag] = await db.insert(agreements).values({ tenantId: tenant.id, title: a.title.trim(), titleAr: a.titleAr?.trim() || null, vendorTypes: a.vendorTypes, required: a.required, purpose: a.purpose ?? 'onboarding', sortOrder: (max ?? 0) + 1 }).returning();
   try {
     await storeVersion(tenant.id, ag.id, 1, first, by.name);
   } catch (e) { await db.delete(agreements).where(eq(agreements.id, ag.id)); throw e; }
   await audit({ tenantId: tenant.id, actor: by.name, action: 'AGREEMENT_CREATED', detail: { title: ag.title, askApproved: first.reaccept ? 'yes' : 'no' }, ip: by.ip });
-  if (first.reaccept) await notifyApproved(tenant, ag);
+  if (first.reaccept && ag.purpose === 'onboarding') await notifyApproved(tenant, ag);
   return ag;
 }
 
@@ -67,11 +67,11 @@ export async function publishVersion(tenant: Tenant, agreementId: string, input:
   const [last] = await db.select({ version: agreementVersions.version }).from(agreementVersions).where(eq(agreementVersions.agreementId, ag.id)).orderBy(desc(agreementVersions.version)).limit(1);
   const v = await storeVersion(tenant.id, ag.id, (last?.version ?? 0) + 1, input, by.name);
   await audit({ tenantId: tenant.id, actor: by.name, action: 'AGREEMENT_VERSION_PUBLISHED', detail: { title: ag.title, version: v.version, acceptAgain: input.reaccept ? 'yes' : 'no' }, ip: by.ip });
-  if (input.reaccept) await notifyApproved(tenant, ag);
+  if (input.reaccept && ag.purpose === 'onboarding') await notifyApproved(tenant, ag);
   return v;
 }
 
-export async function updateAgreement(tenantId: string, agreementId: string, patch: Partial<Pick<Agreement, 'title' | 'titleAr' | 'vendorTypes' | 'required' | 'sortOrder' | 'status'>>, by: { name: string; ip?: string }) {
+export async function updateAgreement(tenantId: string, agreementId: string, patch: Partial<Pick<Agreement, 'title' | 'titleAr' | 'vendorTypes' | 'required' | 'sortOrder' | 'status' | 'purpose'>>, by: { name: string; ip?: string }) {
   const ag = await getAgreement(tenantId, agreementId);
   await db.update(agreements).set(patch).where(eq(agreements.id, ag.id));
   await audit({ tenantId, actor: by.name, action: patch.status === 'ARCHIVED' ? 'AGREEMENT_ARCHIVED' : patch.status === 'ACTIVE' ? 'AGREEMENT_RESTORED' : 'AGREEMENT_UPDATED', detail: { title: patch.title ?? ag.title }, ip: by.ip });
@@ -91,7 +91,8 @@ export async function listAgreements(tenantId: string) {
   const accs = await db.select().from(agreementAcceptances).where(eq(agreementAcceptances.tenantId, tenantId));
   const vendorRows = (await db.select({ id: schema.vendors.id, status: schema.vendors.status, vendorType: schema.vendors.vendorType, decidedAt: schema.vendors.decidedAt, erasedAt: schema.vendors.erasedAt }).from(schema.vendors).where(eq(schema.vendors.tenantId, tenantId)))
     .filter((v) => !v.erasedAt && v.status !== 'REJECTED');
-  const all = vendorRows.flatMap((v) => statusesFor(v, ags, versions, accs));
+  // Sourcing terms are accepted per event, not by every supplier.
+  const all = vendorRows.flatMap((v) => statusesFor(v, ags.filter((a) => a.purpose === 'onboarding'), versions, accs));
   return ags.map((a) => {
     const mine = all.filter((x) => x.agreement.id === a.id);
     return { ...a, versions: versions.filter((v) => v.agreementId === a.id).map(publicVersion), accepted: mine.filter((x) => x.accepted).length, outstanding: a.status === 'ACTIVE' ? mine.filter((x) => x.outstanding).length : 0 };
@@ -121,7 +122,7 @@ export interface AgreementStatus {
 
 /** Active agreements of a workspace with their versions (newest first) — loaded once, used for one or many suppliers. */
 async function activeWithVersions(tenantId: string) {
-  const ags = await db.select().from(agreements).where(and(eq(agreements.tenantId, tenantId), eq(agreements.status, 'ACTIVE'))).orderBy(asc(agreements.sortOrder), asc(agreements.createdAt));
+  const ags = await db.select().from(agreements).where(and(eq(agreements.tenantId, tenantId), eq(agreements.status, 'ACTIVE'), eq(agreements.purpose, 'onboarding'))).orderBy(asc(agreements.sortOrder), asc(agreements.createdAt));
   const versions = ags.length ? await db.select().from(agreementVersions).where(inArray(agreementVersions.agreementId, ags.map((a) => a.id))).orderBy(desc(agreementVersions.version)) : [];
   return { ags, versions };
 }

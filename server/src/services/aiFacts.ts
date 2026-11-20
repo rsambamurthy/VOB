@@ -5,7 +5,8 @@
  *  - peers: where the supplier sits among your approved suppliers (percentiles, only with 5 or more to compare);
  *  - amounts: as ranges, or exact (no names) when the workspace chose that precision.
  */
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { cached } from '../lib/cache.js';
 import { db, schema } from '../lib/db.js';
 import type { Profile } from '../lib/profileEngine.js';
 import type { Tenant, Vendor } from '../db/schema.js';
@@ -55,10 +56,18 @@ export function comparisons(v: Vendor): Record<string, boolean> {
 
 const MIN_PEERS = 5;
 /** Where the supplier sits among your approved suppliers: same vendor type and category when there are enough, else wider. */
+/**
+ * The approved suppliers to compare with: only the sections the comparison reads (basic, risk — no sensitive values,
+ * so nothing is decrypted), cached per workspace for a minute because every pre-review of every supplier asks.
+ */
+const approvedPeers = (tenantId: string) => cached(`vendors:${tenantId}:peers`, 60_000, async () =>
+  db.select({ id: schema.vendors.id, vendorType: schema.vendors.vendorType,
+    profile: sql<Profile>`jsonb_build_object('basic', coalesce(${schema.vendors.profile}->'basic', '{}'::jsonb), 'risk', coalesce(${schema.vendors.profile}->'risk', '{}'::jsonb))` })
+    .from(schema.vendors).where(and(eq(schema.vendors.tenantId, tenantId), eq(schema.vendors.status, 'APPROVED'))).limit(5000));
+
 export async function peerComparison(tenant: Tenant, v: Vendor) {
   const p = v.profile as Profile;
-  const rows = await db.select({ vendorType: schema.vendors.vendorType, profile: schema.vendors.profile }).from(schema.vendors)
-    .where(and(eq(schema.vendors.tenantId, tenant.id), eq(schema.vendors.status, 'APPROVED'), ne(schema.vendors.id, v.id))).limit(5000);
+  const rows = (await approvedPeers(tenant.id)).filter((r) => r.id !== v.id);
   const cat = String(p.basic?.supplyCategory ?? '');
   const groups: [string, typeof rows][] = [
     [`approved ${v.vendorType.toLowerCase()} suppliers of ${cat ? cat.toLowerCase() : 'any category'}`, rows.filter((r) => r.vendorType === v.vendorType && cat && String((r.profile as Profile).basic?.supplyCategory ?? '') === cat)],

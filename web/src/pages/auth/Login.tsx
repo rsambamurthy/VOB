@@ -17,7 +17,7 @@ export function Login() {
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const next = params.get('next') || '/staff/vendors';
+  const next = params.get('next') || '/staff';
   const [signupOpen, setSignupOpen] = useState(false);
   useEffect(() => { api('/signup/config').then((c) => setSignupOpen(!!c.enabled)).catch(() => {}); }, []);
   // Single sign-on: shown as soon as the workspace is known.
@@ -29,7 +29,7 @@ export function Login() {
     const timer = setTimeout(() => api(`/auth/sso/info/${ws}`).then(setSso).catch(() => setSso({ enabled: false })), 300);
     return () => clearTimeout(timer);
   }, [workspace]);
-  const ssoHref = `/api/auth/sso/start?workspace=${encodeURIComponent(workspace.trim().toLowerCase())}&next=${encodeURIComponent(next.startsWith('/staff') ? next : '/staff/vendors')}`;
+  const ssoHref = `/api/auth/sso/start?workspace=${encodeURIComponent(workspace.trim().toLowerCase())}&next=${encodeURIComponent(next.startsWith('/staff') ? next : '/staff')}`;
   const passwordForm = !sso.enabled || sso.passwordLogin === 'everyone' || showPassword;
 
   async function finish() {

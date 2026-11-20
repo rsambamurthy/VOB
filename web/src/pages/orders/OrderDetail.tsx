@@ -7,9 +7,9 @@ import { Alert, Modal } from '../../components/ui';
 import { useHelpContext } from '../../help/HelpPanel';
 import { AcceptanceBadge, DueText, Facts, LinesTable, money, qty, type OrderDetailData } from '../../orders/common';
 import { CancelShipmentModal, InvoicesTable, MESSAGE_KIND, ShipmentsCard, type InvoiceRow, type Shipment } from '../../orders/collab';
+import { MessageStatus } from '../../components/ErpMessage';
 
 interface Message { id: string; kind: string; connector: string; status: string; attempts: number; target: string | null; error: string | null; httpStatus: number | null; requestedBy: string | null; sentAt: string | null; createdAt: string; request: any }
-const MSG_STATUS: Record<string, [string, string]> = { SENT: ['Sent', 'badge-approved'], TEST: ['Test mode — not sent', 'badge-in_progress'], PENDING: ['Sending…', 'badge-under_review'], FAILED: ['Failed', 'badge-rejected'], NO_CONNECTOR: ['No ERP connection', 'badge-invited'] };
 const SOURCE: Record<string, string> = { oracle: 'Oracle EBS', api: 'API', csv: 'CSV import', demo: 'Sample (test mode)' };
 
 export function OrderDetail() {
@@ -61,7 +61,7 @@ export function OrderDetail() {
               <table className="table static compact"><thead><tr><th>When</th><th>What</th><th>Status</th><th>Target</th><th /></tr></thead>
                 <tbody>{d.messages.map((m) => (
                   <tr key={m.id}><td className="small nowrap">{fmtDateTime(m.createdAt)}</td><td className="small">{MESSAGE_KIND[m.kind] ?? humanize(m.kind)}<div className="muted">{m.requestedBy}</div></td>
-                    <td><span className={`badge ${MSG_STATUS[m.status]?.[1] ?? ''}`}>{MSG_STATUS[m.status]?.[0] ?? m.status}</span>{m.error && m.status === 'FAILED' && <div className="err-text small">{m.error}</div>}</td>
+                    <td><MessageStatus status={m.status} error={m.error} /></td>
                     <td className="small muted break">{m.target ?? '—'}</td>
                     <td className="actions">{m.request && <button className="link-btn small" onClick={() => setPayload(m)}>Payload</button>}
                       {m.status === 'FAILED' && can('orders.manage') && <button className="link-btn small" onClick={async () => { try { await api(`/orders/messages/${m.id}/retry`, { method: 'POST' }); load(); } catch (e: any) { setError(e.message); } }}>Retry</button>}</td></tr>

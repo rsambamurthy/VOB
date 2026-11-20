@@ -14,8 +14,9 @@
  */
 import { z } from 'zod';
 import type { Tenant } from '../../db/schema.js';
+import type { WorkflowLevel } from '../../config/types.js';
 import { effectiveLimits } from '../../lib/plans.js';
-import { HttpError } from '../../lib/http.js';
+import { defineModule, checkLevels, type OptionDef, type RuleDef } from '../../lib/moduleConfig.js';
 import { SOURCING_FORMATS, SOURCING_FORMAT_KEYS, type Feature, type SourcingFormat } from '../../lib/features.js';
 
 /* ---------------- catalogue ---------------- */
@@ -26,7 +27,7 @@ export const AREA_LABELS: Record<SubFeatureArea, string> = {
   controls: 'Controls', notifications: 'Notifications', integrations: 'Integrations', ai: 'AI',
 };
 
-interface SubFeatureDef { area: SubFeatureArea; label: string; help: string; default: boolean; available: boolean; requires?: Feature }
+interface SubFeatureDef extends OptionDef { area: SubFeatureArea }
 /** Optional capabilities, each switched on or off by the administrator. `available` = built and released. */
 export const SUB_FEATURES = {
   outsideBidders: { area: 'bidders', label: 'Invite outside bidders', help: 'Invite companies that aren’t VendorGate suppliers yet. They register through a short bidder form and complete full onboarding only if they win.', default: true, available: true },
@@ -58,9 +59,6 @@ export const SUB_FEATURES = {
 export type SubFeature = keyof typeof SUB_FEATURES;
 export const SUB_FEATURE_KEYS = Object.keys(SUB_FEATURES) as SubFeature[];
 
-type RuleDef =
-  | { kind: 'choice'; label: string; help: string; options: Record<string, string>; default: string; requires?: SubFeature }
-  | { kind: 'number'; label: string; help: string; min: number; max: number; step?: number; unit?: string; default: number | null; nullable?: boolean; requires?: SubFeature };
 /** Rule defaults for new events. The administrator sets the default and whether buyers may change it. */
 export const RULES = {
   visibility: { kind: 'choice', label: 'What bidders see during a live auction', help: 'Bidder names are never shown to other bidders.', options: { rank: 'Their own rank only (L1, L2…)', rank_best: 'Their rank and the best price', ladder: 'Rank and all prices (no names)' }, default: 'rank' },
@@ -86,147 +84,109 @@ export interface SourcingSettings {
   rules?: Partial<Record<RuleKey, string | number | null>>;
   /** Rules buyers can't change per event. */
   locked?: RuleKey[];
+  /** Event approval flow (levels like the onboarding approval flow). Missing = DEFAULT_EVENT_APPROVAL. */
+  approval?: { levels: WorkflowLevel[] };
+  /** Award approval flow. Missing = DEFAULT_APPROVAL.award. */
+  awardApproval?: { levels: WorkflowLevel[] };
 }
 
-function ruleSchema(k: RuleKey) {
-  const r: RuleDef = RULES[k];
-  if (r.kind === 'choice') return z.enum(Object.keys(r.options) as [string, ...string[]], { errorMap: () => ({ message: `${r.label}: choose one of the options` }) });
-  const n = z.number({ invalid_type_error: `${r.label} must be a number` }).min(r.min, `${r.label} must be at least ${r.min}`).max(r.max, `${r.label} must be at most ${r.max}`);
-  return r.nullable ? n.nullable() : n;
-}
-const ruleValuesSchema = z.object(Object.fromEntries(RULE_KEYS.map((k) => [k, ruleSchema(k).optional()]))).strict();
+/* ---------------- effective configuration (the shared module layers, lib/moduleConfig.ts) ---------------- */
+
+const M = defineModule({
+  name: 'Sourcing', feature: 'sourcing', settingsKey: 'sourcing', kindsKey: 'formats', kindNoun: 'format',
+  kinds: SOURCING_FORMATS, options: SUB_FEATURES, areas: AREA_LABELS, rules: RULES as Record<RuleKey, RuleDef>,
+  licensedKinds: (t) => effectiveLimits(t).sourcingFormats ?? null,
+  keep: ['approval', 'awardApproval'],
+});
+const stored = (t: Tenant) => M.stored(t) as SourcingSettings;
 
 /** Validates what the administrator saves (Administration → Sourcing). */
-export const sourcingSettingsSchema = z.object({
-  enabled: z.boolean(),
-  formats: z.object(Object.fromEntries(SOURCING_FORMAT_KEYS.map((k) => [k, z.boolean().optional()]))).strict().default({}),
-  features: z.object(Object.fromEntries(SUB_FEATURE_KEYS.map((k) => [k, z.boolean().optional()]))).strict().default({}),
-  rules: ruleValuesSchema.default({}),
-  locked: z.array(z.enum(RULE_KEYS as [RuleKey, ...RuleKey[]])).default([]),
-});
-
-/* ---------------- effective configuration ---------------- */
-
-const stored = (t: Tenant): SourcingSettings => t.settings.sourcing ?? {};
-
+export const sourcingSettingsSchema = M.settingsSchema;
 /** Layer 1: the plan or licence includes Sourcing. */
-export const sourcingLicensed = (t: Tenant) => effectiveLimits(t).features.sourcing === true;
+export const sourcingLicensed = M.licensed;
 /** Layers 1–2: Sourcing is usable in this workspace. */
-export const sourcingOn = (t: Tenant) => sourcingLicensed(t) && stored(t).enabled === true;
-
+export const sourcingOn = M.on;
 /** Why a format can or can't be used — for the configuration screen and error messages. */
-export function formatState(t: Tenant, f: SourcingFormat): { on: boolean; licensed: boolean; available: boolean; chosen: boolean } {
-  const lim = effectiveLimits(t);
-  const licensed = sourcingLicensed(t) && (lim.sourcingFormats == null || lim.sourcingFormats.includes(f));
-  const available = SOURCING_FORMATS[f].available;
-  const chosen = stored(t).formats?.[f] === true;
-  return { on: sourcingOn(t) && licensed && available && chosen, licensed, available, chosen };
-}
-export const formatOn = (t: Tenant, f: SourcingFormat) => formatState(t, f).on;
-
-export function featureState(t: Tenant, k: SubFeature): { on: boolean; available: boolean; chosen: boolean; needs?: Feature } {
-  const d: SubFeatureDef = SUB_FEATURES[k];
-  const chosen = stored(t).features?.[k] ?? d.default;
-  const needs = d.requires && effectiveLimits(t).features[d.requires] !== true ? d.requires : undefined;
-  return { on: sourcingOn(t) && d.available && chosen && !needs, available: d.available, chosen, ...(needs ? { needs } : {}) };
-}
-export const featureOn = (t: Tenant, k: SubFeature) => featureState(t, k).on;
-
+export const formatState = M.kindState;
+export const formatOn = (t: Tenant, f: SourcingFormat) => M.kindState(t, f).on;
+export const featureState = M.optionState;
+export const featureOn = M.optionOn;
 /** The administrator's rule defaults (catalogue defaults where not set). */
-export function ruleDefaults(t: Tenant): RuleValues {
-  const r = stored(t).rules ?? {};
-  return Object.fromEntries(RULE_KEYS.map((k) => [k, r[k] !== undefined ? r[k] : RULES[k].default])) as RuleValues;
-}
-export const lockedRules = (t: Tenant) => new Set<RuleKey>(stored(t).locked ?? []);
+export const ruleDefaults = (t: Tenant) => M.ruleDefaults(t) as RuleValues;
+export const lockedRules = M.lockedRules;
 
 /**
- * Layer 6: the rules for one event. Starts from the administrator's defaults and applies the buyer's choices for
- * unlocked rules (each checked against its range). Changing a locked rule is refused. Rules whose sub-feature is off
- * are dropped (e.g. no extension minutes without auto-extension). Value-based policies are applied last
- * (two envelopes above a value).
+ * Layer 6: the rules for one event — the shared resolver, then Sourcing's value-based policy (two envelopes above a value).
  */
 export function resolveRules(t: Tenant, choices: Partial<Record<RuleKey, unknown>> = {}, ctx: { estimatedValue?: number | null } = {}): Partial<RuleValues> {
-  const base = ruleDefaults(t);
-  const locked = lockedRules(t);
-  const tried = (Object.keys(choices) as RuleKey[]).filter((k) => choices[k] !== undefined && choices[k] !== base[k] && locked.has(k));
-  if (tried.length) throw new HttpError(400, `${tried.map((k) => RULES[k].label).join(', ')} ${tried.length === 1 ? 'is' : 'are'} set by your administrator and can’t be changed for an event.`);
-  const unknownKeys = Object.keys(choices).filter((k) => !(RULE_KEYS as string[]).includes(k));
-  if (unknownKeys.length) throw new HttpError(400, `Unknown rule: ${unknownKeys.join(', ')}`);
-  const parsed = ruleValuesSchema.safeParse(Object.fromEntries(Object.entries(choices).filter(([, v]) => v !== undefined)));
-  if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
-  const out: Partial<RuleValues> = { ...base, ...(parsed.data as Partial<RuleValues>) };
-  for (const k of RULE_KEYS) {
-    const req = (RULES[k] as RuleDef).requires;
-    if (req && !featureOn(t, req)) delete out[k];
-  }
+  const out = M.resolveRules(t, choices, 'event') as Partial<RuleValues>;
   if (out.twoEnvelopeAbove != null && ctx.estimatedValue != null && ctx.estimatedValue > out.twoEnvelopeAbove) out.envelope = 'two';
   return out;
 }
 
 /** Everything the screens need: the catalogue with each item's state, and the stored choices. */
 export function sourcingConfig(t: Tenant) {
-  const s = stored(t);
-  return {
-    licensed: sourcingLicensed(t),
-    enabled: s.enabled === true,
-    on: sourcingOn(t),
-    formats: SOURCING_FORMAT_KEYS.map((k) => ({ key: k, label: SOURCING_FORMATS[k].label, help: SOURCING_FORMATS[k].help, ...formatState(t, k) })),
-    features: SUB_FEATURE_KEYS.map((k) => { const d: SubFeatureDef = SUB_FEATURES[k]; return { key: k, area: d.area, label: d.label, help: d.help, default: d.default, ...featureState(t, k) }; }),
-    areas: AREA_LABELS,
-    rules: RULE_KEYS.map((k) => ({ key: k, ...(RULES[k] as RuleDef), value: ruleDefaults(t)[k], locked: lockedRules(t).has(k) })),
-  };
+  const { kinds, ...rest } = M.config(t);
+  return { ...rest, formats: kinds };
 }
 /** Short version for the signed-in user's session (menus). */
-export function sourcingSummary(t: Tenant) {
-  return { on: sourcingOn(t), formats: SOURCING_FORMAT_KEYS.filter((k) => formatOn(t, k)) };
-}
+export function sourcingSummary(t: Tenant) { const { on, kinds } = M.summary(t); return { on, formats: kinds }; }
 
 /** Route guard: Sourcing is not there at all when it's off (404, like any missing page). */
-export function assertSourcingOn(t: Tenant) {
-  if (!sourcingOn(t)) throw new HttpError(404, 'Sourcing isn’t switched on for this workspace');
+export const assertSourcingOn = M.assertOn;
+export const assertFormatOn = M.assertKindOn;
+
+/** Check what the administrator wants to save; returns the settings to store and what changed (for the audit log). */
+export function checkSourcingSettings(t: Tenant, input: z.input<typeof sourcingSettingsSchema>): { settings: SourcingSettings; changes: string[] } {
+  const { settings, changes } = M.checkSettings(t, input);
+  return { settings: settings as SourcingSettings, changes };
 }
-export function assertFormatOn(t: Tenant, f: SourcingFormat) {
-  const st = formatState(t, f);
-  if (st.on) return;
-  throw new HttpError(400, !st.licensed ? `${SOURCING_FORMATS[f].label} isn’t included in your plan.` : !st.available ? `${SOURCING_FORMATS[f].label} isn’t available yet.` : `${SOURCING_FORMATS[f].label} is switched off in Administration → Sourcing.`);
-}
+
+/* ---------------- approval flows: events and awards ---------------- */
 
 /**
- * Check what the administrator wants to save against the plan/licence and what has been released.
- * Returns the settings to store and a short list of what changed (for the audit log).
+ * Two approval flows, both with the same shape and editor as the onboarding approval flow:
+ *   event — before bidders are invited; conditions on `event.estimatedValue`, `event.format`, `event.category`
+ *   award — before the award goes out; conditions on `award.value`, `award.notBest` (Yes when any lot isn't awarded
+ *           to the best price), `award.format`, `award.category`
  */
-export function checkSourcingSettings(t: Tenant, input: z.input<typeof sourcingSettingsSchema>): { settings: SourcingSettings; changes: string[] } {
-  const next = sourcingSettingsSchema.parse(input) as SourcingSettings;
-  if (next.enabled && !sourcingLicensed(t)) throw new HttpError(403, 'Sourcing isn’t included in your plan. Contact us to add it.', undefined, 'PLAN_LIMIT');
-  for (const f of SOURCING_FORMAT_KEYS) {
-    if (!next.formats?.[f]) continue;
-    const st = formatState(t, f);
-    if (!st.available) throw new HttpError(400, `${SOURCING_FORMATS[f].label} isn’t available yet.`);
-    if (!st.licensed) throw new HttpError(403, `${SOURCING_FORMATS[f].label} isn’t included in your plan.`, undefined, 'PLAN_LIMIT');
-  }
-  for (const k of SUB_FEATURE_KEYS) {
-    const d: SubFeatureDef = SUB_FEATURES[k];
-    if (next.features?.[k] && !d.available) throw new HttpError(400, `${d.label} isn’t available yet.`);
-  }
-  if (next.enabled && !SOURCING_FORMAT_KEYS.some((f) => next.formats?.[f])) throw new HttpError(400, 'Choose at least one format to switch Sourcing on.');
-  // Store only what differs from the catalogue defaults, so new defaults reach workspaces that never changed them.
-  const features = Object.fromEntries(Object.entries(next.features ?? {}).filter(([k, v]) => v !== SUB_FEATURES[k as SubFeature].default));
-  const rules = Object.fromEntries(Object.entries(next.rules ?? {}).filter(([k, v]) => v !== RULES[k as RuleKey].default));
-  const settings: SourcingSettings = { enabled: next.enabled, formats: next.formats, features, rules, locked: [...new Set(next.locked)] };
+export type FlowKind = 'event' | 'award';
+const v = (field: string, gt: number) => ({ match: 'all' as const, conditions: [{ field, op: 'gt' as const, value: gt }] });
+export const DEFAULT_APPROVAL: Record<FlowKind, WorkflowLevel[]> = {
+  event: [
+    { id: 'finance', label: 'Finance approval', roleKey: 'FINANCE_MANAGER', rule: v('event.estimatedValue', 1_000_000), slaHours: 48 },
+    { id: 'senior', label: 'Senior management approval', roleKey: 'ADMIN', rule: v('event.estimatedValue', 10_000_000), slaHours: 48 },
+  ],
+  award: [
+    { id: 'finance', label: 'Finance approval', roleKey: 'FINANCE_MANAGER', rule: v('award.value', 1_000_000), slaHours: 48 },
+    { id: 'senior', label: 'Senior management approval', roleKey: 'ADMIN', rule: { match: 'any', conditions: [{ field: 'award.value', op: 'gt', value: 10_000_000 }, { field: 'award.notBest', op: 'eq', value: 'Yes' }] }, slaHours: 48 },
+  ],
+};
+export const DEFAULT_EVENT_APPROVAL = DEFAULT_APPROVAL.event;
+const storedLevels = (t: Tenant, kind: FlowKind) => (kind === 'event' ? stored(t).approval?.levels : stored(t).awardApproval?.levels);
+export const approvalLevels = (t: Tenant, kind: FlowKind): WorkflowLevel[] => storedLevels(t, kind) ?? DEFAULT_APPROVAL[kind];
+export const eventApprovalLevels = (t: Tenant) => approvalLevels(t, 'event');
 
-  const prev = stored(t), changes: string[] = [];
-  const onOff = (b: boolean | undefined) => (b ? 'on' : 'off');
-  if (!!prev.enabled !== !!settings.enabled) changes.push(`Sourcing ${onOff(settings.enabled)}`);
-  for (const f of SOURCING_FORMAT_KEYS) if (!!prev.formats?.[f] !== !!settings.formats?.[f]) changes.push(`${SOURCING_FORMATS[f].label} ${onOff(settings.formats?.[f])}`);
-  for (const k of SUB_FEATURE_KEYS) {
-    const a = prev.features?.[k] ?? SUB_FEATURES[k].default, b = settings.features?.[k] ?? SUB_FEATURES[k].default;
-    if (a !== b) changes.push(`${SUB_FEATURES[k].label} ${onOff(b)}`);
-  }
-  for (const k of RULE_KEYS) {
-    const a = prev.rules?.[k] ?? RULES[k].default, b = settings.rules?.[k] ?? RULES[k].default;
-    if (a !== b) changes.push(`${RULES[k].label}: ${a ?? '—'} → ${b ?? '—'}`);
-    const la = (prev.locked ?? []).includes(k), lb = settings.locked!.includes(k);
-    if (la !== lb) changes.push(`${RULES[k].label} ${lb ? 'locked' : 'unlocked'}`);
-  }
-  return { settings, changes };
+/** What each flow's rules can test (for the condition editor and validation). */
+export async function approvalCatalog(t: Tenant, kind: FlowKind) {
+  const { getPublished } = await import('../config.js');
+  const { config } = await getPublished(t.id);
+  const cat = config.sections.flatMap((s) => s.groups.flatMap((g) => g.fields.map((f) => ({ id: `${s.key}.${f.key}`, f })))).find((x) => x.id === 'basic.supplyCategory')?.f;
+  const category = { label: 'Category', type: cat?.options?.length ? 'select' : 'text', ...(cat?.options?.length ? { options: cat.options } : {}) };
+  const format = { label: 'Format', type: 'select', options: SOURCING_FORMAT_KEYS.map((k) => SOURCING_FORMATS[k].label) };
+  return kind === 'event'
+    ? [{ id: 'event.estimatedValue', label: 'Estimated value', type: 'number' }, { id: 'event.format', ...format }, { id: 'event.category', ...category }]
+    : [{ id: 'award.value', label: 'Awarded value', type: 'number' }, { id: 'award.notBest', label: 'Not awarded to the best price', type: 'select', options: ['Yes', 'No'] }, { id: 'award.format', ...format }, { id: 'award.category', ...category }];
+}
+export const eventConditionCatalog = (t: Tenant) => approvalCatalog(t, 'event');
+/** The values an event's approval rules are tested against. */
+export const eventRuleContext = (e: { estimatedValue: string | number | null; format: string; categories: string[] }) =>
+  ({ profile: { event: { estimatedValue: e.estimatedValue ?? '', format: SOURCING_FORMATS[e.format as SourcingFormat]?.label ?? e.format, category: e.categories[0] ?? '' } } });
+/** The values an award's approval rules are tested against. */
+export const awardRuleContext = (e: { format: string; categories: string[] }, value: number, notBest: boolean) =>
+  ({ profile: { award: { value, notBest: notBest ? 'Yes' : 'No', format: SOURCING_FORMATS[e.format as SourcingFormat]?.label ?? e.format, category: e.categories[0] ?? '' } } });
+
+/** Check an approval flow before storing it. */
+export async function checkApproval(t: Tenant, kind: FlowKind, input: unknown, roleKeys: string[]) {
+  return checkLevels(input, (await approvalCatalog(t, kind)).map((c) => c.id), roleKeys);
 }

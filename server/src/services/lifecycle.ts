@@ -7,7 +7,8 @@ import { defineJob } from '../jobs/queue.js';
 import { db, schema } from '../lib/db.js';
 import type { ChangeRequest, ChangeRequestStep, DocumentRow, Vendor } from '../db/schema.js';
 import { HttpError } from '../lib/http.js';
-import { audit } from '../lib/audit.js';
+import { audit, onAudit } from '../lib/audit.js';
+import { cached, forget } from '../lib/cache.js';
 import { sendMail } from '../lib/mailer.js';
 import { env } from '../lib/env.js';
 import { logger } from '../lib/logger.js';
@@ -453,6 +454,21 @@ export async function flagsForMany(tenantId: string, vendorRows: (Pick<Vendor, '
   const open = new Set((await db.select({ v: changeRequests.vendorId }).from(changeRequests).where(and(eq(changeRequests.tenantId, tenantId), eq(changeRequests.status, 'PENDING'), inArray(changeRequests.vendorId, ids)))).map((r) => r.v));
   return new Map(vendorRows.map((v) => [v.id, withDup(v.id, flagsFor(v, docs.filter((d) => d.vendorId === v.id), open.has(v.id)))]));
 }
+
+/**
+ * Every approved vendor of a workspace with its flags — the "Needs attention" tile on the vendor list and the dashboard,
+ * and the list's attention filter, all use this one answer. Cached per workspace for a few seconds: it touches every
+ * approved vendor, and the list and dashboard are the busiest screens.
+ */
+type ApprovedRow = Awaited<ReturnType<typeof loadApprovedRows>>[number];
+const loadApprovedRows = (tenantId: string) => db.select({ id: vendors.id, status: vendors.status, vendorType: vendors.vendorType, blockedAt: vendors.blockedAt, reviewStatus: vendors.reviewStatus,
+  nextReviewAt: vendors.nextReviewAt, erasureRequestedAt: vendors.erasureRequestedAt, blockSource: vendors.blockSource, emailBouncedAt: vendors.emailBouncedAt,
+  emailBounceReason: vendors.emailBounceReason, riskBand: vendors.riskBand }).from(vendors).where(and(eq(vendors.tenantId, tenantId), eq(vendors.status, 'APPROVED')));
+export const approvedVendorFlags = (tenantId: string): Promise<{ rows: ApprovedRow[]; flags: Map<string, Flag[]> }> =>
+  cached(`vendors:${tenantId}:approvedFlags`, 15_000, async () => { const rows = await loadApprovedRows(tenantId); return { rows, flags: await flagsForMany(tenantId, rows) }; });
+// Every change to a vendor is audited, so that is where the workspace's cached vendor figures are dropped — except for
+// sourcing activity (bids, offers, invitations), which is frequent and never changes a vendor's flags or the dashboard.
+onAudit((e) => { if (e.vendorId && !e.action.startsWith('SOURCING_')) forget(`vendors:${e.tenantId}:`); });
 
 /* Daily: expiry reminders + periodic re-verification. */
 defineJob('lifecycle.daily', async () => {

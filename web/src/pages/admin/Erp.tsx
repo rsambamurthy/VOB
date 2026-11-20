@@ -102,6 +102,8 @@ export function ErpSettings() {
                   <div className="field-help">Receives each shipment notice (and cancellation) as a HEADER with SHIPMENT_NUM, SHIPPED_DATE, EXPECTED_RECEIPT_DATE, carrier and waybill, and LINES with PO_HEADER_ID, PO_LINE_ID and QUANTITY — shaped for the receiving open interface (RCV_HEADERS_INTERFACE / RCV_TRANSACTIONS_INTERFACE).</div></div>
                 <div className="field field-wide"><label htmlFor="erp-invoiceUrl">Invoice URL</label><input id="erp-invoiceUrl" value={cfg('invoiceUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_ap/invoice/" onChange={(e) => setCfg('invoiceUrl', e.target.value)} />
                   <div className="field-help">Receives each supplier invoice once approved: INVOICE_NUM, INVOICE_DATE, VENDOR_NUM, INVOICE_AMOUNT and ITEM / TAX LINES matched to PO_LINE_ID — shaped for the payables open interface (AP_INVOICES_INTERFACE).</div></div>
+                <div className="field field-wide"><label htmlFor="erp-awardUrl">Award URL (sourcing)</label><input id="erp-awardUrl" value={cfg('awardUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_po/award/" onChange={(e) => setCfg('awardUrl', e.target.value)} />
+                  <div className="field-help">Receives each approved sourcing award per supplier: VENDOR_NUM, CURRENCY_CODE and LINES with ITEM, QUANTITY, UOM_CODE and UNIT_PRICE — shaped for the purchasing documents open interface (PO_HEADERS_INTERFACE / PO_LINES_INTERFACE), so the ERP creates the purchase order.</div></div>
               </div>
             )}
             {f.kind === 'sap' && (
@@ -116,7 +118,7 @@ export function ErpSettings() {
                 <div className="field"><label htmlFor="erp-tax">Tax number category</label><input id="erp-tax" value={cfg('taxType')} placeholder="IN3 for GSTIN; blank = default" onChange={(e) => setCfg('taxType', e.target.value)} /></div>
                 <div className="field field-wide"><h4 className="sub-head">Purchase orders (supplier collaboration)</h4></div>
                 <div className="field field-wide"><label htmlFor="erp-messageUrl">Order message URL</label><input id="erp-messageUrl" value={cfg('messageUrl')} placeholder="https://your-tenant.it-cpi.cfapps.eu10.hana.ondemand.com/http/vendorgate" onChange={(e) => setCfg('messageUrl', e.target.value)} />
-                  <div className="field-help">Your Integration Suite (CPI) flow. Receives acceptances, shipment notices and approved invoices as JSON events (purchase_order.accepted, shipment.created, shipment.cancelled, invoice.approved) with the same communication user — map them to purchase order confirmations, inbound deliveries and supplier invoices.</div></div>
+                  <div className="field-help">Your Integration Suite (CPI) flow. Receives acceptances, shipment notices and approved invoices as JSON events (purchase_order.accepted, shipment.created, shipment.cancelled, invoice.approved, and sourcing.award.approved for approved sourcing awards) with the same communication user — map them to purchase order confirmations, inbound deliveries and supplier invoices.</div></div>
               </div>
             )}
             {f.kind === 'dynamics' && (
@@ -142,7 +144,7 @@ export function ErpSettings() {
                     <input id="erp-signingSecret" type={newSecret ? 'text' : 'password'} autoComplete="new-password" value={secrets.signingSecret ?? ''} placeholder={saved.kind === 'webhook' && saved.secretsSet.signingSecret ? '•••••••• saved — type or generate to replace' : ''} onChange={(e) => { setNewSecret(undefined); setSecrets({ ...secrets, signingSecret: e.target.value }); }} />
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => { const s = randomSecret(); setNewSecret(s); setSecrets({ ...secrets, signingSecret: s }); }}>Generate</button>
                   </div>
-                  <div className="field-help">Each request carries <span className="mono">X-VendorGate-Signature: sha256=HMAC(secret, timestamp + "." + body)</span> and <span className="mono">X-VendorGate-Timestamp</span>. Verify both on your side and reject requests older than 5 minutes. Events: vendor.approved, vendor.updated, vendor.blocked, vendor.unblocked, vendor.synced — and for purchase orders purchase_order.accepted, shipment.created, shipment.cancelled, invoice.approved. Return <span className="mono">{'{"vendorId": "…"}'}</span> to store your ERP’s id.</div>
+                  <div className="field-help">Each request carries <span className="mono">X-VendorGate-Signature: sha256=HMAC(secret, timestamp + "." + body)</span> and <span className="mono">X-VendorGate-Timestamp</span>. Verify both on your side and reject requests older than 5 minutes. Events: vendor.approved, vendor.updated, vendor.blocked, vendor.unblocked, vendor.synced — and for purchase orders purchase_order.accepted, shipment.created, shipment.cancelled, invoice.approved — and for sourcing sourcing.award.approved (supplier, lines, quantities and prices for the ERP to create the purchase order). Return <span className="mono">{'{"vendorId": "…"}'}</span> to store your ERP’s id.</div>
                 </div>
               </div>
             )}

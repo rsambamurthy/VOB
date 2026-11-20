@@ -30,6 +30,8 @@ const settingsSchema = z.object({
   titleAr: z.string().trim().max(150).optional(),
   vendorTypes: types.default([]),
   required: flag.default(true),
+  /** onboarding (asked of suppliers) · sourcing (terms picked for sourcing events) */
+  purpose: z.enum(['onboarding', 'sourcing']).default('onboarding'),
 });
 const versionInput = (req: Request): VersionInput => ({ ...versionSchema.parse(req.body), file: req.file ? { buffer: req.file.buffer, originalname: req.file.originalname } : undefined });
 

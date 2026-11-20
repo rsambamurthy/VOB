@@ -118,6 +118,7 @@ export async function publishDraft(tenantId: string, userId: string, note?: stri
 }
 
 export async function getVersion(tenantId: string, version: number) {
+  if (!Number.isInteger(version) || version < 1 || version > 2_147_483_647) throw new HttpError(404, 'Version not found');
   const row = await db.query.tenantConfigs.findFirst({ where: and(eq(tenantConfigs.tenantId, tenantId), eq(tenantConfigs.version, version)) });
   if (!row) throw new HttpError(404, 'Version not found');
   return row;

@@ -32,11 +32,11 @@ export function publicConnection(c: Connection) {
 }
 
 const CONFIG_FIELDS: Record<ErpKind, string[]> = {
-  none: [], oracle: ['url', 'username', 'orgId', 'poPullUrl', 'ackUrl', 'asnUrl', 'invoiceUrl'], webhook: ['url'], csv: ['delivery', 'host', 'port', 'username', 'remoteDir'],
+  none: [], oracle: ['url', 'username', 'orgId', 'poPullUrl', 'ackUrl', 'asnUrl', 'invoiceUrl', 'awardUrl'], webhook: ['url'], csv: ['delivery', 'host', 'port', 'username', 'remoteDir'],
   sap: ['url', 'username', 'grouping', 'companyCode', 'purchasingOrg', 'taxType', 'messageUrl'],
   dynamics: ['url', 'tenantId', 'clientId', 'dataAreaId', 'vendorGroup', 'messageUrl'],
 };
-const URL_FIELDS = ['url', 'poPullUrl', 'ackUrl', 'asnUrl', 'invoiceUrl', 'messageUrl'];
+const URL_FIELDS = ['url', 'poPullUrl', 'ackUrl', 'asnUrl', 'invoiceUrl', 'awardUrl', 'messageUrl'];
 
 export const connectionInput = z.object({
   kind: z.enum(['none', 'oracle', 'webhook', 'csv', 'sap', 'dynamics']),

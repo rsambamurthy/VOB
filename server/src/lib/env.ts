@@ -11,6 +11,8 @@ const schema = z.object({
   /** Version shown in the app and the health check (set by the image build). */
   APP_VERSION: z.string().default('dev'),
   DATABASE_URL: z.string().default('postgresql://vendor:vendor@localhost:5433/vendor_onboarding'),
+  /** Database connections per API instance. Keep (instances × this) below the database's max_connections. */
+  DATABASE_POOL_MAX: z.coerce.number().int().min(2).max(100).default(10),
   PORT: z.coerce.number().default(4000),
   /** Public URL of the web app, used in email links */
   APP_BASE_URL: z.string().default('http://localhost:5173'),
@@ -139,6 +141,7 @@ export const env = {
   onPrem: parsed.DEPLOYMENT_MODE === 'onprem',
   version: parsed.APP_VERSION,
   databaseUrl: parsed.DATABASE_URL,
+  databasePoolMax: parsed.DATABASE_POOL_MAX,
   port: parsed.PORT,
   appBaseUrl: parsed.APP_BASE_URL.replace(/\/$/, ''),
   // Dev fallback key is derived from a constant so local data stays decryptable across restarts.

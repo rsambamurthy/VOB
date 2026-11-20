@@ -18,7 +18,7 @@ export interface HelpArticle {
   /** Staff only: shown when the user has ANY of these permissions. */
   perms?: Permission[];
   /** Hidden when the workspace's plan doesn't include the feature. */
-  feature?: 'erp' | 'ai' | 'kyc' | 'collab' | 'sourcing';
+  feature?: 'erp' | 'ai' | 'kyc' | 'collab' | 'sourcing' | 'contracts';
   /** Regexes on the URL path; the first matching article is the screen's main topic. */
   screens?: string[];
   /** In-page contexts (set by a screen with useHelpContext), e.g. a configuration tab. */
@@ -486,6 +486,8 @@ Vendors → **Corrective actions** lists every action: open, evidence to review,
 3. **Formats**: sealed bid / RFQ and reverse auction today; forward, Japanese and Dutch auctions are shown as *coming later*.
 4. **Options**: each capability on or off — outside bidders, two-envelope bids, clarifications, auto-extension, technical scoring, award letters, sending awards to the ERP and more. Some need another part of your plan (for example ERP integration).
 5. **Rule defaults**: what bidders see, the minimum bid step, auto-extension minutes, envelopes, how many people must open sealed bids. **Lock** a rule so buyers can't change it for an event.
+6. **Event approval**: levels like the onboarding approval flow — each handled by a role, optionally only when a rule holds (estimated value, format, category), with a deadline. By default: Finance above 10 lakh, and senior management above 1 crore. If no level applies, the event is approved straight away. Use *Test the flow* to try a value.
+7. **Award approval**: a separate flow for awards — rules can use the award value and *not best price* (anything not all to the lowest price). By default: Finance above 10 lakh, and senior management above 1 crore or when the award isn't all to the best price.
 
 > Changing a setting never changes an event that has already been published — each event keeps the rules it was published with. Every change is in the audit log.
 
@@ -502,7 +504,62 @@ People also need permissions (Administration → Roles): *View sourcing events*,
 - **Sealed bid / RFQ**: bidders send one offer before a deadline; offers stay sealed until the opening committee opens them.
 - **Reverse auction**: suppliers bid prices down during a live window; the lowest (L1) wins. Bidders never see each other's names.
 
-Which formats and options are available is set by your administrator in [Sourcing settings](#sourcing-settings).`,
+Tabs: all events, waiting for approval, drafts, approved, your own, and **templates**. **+ New event** asks for a title and format; the number is given straight away (RFQ-2026-0001, RA-2026-0001 — one series per format, restarting each year).
+
+Which formats and options are available is set by your administrator in [Sourcing settings](#sourcing-settings). See [Setting up an event](#sourcing-event).`,
+  },
+  {
+    id: 'sourcing-event', title: 'Setting up a sourcing event', audience: ['staff'], perms: ['sourcing.view'], feature: 'sourcing',
+    summary: 'Details, schedule, terms, rules, lots and items (or Excel), then submit for approval.',
+    screens: ['^/staff/sourcing/events/'], contexts: ['sourcing-event'],
+    keywords: 'sourcing event rfq auction lot item excel import template approval submit withdraw cancel terms rules award split winner letter regret savings erp',
+    related: ['sourcing', 'sourcing-settings'],
+    body: `A new event is a **draft**. Fill in:
+
+- **Details**: title, estimated value (never shown to bidders — it decides who approves), category, and a description for bidders.
+- **Schedule**: an RFQ has a bid deadline; an auction has a start and end, and optionally a sealed round that closes before it.
+- **Terms**: pick standard terms (Administration → Agreements, *used for sourcing events*) and add anything specific to this event.
+- **Rules**: start from your workspace's defaults; locked rules can't be changed.
+- **Lots and items**: add them on screen, or **Import from Excel** — download the template, one row per item, rows with the same lot number form a lot. You see what was read (and any row errors) before anything is saved.
+
+The box at the top lists anything missing. **Submit for approval** freezes the rules and sends the event through the approval levels; each approver is emailed. They can approve, send back (it becomes a draft again with their remarks) or reject. The owner of an event can never approve it. While it waits you can **withdraw** it to make changes.
+
+**Bidders**: *+ Add suppliers* lists approved suppliers — those in the event's category first, then by lower risk and better scorecard; suppliers on hold (or, if your administrator chose, with overdue corrective actions) can't be picked. *+ Outside bidder* invites a company that isn't a supplier yet: they confirm their email with a code and give their registration number and what they supply; full onboarding is asked for only if they win. You can pick bidders while drafting; **Send invitations** once the event is approved (and again for anyone added later, until bidding closes). Bidders accept the terms and declare any conflict of interest, or decline with a reason — you're emailed either way. Bidders never see each other's names.
+
+**Sealed offers**: bidders who accepted send their offer before the deadline — prices per item or per lot, tax, delivery, validity, payment terms, remarks and files; with two envelopes the technical part is separate. Each bidder gets a receipt reference. You only see who sent what — never the content — until the **opening committee** (people with *Be on the opening committee*) opens it after the deadline: each member confirms, and it opens when the event's quorum is reached.
+
+**Two envelopes**: add the technical scoring sheet (weighted criteria and a pass mark) while drafting. After the technical envelopes are opened, evaluators score each bidder 0–10 per criterion; **Finish technical evaluation** qualifies bidders at or above the pass mark (you can decide differently, with a reason) and tells them. Only qualified bidders' commercial envelopes are opened. The **comparison** ranks prices per lot (L1 = lowest). For a reverse auction you can set each lot's start price from the best sealed price.
+
+**Live reverse auction**: between the start and end time, bidders who accepted (and qualified, if there was a sealed round) bid prices down. Each bid must be at least the minimum step below the bidder's own last bid, and the first bid can't be above the lot's start price. Equal bids: the earlier one ranks higher. A bid much lower than the current best must be confirmed by the bidder. A bid in the last minutes extends the end (auto-extension). The **Live auction** panel shows the time left, each lot's ranking with names, savings against the start price and the target, and every bid. People with *Control live auctions* can **pause** and **resume** (the end moves out by the pause), **extend** with a reason, **message all bidders**, and **strike out** an obvious typing mistake — one person asks with a reason, a different person confirms; the bid stays in the history. The bid history is tamper-evident: **Verify history** checks that nothing was changed, and **Download CSV** gives the full log. Bidders see only their own rank (or, if your administrator chose, the best price or all prices) — never names.
+
+**Award**: once prices are opened (RFQ) or the auction has closed, the **Award** section lists each lot's prices, best first, with payment terms and delivery. The lowest price is picked for you; to award to someone else or **split** a lot (for example 60% / 40%), enter the shares — they must add up to 100%. Anything not all to the best price needs a reason. **Propose award** sends it through the award approval flow (the person who proposed it can't approve it); approvers can approve, send back or reject, and you can withdraw it while it waits. When it is final: winners get an award letter and the others a thank-you letter (if award letters are on); a winner who isn't a supplier yet is asked to complete full registration; the award goes to your ERP for approved suppliers straight away and for new suppliers once they are approved. The section shows the winners, ERP message status and the saving against your estimate and the start price.
+
+**Clarifications**: bidders' questions come to you by email; your answer — or an announcement — goes to every bidder without saying who asked.
+
+- **Save as template** keeps the terms, rules and items for next time; **Sourcing → Templates → Use template** starts a new event from it.
+- **Cancel event** needs a reason; drafts that were never submitted can simply be deleted.`,
+  },
+  {
+    id: 'bidding', title: 'Taking part in a sourcing event', audience: ['supplier'], feature: 'sourcing',
+    summary: 'Read the event and its terms, accept or decline the invitation, and ask questions.',
+    screens: ['^/vendor/events'], contexts: ['bidding'],
+    keywords: 'rfq auction bid quotation invitation event terms accept decline question clarification award result won',
+    body: `**Sourcing events** lists every request for quotation and auction the buyer has invited you to, with when bidding closes.
+
+Open an event to see what is being bought (lots and items), the description and the terms. Then:
+
+- **Accept**: tick that you accept the terms and say whether you have a conflict of interest. You will submit your offer on the same page.
+- **Decline**: tell the buyer why. You can change your answer until bidding closes.
+- **Questions**: ask the buyer anything about the event. Answers are shared with every bidder without saying who asked.
+- **Your offer**: before the deadline, enter your prices (per item or per lot), tax, delivery, validity, payment terms, remarks and files, and submit. You get a receipt reference by email. The offer stays sealed — the buyer can't see it until their opening committee opens all offers after the deadline. Where allowed, you can revise or withdraw it until the deadline. With two envelopes, send the technical envelope (no prices) and the commercial envelope separately.
+
+**Live auctions**: a panel shows the time left (the server's clock) and, per lot, your rank and your best bid. Enter a bid at or below *Your next bid* — each bid must be at least the minimum step below your own last bid — and press **Place bid**. If a bid is much lower than the current best you are asked to confirm it, in case of a typing mistake. A bid in the last minutes extends the auction. Messages from the buyer appear on the panel and by email. You get a reminder a day and an hour before the start.
+
+Other bidders see you only as "Bidder 1", "Bidder 2"… — names are never shown.
+
+**Result**: when the buyer has finalised the award, the event page shows what you were awarded (lot, share and amount) — or that your offer was not selected — and you get a letter by email. You never see other bidders' results.
+
+If you were invited without being a supplier yet, first give your registration number and what you supply. Full registration is asked for only if you win.`,
   },
   {
     id: 'pre-review', title: 'Pre-review for approvers', audience: ['staff'], perms: ['vendors.view'],
@@ -1336,6 +1393,53 @@ Deadlines already running keep their date; new approval steps and new orders fol
 3. Submit it as a change request (**Request changes** → **Submit change request**).
 
 The hold is lifted as soon as the renewal is approved. You’ll get an email.`,
+  },
+  {
+    id: 'contracts', title: 'Contracts', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'Your supplier and customer contracts in one place: dates, value, renewal, notice and the signed copies.',
+    screens: ['^/staff/contracts'], contexts: ['contracts'],
+    keywords: 'contract contracts agreement nda msa sow repository renewal expiry expiring notice period signed copy terminate import excel',
+    related: ['contract-parties', 'contracts-settings'],
+    body: `Contracts → **All contracts** lists every contract with its number, party, type, status, value and end date. Tabs: supplier contracts, customer contracts, **expiring** (ending within your workspace's warning period, soonest first), drafts and ended.
+
+- **+ New contract**: choose supplier or customer, the type (the number comes from the type — NDA-2026-0001, MSA-2026-0001…), the party, value, dates, notice period and whether it renews automatically. A schedule or SOW can sit **under a master agreement** with the same party.
+- **Already signed?** Tick *Already signed* to record a contract signed outside VendorGate — it becomes active (or expired, if its end date has passed).
+- A **draft** becomes active with **Mark as signed**: upload the signed copy first, and the contract needs a start date.
+- Once active, only the owner, description, category, notice period, renewal and reference can change. **Terminate** ends it early with a reason.
+- **Files**: the signed copy, drafts, annexures and other papers, each kept with who uploaded it and when.
+- **Import from Excel** brings in the contracts you already have — download the template, one row per contract; you see what was read and any errors before anything is saved. Tick *Create missing parties* to add suppliers or customers that aren't there yet.
+
+Every night, contracts past their end date become **expired** — or, if they renew automatically, move on by the renewal term. Every change is in the contract's history.`,
+  },
+  {
+    id: 'contract-parties', title: 'Contract parties', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'The suppliers and customers you have contracts with — light records, optionally linked to onboarded suppliers.',
+    screens: ['^/staff/parties'], contexts: ['contract-parties'],
+    keywords: 'party parties supplier customer counterparty contact signatory link onboard import excel duplicate',
+    related: ['contracts'],
+    body: `Contracts → **Parties** keeps a short record of each supplier and customer: name, legal name, country, registration and tax numbers, address, and contacts — tick **Signs** for the people who sign contracts.
+
+- Codes are given automatically (SUP-00001 for suppliers, CUS-00001 for customers).
+- If a new party looks like an existing one (same name, tax or registration number) you're asked before it is created.
+- **Import from Excel** adds many at once; rows that look like an existing party are left out.
+- When supplier onboarding is on, a supplier party can be **linked** to its supplier record — its status and risk then show on the party and its contracts. **Send for onboarding** invites the party to full supplier onboarding and links it straight away.
+- A party with open contracts can't be archived.`,
+  },
+  {
+    id: 'contracts-settings', title: 'Contracts settings', audience: ['staff'], perms: ['tenant.settings'], feature: 'contracts',
+    summary: 'Switch Contracts on, choose contract types and options, and set the defaults every new contract starts with.',
+    screens: ['^/staff/admin/contracts'], contexts: ['contracts-settings'],
+    keywords: 'contracts settings types options notice renewal expiring lock rules customer contracts master agreement contracts plan',
+    related: ['contracts'],
+    body: `Administration → **Contracts** works in layers, like Sourcing:
+
+1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration.
+2. **Switch Contracts on** for the workspace. When it is off the menus are hidden; your contracts are kept.
+3. **Contract types**: NDA, master agreement, SOW, rate contract, service, purchase, sales, distribution, lease, licence and other. Each has its own number prefix; some are only for suppliers or only for customers.
+4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import. Templates, approval, e-signature, obligations and renewal alerts are shown as *coming later*.
+5. **Rule defaults**: notice period, renewal term, how many days before the end a contract counts as *expiring*, and whether a value is required. **Lock** a rule so it can't be changed on a contract.
+
+People also need permissions (Administration → Roles): *View contracts and contract parties* and *Create and edit contracts and parties*. The **Contract Manager** role has both.`,
   },
 ];
 

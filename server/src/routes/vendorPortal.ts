@@ -25,6 +25,9 @@ import { acceptAgreement } from '../services/agreements.js';
 import { answerRoutes } from './questionnaires.js';
 import { guideRoutes } from './guide.js';
 import { supplierActionRoutes } from './correctiveActions.js';
+import { supplierSourcingRoutes } from './supplierSourcing.js';
+import { invitationCount } from '../services/sourcing/bidders.js';
+import { sourcingOn } from '../services/sourcing/config.js';
 import { actionsFor } from '../services/correctiveActions.js';
 
 export const vendorRouter = Router();
@@ -37,7 +40,7 @@ const requireConsent = ah(async (req, _res, next) => {
   if (!v || needsConsent(tenant, v)) throw new HttpError(403, 'Please read and accept the privacy notice first', undefined, 'CONSENT_REQUIRED');
   next();
 });
-for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details', '/agreements', '/questionnaires', '/actions']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
+for (const path of ['/profile/:section', '/documents', '/verify/:kind', '/extractions/:id/apply', '/submit', '/change-requests', '/confirm-details', '/agreements', '/questionnaires', '/actions', '/events', '/bidder-registration']) vendorRouter.use(path, (req, res, next) => (req.method === 'GET' ? next() : requireConsent(req, res, next)));
 
 /** The supplier, as the one acting (their contact email is what the history shows). */
 const supplier = (req: { ip?: string }, v: { contactEmail: string }): Actor => ({ name: v.contactEmail, ip: req.ip });
@@ -120,6 +123,8 @@ vendorRouter.get('/', ah(async (req, res) => {
     dataEntry: dataEntryMode(tenant),
     // The buyer shares the supplier's performance scorecard with them.
     scorecard: !!tenant.settings.scorecard?.showToSuppliers && v.status === 'APPROVED',
+    // Sourcing: the portal shows My events; outside bidders go there instead of the onboarding form.
+    sourcing: sourcingOn(tenant) ? { invitations: await invitationCount(v.id), bidderOnly: v.bidderOnly, registered: !v.bidderOnly || !!v.bidderRegisteredAt } : null,
   });
 }));
 
@@ -209,6 +214,7 @@ vendorRouter.post('/agreements/:id/accept', ah(async (req, res) => {
 // Questionnaires: the same answering routes as a buyer filling in for the supplier.
 // Corrective actions the buyer asked for (answered also after approval).
 supplierActionRoutes(vendorRouter, { vendor: loadMine, tenant: (req) => vendorCtx(req).tenant, actor: (req, v) => supplier(req, v) });
+supplierSourcingRoutes(vendorRouter, { vendor: loadMine, tenant: (req) => vendorCtx(req).tenant, actor: (req, v) => supplier(req, v), lang: (req, v) => vendorLanguage(vendorCtx(req).tenant, v) });
 
 // The supplier guide: next step, check before submitting, send-back to-do, questions.
 guideRoutes(vendorRouter, {

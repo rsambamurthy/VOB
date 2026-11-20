@@ -26,11 +26,14 @@ import { oracleAcknowledgement } from './oracle.js';
 const { poMessages, purchaseOrders, poLines, tenants, legalEntities, shipments, shipmentLines, supplierInvoices, supplierInvoiceLines } = schema;
 const RETRIES = 4;
 
-export type MessageKind = 'ACCEPTANCE' | 'ASN' | 'ASN_CANCEL' | 'INVOICE';
+export type MessageKind = 'ACCEPTANCE' | 'ASN' | 'ASN_CANCEL' | 'INVOICE' | 'AWARD';
 export interface AckInfo { lineIds: string[]; by: string; auto: boolean; note?: string | null }
 type Payload = { info?: AckInfo; shipmentId?: string; invoiceId?: string; by?: string };
+/** A sourcing award for one supplier, ready to become a purchase order in the ERP (services/sourcing/awards.ts). */
+export interface AwardMessage { eventNumber: string; title: string; format: string; currency: string; supplierCode: string; supplierName: string; vendorId: string; awardedAt: string; paymentTerms: string | null; deliveryDays: number | null; total: number;
+  lines: { lot: number; lotTitle: string; lineNo: number; itemCode: string | null; description: string; quantity: number; unit: string; unitPrice: number; amount: number; sharePct: number }[] }
 
-export const EVENT: Record<MessageKind, string> = { ACCEPTANCE: 'purchase_order.accepted', ASN: 'shipment.created', ASN_CANCEL: 'shipment.cancelled', INVOICE: 'invoice.approved' };
+export const EVENT: Record<MessageKind, string> = { ACCEPTANCE: 'purchase_order.accepted', ASN: 'shipment.created', ASN_CANCEL: 'shipment.cancelled', INVOICE: 'invoice.approved', AWARD: 'sourcing.award.approved' };
 
 export async function queueMessage(po: PurchaseOrder, kind: MessageKind, payload: Payload, requestedBy: string) {
   const [conn, tenant] = await Promise.all([getConnection(po.tenantId), db.query.tenants.findFirst({ where: eq(tenants.id, po.tenantId) })]);
@@ -43,18 +46,35 @@ export async function queueMessage(po: PurchaseOrder, kind: MessageKind, payload
   return m;
 }
 
+/** Send an approved sourcing award for one supplier to the ERP (same connector, retries and test mode as order messages). */
+export async function queueAwardMessage(tenantId: string, eventId: string, vendorId: string, award: AwardMessage, requestedBy: string) {
+  const [conn, tenant] = await Promise.all([getConnection(tenantId), db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) })]);
+  const usable = conn.kind !== 'none' && !!tenant && hasFeature(tenant, 'erp');
+  const [m] = await db.insert(poMessages).values({
+    tenantId, eventId, vendorId, kind: 'AWARD', connector: conn.kind, status: usable ? 'PENDING' : 'NO_CONNECTOR', payload: { award }, requestedBy,
+    ...(usable ? {} : { error: 'No ERP connection is set up; nothing was sent.' }),
+  }).returning();
+  if (usable) await enqueue('po.message', { id: m.id });
+  return m;
+}
+
 export const queueAcknowledgement = (po: PurchaseOrder, info: AckInfo) => queueMessage(po, 'ACCEPTANCE', { info }, info.by);
 
 /** Everything a message needs, loaded fresh at send time. */
 interface Data {
-  kind: MessageKind; po: PurchaseOrder; slug: string; entityCode: string | null;
+  kind: MessageKind; po?: PurchaseOrder; slug: string; entityCode: string | null; award?: AwardMessage;
   info?: AckInfo; lines: PoLine[];
   shipment?: Shipment; shipLines?: { line: PoLine; quantity: string; batchNo: string | null }[];
   invoice?: SupplierInvoice; invLines?: { line: PoLine; quantity: string; unitPrice: string; amount: string; taxRate: string | null; taxAmount: string }[]; shipmentNumber?: string | null;
 }
 
 async function load(m: typeof poMessages.$inferSelect): Promise<Data | null> {
-  const p = (m.payload ?? {}) as Payload;
+  const p = (m.payload ?? {}) as Payload & { award?: AwardMessage };
+  if (m.kind === 'AWARD') {
+    const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, m.tenantId) });
+    return tenant && p.award ? { kind: 'AWARD', slug: tenant.slug, entityCode: null, award: p.award, lines: [] } : null;
+  }
+  if (!m.poId) return null;
   const [po, tenant] = await Promise.all([db.query.purchaseOrders.findFirst({ where: eq(purchaseOrders.id, m.poId) }), db.query.tenants.findFirst({ where: eq(tenants.id, m.tenantId) })]);
   if (!po || !tenant) return null;
   const entity = po.entityId ? await db.query.legalEntities.findFirst({ where: eq(legalEntities.id, po.entityId) }) : undefined;
@@ -81,10 +101,11 @@ const num = (s: string | null | undefined) => (s === null || s === undefined ? n
 /** The connector-neutral JSON event (webhook, SAP / Dynamics middleware). */
 export function genericEvent(d: Data) {
   const head = { id: crypto.randomUUID(), event: EVENT[d.kind], occurredAt: new Date().toISOString(), workspace: d.slug };
-  const poRef = { poErpId: d.po.erpId, poNumber: d.po.poNumber, revision: d.po.revision, supplierCode: d.po.supplierCode, entity: d.entityCode };
+  if (d.kind === 'AWARD') return { ...head, award: d.award! };
+  const poRef = { poErpId: d.po!.erpId, poNumber: d.po!.poNumber, revision: d.po!.revision, supplierCode: d.po!.supplierCode, entity: d.entityCode };
   if (d.kind === 'ACCEPTANCE') {
     const i = d.info!;
-    return { ...head, purchaseOrder: { erpId: d.po.erpId, poNumber: d.po.poNumber, revision: d.po.revision, supplierCode: d.po.supplierCode, acceptedBy: i.by, auto: i.auto, note: i.note ?? null,
+    return { ...head, purchaseOrder: { erpId: d.po!.erpId, poNumber: d.po!.poNumber, revision: d.po!.revision, supplierCode: d.po!.supplierCode, acceptedBy: i.by, auto: i.auto, note: i.note ?? null,
       lines: d.lines.map((l) => ({ erpId: l.erpId, lineNo: l.lineNo, acceptance: l.acceptance, promisedDate: l.promisedDate ?? l.needByDate })) } };
   }
   if (d.kind === 'ASN' || d.kind === 'ASN_CANCEL') {
@@ -101,23 +122,33 @@ export function genericEvent(d: Data) {
 
 /** Oracle EBS shapes: PO acceptance, receiving open interface (ASN), payables open interface (invoice). */
 export function oracleBody(d: Data) {
-  if (d.kind === 'ACCEPTANCE') return oracleAcknowledgement(d.po, d.lines, { by: d.info!.by, auto: d.info!.auto, note: d.info!.note, entityCode: d.entityCode });
+  if (d.kind === 'AWARD') {
+    // Purchasing documents open interface (PO_HEADERS_INTERFACE / PO_LINES_INTERFACE): the ERP creates the PO.
+    const a = d.award!;
+    return {
+      HEADER: { ACTION: 'ORIGINAL', DOCUMENT_TYPE_CODE: 'STANDARD', INTERFACE_SOURCE_CODE: 'VENDORGATE', VENDOR_NUM: a.supplierCode, CURRENCY_CODE: a.currency, COMMENTS: `${a.eventNumber} ${a.title}`.slice(0, 240),
+        ATTRIBUTE1: a.eventNumber, PAYMENT_TERMS: a.paymentTerms ?? undefined },
+      LINES: a.lines.map((l, i) => ({ LINE_NUM: i + 1, ITEM: l.itemCode ?? undefined, ITEM_DESCRIPTION: l.description.slice(0, 240), QUANTITY: l.quantity, UOM_CODE: l.unit, UNIT_PRICE: l.unitPrice,
+        PROMISED_DATE: a.deliveryDays !== null ? new Date(Date.now() + a.deliveryDays * 86_400_000).toISOString().slice(0, 10) : undefined, LINE_ATTRIBUTE1: `Lot ${l.lot}` })),
+    };
+  }
+  if (d.kind === 'ACCEPTANCE') return oracleAcknowledgement(d.po!, d.lines, { by: d.info!.by, auto: d.info!.auto, note: d.info!.note, entityCode: d.entityCode });
   if (d.kind === 'ASN' || d.kind === 'ASN_CANCEL') {
     const s = d.shipment!;
     return {
       HEADER: { TRANSACTION_TYPE: d.kind === 'ASN' ? 'NEW' : 'CANCEL', ASN_TYPE: 'ASN', SHIPMENT_NUM: s.number, PACKING_SLIP: s.supplierRef ?? undefined, SHIPPED_DATE: s.shipDate, EXPECTED_RECEIPT_DATE: s.expectedDate ?? undefined,
-        VENDOR_NUM: d.po.supplierCode, VENDOR_SITE_CODE: d.po.supplierSiteCode ?? undefined, ORG_ID: d.entityCode ?? undefined, FREIGHT_CARRIER_CODE: s.carrier ?? undefined, WAYBILL_AIRBILL_NUM: s.trackingNo ?? undefined,
+        VENDOR_NUM: d.po!.supplierCode, VENDOR_SITE_CODE: d.po!.supplierSiteCode ?? undefined, ORG_ID: d.entityCode ?? undefined, FREIGHT_CARRIER_CODE: s.carrier ?? undefined, WAYBILL_AIRBILL_NUM: s.trackingNo ?? undefined,
         NUM_OF_CONTAINERS: s.packages ?? undefined, COMMENTS: [s.vehicleNo && `Vehicle ${s.vehicleNo}`, s.ewayBill && `E-way bill ${s.ewayBill}`].filter(Boolean).join('; ') || undefined },
-      LINES: d.shipLines!.map((x) => ({ TRANSACTION_TYPE: 'SHIP', PO_HEADER_ID: d.po.erpId, DOCUMENT_NUM: d.po.poNumber, PO_LINE_ID: x.line.erpId, DOCUMENT_LINE_NUM: x.line.lineNo, ITEM_NUM: x.line.itemCode ?? undefined,
+      LINES: d.shipLines!.map((x) => ({ TRANSACTION_TYPE: 'SHIP', PO_HEADER_ID: d.po!.erpId, DOCUMENT_NUM: d.po!.poNumber, PO_LINE_ID: x.line.erpId, DOCUMENT_LINE_NUM: x.line.lineNo, ITEM_NUM: x.line.itemCode ?? undefined,
         QUANTITY: num(x.quantity), UNIT_OF_MEASURE: x.line.uom ?? undefined, VENDOR_LOT_NUM: x.batchNo ?? undefined })),
     };
   }
   const v = d.invoice!;
   return {
-    INVOICE_NUM: v.invoiceNumber, INVOICE_TYPE_LOOKUP_CODE: 'STANDARD', INVOICE_DATE: v.invoiceDate, VENDOR_NUM: d.po.supplierCode, VENDOR_SITE_CODE: d.po.supplierSiteCode ?? undefined,
-    INVOICE_AMOUNT: num(v.total), INVOICE_CURRENCY_CODE: v.currency, PO_NUMBER: d.po.poNumber, ORG_ID: d.entityCode ?? undefined, SOURCE: 'VENDORGATE', DESCRIPTION: v.einvoice?.irn ? `IRN ${v.einvoice.irn}` : undefined,
+    INVOICE_NUM: v.invoiceNumber, INVOICE_TYPE_LOOKUP_CODE: 'STANDARD', INVOICE_DATE: v.invoiceDate, VENDOR_NUM: d.po!.supplierCode, VENDOR_SITE_CODE: d.po!.supplierSiteCode ?? undefined,
+    INVOICE_AMOUNT: num(v.total), INVOICE_CURRENCY_CODE: v.currency, PO_NUMBER: d.po!.poNumber, ORG_ID: d.entityCode ?? undefined, SOURCE: 'VENDORGATE', DESCRIPTION: v.einvoice?.irn ? `IRN ${v.einvoice.irn}` : undefined,
     LINES: [
-      ...d.invLines!.map((x, i) => ({ LINE_NUMBER: i + 1, LINE_TYPE_LOOKUP_CODE: 'ITEM', AMOUNT: num(x.amount), QUANTITY_INVOICED: num(x.quantity), UNIT_PRICE: num(x.unitPrice), PO_HEADER_ID: d.po.erpId, PO_LINE_ID: x.line.erpId, PO_NUMBER: d.po.poNumber, PO_LINE_NUMBER: x.line.lineNo })),
+      ...d.invLines!.map((x, i) => ({ LINE_NUMBER: i + 1, LINE_TYPE_LOOKUP_CODE: 'ITEM', AMOUNT: num(x.amount), QUANTITY_INVOICED: num(x.quantity), UNIT_PRICE: num(x.unitPrice), PO_HEADER_ID: d.po!.erpId, PO_LINE_ID: x.line.erpId, PO_NUMBER: d.po!.poNumber, PO_LINE_NUMBER: x.line.lineNo })),
       ...(Number(v.taxAmount) ? [{ LINE_NUMBER: d.invLines!.length + 1, LINE_TYPE_LOOKUP_CODE: 'TAX', AMOUNT: num(v.taxAmount) }] : []),
     ],
   };
@@ -126,23 +157,28 @@ export function oracleBody(d: Data) {
 export function csvFor(d: Data) {
   const at = new Date().toISOString();
   const stamp = at.replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+  if (d.kind === 'AWARD') {
+    const a = d.award!;
+    return { fileName: `award_${a.eventNumber}_${a.supplierCode.replace(/[^A-Za-z0-9-]/g, '_')}_${stamp}.csv`, csv: toCsv([['EVENT_NUMBER', 'SUPPLIER_CODE', 'SUPPLIER_NAME', 'CURRENCY', 'LOT', 'LINE_NUM', 'ITEM', 'DESCRIPTION', 'QUANTITY', 'UOM', 'UNIT_PRICE', 'AMOUNT', 'SHARE_PCT', 'PAYMENT_TERMS', 'DELIVERY_DAYS', 'AWARDED_AT'],
+      ...a.lines.map((l) => [a.eventNumber, a.supplierCode, a.supplierName, a.currency, String(l.lot), String(l.lineNo), l.itemCode ?? '', l.description, String(l.quantity), l.unit, String(l.unitPrice), String(l.amount), String(l.sharePct), a.paymentTerms ?? '', a.deliveryDays === null ? '' : String(a.deliveryDays), a.awardedAt])]) };
+  }
   if (d.kind === 'ACCEPTANCE') {
     const i = d.info!;
-    return { fileName: `po_${d.po.poNumber}_acceptance_${stamp}.csv`, csv: toCsv([['PO_NUMBER', 'REVISION', 'ERP_PO_ID', 'LINE_NUM', 'ERP_LINE_ID', 'ACCEPTANCE', 'ACCEPTED_BY', 'ACTION_DATE', 'NOTE'],
-      ...d.lines.map((l) => [d.po.poNumber, String(d.po.revision), d.po.erpId, String(l.lineNo), l.erpId, i.auto ? 'AUTO_ACCEPTED' : 'ACCEPTED', i.by, at, i.note ?? ''])]) };
+    return { fileName: `po_${d.po!.poNumber}_acceptance_${stamp}.csv`, csv: toCsv([['PO_NUMBER', 'REVISION', 'ERP_PO_ID', 'LINE_NUM', 'ERP_LINE_ID', 'ACCEPTANCE', 'ACCEPTED_BY', 'ACTION_DATE', 'NOTE'],
+      ...d.lines.map((l) => [d.po!.poNumber, String(d.po!.revision), d.po!.erpId, String(l.lineNo), l.erpId, i.auto ? 'AUTO_ACCEPTED' : 'ACCEPTED', i.by, at, i.note ?? ''])]) };
   }
   if (d.kind === 'ASN' || d.kind === 'ASN_CANCEL') {
     const s = d.shipment!;
     return { fileName: `asn_${s.number}_${d.kind === 'ASN' ? 'new' : 'cancel'}_${stamp}.csv`, csv: toCsv([['ACTION', 'ASN_NUMBER', 'SUPPLIER_REF', 'SUPPLIER_CODE', 'PO_NUMBER', 'ERP_PO_ID', 'LINE_NUM', 'ERP_LINE_ID', 'ITEM', 'QUANTITY', 'UOM', 'BATCH', 'SHIP_DATE', 'EXPECTED_DATE', 'CARRIER', 'TRACKING_NO', 'VEHICLE_NO', 'EWAY_BILL'],
-      ...d.shipLines!.map((x) => [d.kind === 'ASN' ? 'NEW' : 'CANCEL', s.number, s.supplierRef ?? '', d.po.supplierCode, d.po.poNumber, d.po.erpId, String(x.line.lineNo), x.line.erpId, x.line.itemCode ?? '', x.quantity, x.line.uom ?? '', x.batchNo ?? '', s.shipDate, s.expectedDate ?? '', s.carrier ?? '', s.trackingNo ?? '', s.vehicleNo ?? '', s.ewayBill ?? ''])]) };
+      ...d.shipLines!.map((x) => [d.kind === 'ASN' ? 'NEW' : 'CANCEL', s.number, s.supplierRef ?? '', d.po!.supplierCode, d.po!.poNumber, d.po!.erpId, String(x.line.lineNo), x.line.erpId, x.line.itemCode ?? '', x.quantity, x.line.uom ?? '', x.batchNo ?? '', s.shipDate, s.expectedDate ?? '', s.carrier ?? '', s.trackingNo ?? '', s.vehicleNo ?? '', s.ewayBill ?? ''])]) };
   }
   const v = d.invoice!;
-  return { fileName: `invoice_${d.po.supplierCode}_${v.invoiceNumber.replace(/[^A-Za-z0-9-]/g, '_')}_${stamp}.csv`, csv: toCsv([['INVOICE_NUMBER', 'INVOICE_DATE', 'SUPPLIER_CODE', 'CURRENCY', 'INVOICE_TOTAL', 'TAX_TOTAL', 'PO_NUMBER', 'ERP_PO_ID', 'LINE_NUM', 'ERP_LINE_ID', 'QUANTITY', 'UNIT_PRICE', 'AMOUNT', 'TAX_RATE', 'TAX_AMOUNT', 'ASN_NUMBER', 'IRN'],
-    ...d.invLines!.map((x) => [v.invoiceNumber, v.invoiceDate, d.po.supplierCode, v.currency, v.total, v.taxAmount, d.po.poNumber, d.po.erpId, String(x.line.lineNo), x.line.erpId, x.quantity, x.unitPrice, x.amount, x.taxRate ?? '', x.taxAmount, d.shipmentNumber ?? '', v.einvoice?.irn ?? ''])]) };
+  return { fileName: `invoice_${d.po!.supplierCode}_${v.invoiceNumber.replace(/[^A-Za-z0-9-]/g, '_')}_${stamp}.csv`, csv: toCsv([['INVOICE_NUMBER', 'INVOICE_DATE', 'SUPPLIER_CODE', 'CURRENCY', 'INVOICE_TOTAL', 'TAX_TOTAL', 'PO_NUMBER', 'ERP_PO_ID', 'LINE_NUM', 'ERP_LINE_ID', 'QUANTITY', 'UNIT_PRICE', 'AMOUNT', 'TAX_RATE', 'TAX_AMOUNT', 'ASN_NUMBER', 'IRN'],
+    ...d.invLines!.map((x) => [v.invoiceNumber, v.invoiceDate, d.po!.supplierCode, v.currency, v.total, v.taxAmount, d.po!.poNumber, d.po!.erpId, String(x.line.lineNo), x.line.erpId, x.quantity, x.unitPrice, x.amount, x.taxRate ?? '', x.taxAmount, d.shipmentNumber ?? '', v.einvoice?.irn ?? ''])]) };
 }
 
-const ORACLE_URL: Record<MessageKind, string> = { ACCEPTANCE: 'ackUrl', ASN: 'asnUrl', ASN_CANCEL: 'asnUrl', INVOICE: 'invoiceUrl' };
-const URL_LABEL: Record<string, string> = { ackUrl: 'acknowledgement URL', asnUrl: 'shipment notice URL', invoiceUrl: 'invoice URL' };
+const ORACLE_URL: Record<MessageKind, string> = { ACCEPTANCE: 'ackUrl', ASN: 'asnUrl', ASN_CANCEL: 'asnUrl', INVOICE: 'invoiceUrl', AWARD: 'awardUrl' };
+const URL_LABEL: Record<string, string> = { ackUrl: 'acknowledgement URL', asnUrl: 'shipment notice URL', invoiceUrl: 'invoice URL', awardUrl: 'award (purchase order) URL' };
 
 async function deliver(id: string) {
   const m = await db.query.poMessages.findFirst({ where: eq(poMessages.id, id) });
@@ -157,7 +193,7 @@ async function deliver(id: string) {
   } catch (err: any) {
     const e = err instanceof ErpError ? err : new ErpError(String(err?.message ?? err));
     await db.update(poMessages).set({ status: 'FAILED', attempts, error: e.message.slice(0, 1000), httpStatus: e.httpStatus ?? null, response: e.response ?? null }).where(eq(poMessages.id, id));
-    if (!queueRunning() || attempts > RETRIES) await audit({ tenantId: m.tenantId, vendorId: d.po.vendorId, actor: 'system', action: d.kind === 'ACCEPTANCE' ? 'PO_ACK_FAILED' : 'PO_MESSAGE_FAILED', detail: { po: d.po.poNumber, kind: d.kind, error: e.message.slice(0, 200) } });
+    if (!queueRunning() || attempts > RETRIES) await audit({ tenantId: m.tenantId, vendorId: d.po?.vendorId ?? d.award?.vendorId, actor: 'system', action: d.kind === 'ACCEPTANCE' ? 'PO_ACK_FAILED' : d.kind === 'AWARD' ? 'SOURCING_AWARD_TO_ERP_FAILED' : 'PO_MESSAGE_FAILED', detail: { po: d.po?.poNumber ?? d.award?.eventNumber, kind: d.kind, ...(m.eventId ? { eventId: m.eventId } : {}), error: e.message.slice(0, 200) } });
     throw e;
   }
 }

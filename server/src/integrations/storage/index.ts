@@ -29,8 +29,8 @@ export const primaryStorage = () => primary;
 
 const EXT: Record<string, string> = { 'application/pdf': '.pdf', 'image/png': '.png', 'image/jpeg': '.jpg' };
 
-/** Validates, scans and stores an upload. Returns what to save on the document row. */
-export async function storeUpload(tenantId: string, vendorId: string, file: { buffer: Buffer; originalname: string }) {
+/** Validates, scans and stores an upload under <tenant>/<folder>/ (the vendor id, or contracts/<id>). Returns what to save on the row. */
+export async function storeUpload(tenantId: string, folder: string, file: { buffer: Buffer; originalname: string }) {
   const type = sniffType(file.buffer);
   if (!type) throw new HttpError(400, 'Only real PDF, PNG or JPG files are accepted (the file’s contents don’t match)');
   if (type === 'application/pdf' && pdfLooksActive(file.buffer)) throw new HttpError(400, 'This PDF contains scripts or auto-run actions. Please print it to a plain PDF and upload again.');
@@ -38,7 +38,7 @@ export async function storeUpload(tenantId: string, vendorId: string, file: { bu
   if (i.SCAN_PROVIDER === 'clamav') {
     try {
       const r = await clamScan(file.buffer, i.CLAMAV_HOST, i.CLAMAV_PORT);
-      if (!r.clean) { logger.warn({ tenantId, vendorId, signature: r.signature }, 'infected upload blocked'); throw new HttpError(400, 'This file failed the virus scan and was not saved.'); }
+      if (!r.clean) { logger.warn({ tenantId, folder, signature: r.signature }, 'infected upload blocked'); throw new HttpError(400, 'This file failed the virus scan and was not saved.'); }
       scanStatus = 'CLEAN';
     } catch (e) {
       if (e instanceof HttpError) throw e;
@@ -46,7 +46,7 @@ export async function storeUpload(tenantId: string, vendorId: string, file: { bu
       throw new HttpError(503, 'Uploads are temporarily unavailable (virus scanner offline). Please try again shortly.');
     }
   }
-  const key = `${tenantId}/${vendorId}/${crypto.randomUUID()}${EXT[type]}`;
+  const key = `${tenantId}/${folder}/${crypto.randomUUID()}${EXT[type]}`;
   await primary.put(key, file.buffer, type);
   const base = path.basename(file.originalname).replace(/[^\w.\- ()]/g, '_').slice(0, 120) || `document${EXT[type]}`;
   return { storagePath: key, storageDriver: primary.name, mimeType: type, size: file.buffer.length, sha256: crypto.createHash('sha256').update(file.buffer).digest('hex'), scanStatus, fileName: base };
@@ -71,4 +71,17 @@ export async function readBytes(doc: { storagePath: string; storageDriver: strin
 
 export async function removeStored(doc: { storagePath: string; storageDriver: string }) {
   await driverFor(doc.storageDriver).remove(doc.storagePath).catch((e) => logger.warn({ err: e }, 'failed to delete stored file'));
+}
+
+/** Send a stored file to the browser: signed URL for cloud storage, otherwise streamed inline in a locked-down sandbox. */
+export async function sendStoredFile(res: import('express').Response, doc: { storagePath: string; storageDriver: string; fileName: string; mimeType: string }) {
+  const out = await readForDownload(doc);
+  res.setHeader('Cache-Control', 'private, no-store');
+  if ('url' in out) return res.redirect(302, out.url); // cloud storage: short-lived signed URL
+  res.setHeader('Content-Type', doc.mimeType);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.fileName)}"`);
+  out.stream.on('error', () => { if (!res.headersSent) res.status(404).end(); else res.end(); });
+  out.stream.pipe(res);
 }

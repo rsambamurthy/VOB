@@ -174,7 +174,7 @@ export async function runRetention(now = new Date()) {
     const r = retentionFor(t);
     const conds = [];
     if (r.rejectedDays > 0) conds.push(and(eq(vendors.status, 'REJECTED'), lt(vendors.decidedAt, new Date(now.getTime() - r.rejectedDays * DAY))));
-    if (r.abandonedDays > 0) conds.push(and(inArray(vendors.status, ['INVITED', 'IN_PROGRESS', 'SENT_BACK']), lt(vendors.updatedAt, new Date(now.getTime() - r.abandonedDays * DAY))));
+    if (r.abandonedDays > 0) conds.push(and(inArray(vendors.status, ['INVITED', 'IN_PROGRESS', 'SENT_BACK']), eq(vendors.bidderOnly, false), lt(vendors.updatedAt, new Date(now.getTime() - r.abandonedDays * DAY))));
     if (!conds.length) continue;
     const due = await db.select({ id: vendors.id }).from(vendors).where(and(eq(vendors.tenantId, t.id), isNull(vendors.erasedAt), or(...conds))).limit(200);
     for (const v of due) {

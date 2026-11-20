@@ -1,5 +1,6 @@
 import { licenceStatus } from '../lib/licence.js';
 import { sourcingSummary } from '../services/sourcing/config.js';
+import { contractsSummary } from '../services/contracts/config.js';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { localeFor } from '../countries/registry.js';
@@ -57,6 +58,7 @@ function me(req: Request) {
     support: s.support,
     deployment: env.onPrem ? 'onprem' : 'cloud',
     sourcing: sourcingSummary(s.tenant),
+    contracts: contractsSummary(s.tenant),
     version: env.version,
     // On-prem: the licence banner (everyone sees read-only; administrators also see warnings ahead of the end date).
     licence: env.onPrem ? licenceBanner(s.permissions.has('tenant.settings')) : null,

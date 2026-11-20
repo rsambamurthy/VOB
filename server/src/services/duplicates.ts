@@ -89,11 +89,12 @@ export async function duplicatesOf(v: { id: string; tenantId: string; identityKe
 /** Which of these suppliers have an open (not dismissed) duplicate — one query, for list flags. */
 export async function vendorsWithDuplicates(tenantId: string, ids: string[]): Promise<Set<string>> {
   if (!ids.length) return new Set();
+  // EXISTS stops at the first match, so a large group of look-alike records doesn't multiply the work.
   const r = await db.execute(sql`
-    select distinct v.id from vendors v
-    join vendors o on o.tenant_id = v.tenant_id and o.id <> v.id and o.erased_at is null and o.identity_keys && v.identity_keys
+    select v.id from vendors v
     where v.tenant_id = ${tenantId} and v.id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)}) and v.erased_at is null and cardinality(v.identity_keys) > 0
-      and not exists (select 1 from duplicate_dismissals d where d.tenant_id = v.tenant_id and d.vendor_a = least(v.id, o.id) and d.vendor_b = greatest(v.id, o.id))`);
+      and exists (select 1 from vendors o where o.tenant_id = v.tenant_id and o.id <> v.id and o.erased_at is null and o.identity_keys && v.identity_keys
+        and not exists (select 1 from duplicate_dismissals d where d.tenant_id = v.tenant_id and d.vendor_a = least(v.id, o.id) and d.vendor_b = greatest(v.id, o.id)))`);
   return new Set(((r as unknown as { rows: { id: string }[] }).rows).map((x) => x.id));
 }
 
