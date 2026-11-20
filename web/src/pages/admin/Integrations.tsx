@@ -36,6 +36,7 @@ export function Integrations() {
   useEffect(() => { load(); }, []);
   if (!s || !me) return <div className="page"><div className="spinner" /></div>;
   const otp = me.tenant.settings.vendorOtpChannel ?? 'email';
+  const onb = me.plan?.features.onboarding !== false;
 
   async function run(path: string, body: unknown, ok: (r: any) => string) {
     setMsg(undefined);
@@ -48,7 +49,7 @@ export function Integrations() {
 
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Integrations</h1><p className="muted">Email, SMS, file storage, verification and AI. Providers are set up on the server; everything runs safely in <strong>test mode</strong> until keys are added.</p></div></header>
+      <header className="page-head"><div><h1>Integrations</h1><p className="muted">{onb ? 'Email, SMS, file storage, verification and AI.' : 'Email, file storage and AI.'} Providers are set up on the server; everything runs safely in <strong>test mode</strong> until keys are added.</p></div></header>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {!s.jobs.running && !s.devMode && <Alert kind="warning">The background job queue isn’t running — emails and document reading are processed in-line. Check server logs.</Alert>}
       <div className="int-grid">
@@ -58,7 +59,7 @@ export function Integrations() {
           <button className="btn btn-secondary btn-sm" onClick={() => run('/admin/integrations/test-email', {}, (r) => s.email.live ? `Test email sent to ${r.to}.` : `Test email recorded for ${r.to} — see Mailbox (test mode).`)}>Send me a test email</button>
         </Card>
 
-        <Card title="SMS" live={s.sms.live} provider={s.sms.provider} env={'SMS_PROVIDER=msg91            # India (DLT)\nMSG91_AUTH_KEY=...\nMSG91_OTP_TEMPLATE_ID=...      # DLT-approved OTP template\n# or for international numbers:\n# SMS_PROVIDER=twilio\n# TWILIO_ACCOUNT_SID=AC...  TWILIO_AUTH_TOKEN=...  TWILIO_FROM=+1...'}>
+        {onb && <Card title="SMS" live={s.sms.live} provider={s.sms.provider} env={'SMS_PROVIDER=msg91            # India (DLT)\nMSG91_AUTH_KEY=...\nMSG91_OTP_TEMPLATE_ID=...      # DLT-approved OTP template\n# or for international numbers:\n# SMS_PROVIDER=twilio\n# TWILIO_ACCOUNT_SID=AC...  TWILIO_AUTH_TOKEN=...  TWILIO_FROM=+1...'}>
           <p className="small muted">This workspace: {counts(s.sms.counts)}</p>
           <div className="field"><label htmlFor="otp-ch">Send vendor sign-in codes by</label>
             <select id="otp-ch" value={otp} onChange={(e) => setting({ vendorOtpChannel: e.target.value }, 'Sign-in code delivery updated.')}>
@@ -68,7 +69,7 @@ export function Integrations() {
             <input placeholder="Mobile number" value={phone} onChange={(e) => setPhone(e.target.value)} aria-label="Mobile number for test" />
             <button className="btn btn-secondary btn-sm" disabled={phone.length < 8} onClick={() => run('/admin/integrations/test-sms', { to: phone }, () => (s.sms.live ? 'Test SMS sent.' : 'Test SMS recorded (test mode — nothing was sent).'))}>Send test SMS</button>
           </div>
-        </Card>
+        </Card>}
 
         <Card title="Document storage" live={s.storage.driver !== 'local'} provider={s.storage.driver} env={'STORAGE_DRIVER=s3              # AWS S3, Cloudflare R2, MinIO…\nS3_BUCKET=vendor-docs\nS3_REGION=ap-south-1\nS3_ACCESS_KEY_ID=...\nS3_SECRET_ACCESS_KEY=...\n# S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com\n# or: STORAGE_DRIVER=azure + AZURE_STORAGE_CONNECTION_STRING=...\n\nSCAN_PROVIDER=clamav           # virus scanning via clamd\nCLAMAV_HOST=127.0.0.1'}>
           <p className="small muted">{s.storage.bucket ? `Bucket / container: ${s.storage.bucket}` : 'Files are stored on the server’s disk (fine for a single server; use cloud storage in production).'}<br />
@@ -76,7 +77,7 @@ export function Integrations() {
           <button className="btn btn-secondary btn-sm" onClick={() => run('/admin/integrations/test-storage', {}, (r) => `Storage OK — ${r.detail}.`)}>Check storage</button>
         </Card>
 
-        {s.kyc.packs.map((p) => (
+        {onb && s.kyc.packs.map((p) => (
           <Card key={p.code} title={`${p.title} (${p.country})`} live={p.live} provider={p.provider} env={CHECK_ENV[p.code] ?? AGGREGATOR_ENV}>
             <p className="small muted">{p.home ? 'Used for your suppliers.' : `Used for suppliers from ${p.country}.`} Vendors run checks from the form; reviewers can re-run them from the vendor page. Identical checks are reused for 24 hours and limited per vendor per day to control provider fees. Only masked identifiers are stored.</p>
             {p.checks && p.checks.length > 1 && (
@@ -86,7 +87,9 @@ export function Integrations() {
           </Card>
         ))}
 
-        <Card title="AI: document reading, help answers and Ask" live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-5-5 for lower cost'}>
+        <Card title={onb ? 'AI: document reading, help answers and Ask' : 'AI: contract reading and help answers'} live={s.ai.live} provider={s.ai.provider} env={'AI_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-...\nAI_MODEL=claude-sonnet-5-5      # or claude-haiku-5-5 for lower cost'}>
+          {!onb && <p className="small muted">Used to read uploaded contracts and write the contract watch summary — both are switched on under Administration → Contracts, and identifying details are masked before anything is sent.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>}
+          {onb && <>
           <p className="small muted">Reads registration, tax and bank documents (India: GST, PAN, cheque, incorporation, Udyam; Saudi Arabia: CR, VAT certificate; UAE: trade licence, TRN certificate; Bahrain: CR, VAT certificate; Qatar: CR, tax card; Kuwait: commercial licence; Oman: CR, VAT certificate; Gulf bank letters), suggests values for the form, and shows reviewers where documents and form answers differ.{s.ai.model && <> Model: <code>{s.ai.model}</code>.</>}</p>
           <fieldset className="entry-modes">
             <legend>How suppliers enter their details</legend>
@@ -105,8 +108,10 @@ export function Integrations() {
             })}
             <p className="muted small">Assisted and Automatic send uploaded documents to the AI provider for reading; they are not used to train models. Check this fits your data-protection obligations.{!s.ai.live && ' (In test mode no document leaves the server, and values are only echoed back from what was typed.)'}</p>
           </fieldset>
+          </>}
           <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.helpAnswers !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, helpAnswers: on } }); setting({ helpAi: on }, on ? 'AI help answers turned on.' : 'AI help answers turned off.'); }} />
-            <span><strong>Answer F1 help questions with AI</strong><span className="muted small block">Staff and suppliers can ask a question in their own words; the answer comes only from the help topics they can see. Only the question and those topics are sent to the AI provider.{!s.ai.helpLive && ' (In test mode the closest topic is shown instead.)'}</span></span></label>
+            <span><strong>Answer F1 help questions with AI</strong><span className="muted small block">{onb ? 'Staff and suppliers' : 'Staff'} can ask a question in their own words; the answer comes only from the help topics they can see. Only the question and those topics are sent to the AI provider.{!s.ai.helpLive && ' (In test mode the closest topic is shown instead.)'}</span></span></label>
+          {onb && <>
           <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.ask !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, ask: on } }); setting({ askAi: on }, on ? 'Ask turned on.' : 'Ask turned off.'); }} />
             <span><strong>Let staff ask about suppliers in their own words</strong><span className="muted small block">“Ask” in the top bar turns a question into one of VendorGate’s built-in searches and shows the matching records. Only the question is sent to the AI provider — never supplier data — and everyone sees only what their role allows.{!s.ai.askLive && ' (In test mode questions are matched by keywords instead.)'}</span></span></label>
           <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={!!s.ai.preReview} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, preReview: on } }); setting({ aiPreReview: on }, on ? 'AI pre-review summaries turned on.' : 'AI pre-review summaries turned off.'); }} />
@@ -121,6 +126,7 @@ export function Integrations() {
           )}
           <label className="check-item" style={{ marginTop: 10 }}><input type="checkbox" checked={s.ai.guide !== false} onChange={(e) => { const on = e.target.checked; setS({ ...s, ai: { ...s.ai, guide: on } }); setting({ aiGuide: on }, on ? 'Send-back to-do lists will be written with AI.' : 'Send-back to-do lists will be made without AI.'); }} />
             <span><strong>Turn send-back remarks into a to-do list for the supplier with AI</strong><span className="muted small block">Suppliers always get a guide: the next step, what approvers would ask about before they submit, and answers to their questions (from help topics, with <em>Answer F1 help questions with AI</em>). With this on, when you send a registration back the AI also turns your remarks into a clear to-do list in the supplier's language, each point linked to the right tab. Privacy mode: the supplier's names and numbers in your remarks are replaced by placeholders before sending.{!s.ai.guideLive && ' (In test mode the remarks are split into points without AI.)'}</span></span></label>
+          </>}
         </Card>
       </div>
     </div>

@@ -26,7 +26,7 @@ describe('SCIM provisioning', () => {
   test('admin turns it on and gets a token shown once; calls without it are refused', async () => {
     const admin = await login('admin@acme.test');
     const roles = (await admin.get('/api/admin/sso')).body.roles as { id: string; name: string }[];
-    const viewer = roles.find((r) => /view/i.test(r.name))!;
+    const viewer = roles.find((r) => r.name === 'Viewer')!;
     const r = await admin.post('/api/admin/scim/token');
     expect(r.body.token).toMatch(/^vgscim_/);
     expect(r.body.baseUrl).toBe('http://app.test/api/scim/v2');

@@ -8,6 +8,8 @@ import type { Tenant } from '../src/db/schema.js';
 import { resolveFeatures } from '../src/lib/features.js';
 import { effectiveLimits } from '../src/lib/plans.js';
 import { runContractEndDates } from '../src/services/contracts/contracts.js';
+import { createTenant, ensureDefaultRoles } from '../src/services/tenants.js';
+import { effectivePermissions } from '../src/lib/permissions.js';
 
 let acme: Tenant;
 let original: Pick<Tenant, 'settings' | 'limits' | 'plan'>;
@@ -40,6 +42,50 @@ describe('modules', () => {
     expect(me.plan.features).toMatchObject({ onboarding: false, contracts: true });
     expect(me.contracts.on).toBe(false);
     await setLimits(original.limits as object, original.plan);
+  });
+
+  test('Contracts-only Administration: no onboarding permissions, roles, ERP screen or ERP option', async () => {
+    const admin = await login('admin@acme.test');
+    await setLimits({}, 'contracts');
+    try {
+      const me = (await admin.get('/api/auth/me')).body;
+      expect(me.permissions).toEqual(expect.arrayContaining(['contracts.manage', 'users.manage', 'tenant.settings', 'approvals.manage']));
+      for (const p of ['vendors.view', 'vendors.create', 'vendors.export', 'config.manage', 'reports.view', 'orders.view', 'invoices.manage', 'sourcing.view']) expect(me.permissions).not.toContain(p);
+      const roles = (await admin.get('/api/admin/roles')).body;
+      const keys = roles.roles.map((r: any) => r.key);
+      expect(keys).toEqual(expect.arrayContaining(['ADMIN', 'CONTRACT_MANAGER', 'LEGAL']));
+      for (const k of ['VENDOR_ADMIN', 'TAX_MANAGER', 'FINANCE_MANAGER', 'MDM_MANAGER', 'BUYER', 'VIEWER']) expect(keys).not.toContain(k);
+      const perms = JSON.stringify(roles.permissions);
+      expect(perms).toContain('contracts.manage');
+      expect(perms).not.toContain('vendors.view');
+      expect(perms).not.toContain('orders.manage');
+      expect(roles.roles.find((r: any) => r.key === 'ADMIN').permissions).not.toContain('vendors.view');
+      // A custom role edited on this plan keeps its onboarding permissions for a later upgrade; new ones can't be added.
+      const [custom] = await db.insert(schema.roles).values({ tenantId: acme.id, key: `MIXED_${Date.now()}`, name: `Mixed ${Date.now()}`, permissions: ['vendors.view', 'contracts.view'] }).returning();
+      expect((await admin.patch(`/api/admin/roles/${custom.id}`, { permissions: ['contracts.manage', 'vendors.export'] })).status).toBe(200);
+      const saved = await db.query.roles.findFirst({ where: eq(schema.roles.id, custom.id) });
+      expect([...saved!.permissions].sort()).toEqual(['contracts.manage', 'vendors.view']);
+      await db.delete(schema.roles).where(eq(schema.roles.id, custom.id));
+      expect((await admin.get('/api/admin/erp')).status).toBe(404);
+      const cfg = (await admin.get('/api/admin/contracts')).body;
+      expect(cfg.features.find((o: any) => o.key === 'contractToErp')).toMatchObject({ on: false, needs: 'onboarding' });
+    } finally { await setLimits(original.limits as object, original.plan); }
+    // Back on the full plan everything returns.
+    const me = (await admin.get('/api/auth/me')).body;
+    expect(me.permissions).toContain('vendors.view');
+    expect((await admin.get('/api/admin/roles')).body.roles.map((r: any) => r.key)).toContain('VENDOR_ADMIN');
+  });
+
+  test('a new Contracts-only workspace gets only the contract roles; a later plan change adds the onboarding ones', async () => {
+    const slug = `conly${Date.now() % 1e6}`;
+    const { tenant, roles } = await createTenant({ slug, name: 'Contracts Only Ltd', adminName: 'Cora Admin', adminEmail: `admin@${slug}.test`, adminPassword: 'Demo@12345', country: 'IN', plan: 'contracts' });
+    expect(roles.map((r) => r.key).sort()).toEqual(['ADMIN', 'CONTRACT_APPROVER', 'CONTRACT_MANAGER', 'CONTRACT_VIEWER', 'LEGAL']);
+    expect([...effectivePermissions(['vendors.view', 'contracts.view', 'users.manage'], effectiveLimits(tenant).features)]).toEqual(['contracts.view', 'users.manage']);
+    const [up] = await db.update(schema.tenants).set({ plan: 'standard', limits: { features: { contracts: true } } }).where(eq(schema.tenants.id, tenant.id)).returning();
+    await ensureDefaultRoles(up, { features: ['onboarding'] });
+    await ensureDefaultRoles(up, { features: ['onboarding'] }); // twice: nothing is created again
+    const all = await db.select().from(schema.roles).where(eq(schema.roles.tenantId, tenant.id));
+    expect(all.map((r) => r.key).sort()).toEqual(['ADMIN', 'BUYER', 'CONTRACT_APPROVER', 'CONTRACT_MANAGER', 'CONTRACT_VIEWER', 'FINANCE_MANAGER', 'LEGAL', 'MDM_MANAGER', 'TAX_MANAGER', 'VENDOR_ADMIN', 'VIEWER']);
   });
 });
 

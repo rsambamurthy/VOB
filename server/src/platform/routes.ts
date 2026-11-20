@@ -18,7 +18,7 @@ import { audit } from '../lib/audit.js';
 import { sendMail } from '../lib/mailer.js';
 import { loginLimiter, sensitiveLimiter } from '../lib/rateLimits.js';
 import { createSession } from '../auth/session.js';
-import { createTenant, slugProblem } from '../services/tenants.js';
+import { createTenant, ensureDefaultRoles, slugProblem } from '../services/tenants.js';
 import { sendStaffInvite } from '../services/users.js';
 import { assertCanAddUser, startOfDay, usage } from '../services/limits.js';
 import { senderFor } from '../integrations/email/index.js';
@@ -299,6 +299,10 @@ platformRouter.patch('/tenants/:id', ah(async (req, res) => {
   if (input.notes !== undefined) set.notes = input.notes;
   if (input.requireMfa !== undefined) set.settings = { ...t.settings, requireMfa: input.requireMfa ? true : !!t.settings.requireMfa, mfaEnforcedByPlatform: input.requireMfa };
   await db.update(tenants).set(set).where(eq(tenants.id, t.id));
+  // Products switched on by this change get their default roles (e.g. Contracts-only → Standard adds the onboarding roles).
+  const before = effectiveLimits(t).features, after = effectiveLimits({ ...t, ...set } as typeof t).features;
+  const gained = (Object.keys(after) as (keyof typeof after)[]).filter((f) => after[f] && !before[f]);
+  if (gained.length) await ensureDefaultRoles({ ...t, ...set } as typeof t, { features: gained });
   if (input.requireMfa !== undefined && input.requireMfa !== !!t.settings.mfaEnforcedByPlatform) await audit({ tenantId: t.id, actor: 'VendorGate', action: input.requireMfa ? 'MFA_ENFORCED_BY_PLATFORM' : 'MFA_ENFORCEMENT_LIFTED' });
   const changed = Object.fromEntries(Object.entries(input).filter(([k]) => k !== 'notes'));
   if (input.plan && input.plan !== t.plan) await audit({ tenantId: t.id, actor: 'VendorGate', action: 'PLAN_CHANGED', detail: { from: t.plan, to: input.plan } });

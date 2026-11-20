@@ -1,7 +1,9 @@
 import { and, count, eq } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
 import { db, schema } from '../lib/db.js';
-import { DEFAULT_ROLES } from '../lib/permissions.js';
+import { DEFAULT_ROLES, rolesFor } from '../lib/permissions.js';
+import { effectiveLimits } from '../lib/plans.js';
+import type { Feature } from '../lib/features.js';
 import { HttpError } from '../lib/http.js';
 import { hashPassword } from '../lib/password.js';
 import { createStaffUser } from './users.js';
@@ -58,7 +60,7 @@ export async function createTenant(input: CreateTenantInput) {
     settings: packFor(country).skipWeekendsByDefault ? { skipWeekends: true } : {},
     plan: input.plan ?? 'standard', limits: input.limits ?? {}, trialEndsAt: input.trialEndsAt ?? null, source: input.source ?? 'platform', notes: input.notes,
   }).returning();
-  const createdRoles = await db.insert(schema.roles).values(DEFAULT_ROLES.map((r) => ({ tenantId: tenant.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, isSystem: r.key === 'ADMIN' }))).returning();
+  const createdRoles = await db.insert(schema.roles).values(rolesFor(effectiveLimits(tenant).features).map((r) => ({ tenantId: tenant.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, isSystem: r.key === 'ADMIN' }))).returning();
   const admin = createdRoles.find((r) => r.key === 'ADMIN')!;
   await seedInitialConfig(tenant.id, templateFor(country));
   if (input.adminPassword) {
@@ -80,6 +82,8 @@ export async function countryChangeBlocker(t: Tenant) {
   if (Number(n) > 0) return 'Suppliers have already been invited';
   const [{ c }] = await db.select({ c: count() }).from(schema.tenantConfigs).where(eq(schema.tenantConfigs.tenantId, t.id));
   if (Number(c) > 1) return 'The onboarding form has already been changed';
+  const [{ k }] = await db.select({ k: count() }).from(schema.contracts).where(eq(schema.contracts.tenantId, t.id));
+  if (Number(k) > 0) return 'Contracts have already been created';
   return null;
 }
 
@@ -95,4 +99,17 @@ export async function setHomeCountry(t: Tenant, country: string, actor: string) 
   });
   invalidate(t.id);
   await audit({ tenantId: t.id, actor, action: code === t.country ? 'COUNTRY_CONFIRMED' : 'COUNTRY_CHANGED', detail: { from: t.country, to: code } });
+}
+
+/**
+ * Default roles for products a workspace has gained (a plan change, or roles added in a later release): each missing
+ * default role whose product is on is created. `only` limits it to some products (the ones just switched on) or keys.
+ */
+export async function ensureDefaultRoles(t: Tenant, only?: { features?: Feature[]; keys?: string[] }) {
+  const features = effectiveLimits(t).features;
+  const have = new Set((await db.select({ key: schema.roles.key }).from(schema.roles).where(eq(schema.roles.tenantId, t.id))).map((r) => r.key));
+  const add = DEFAULT_ROLES.filter((r) => !have.has(r.key) && (!r.feature || features[r.feature])
+    && (!only?.features || (r.feature && only.features.includes(r.feature))) && (!only?.keys || only.keys.includes(r.key)));
+  if (add.length) await db.insert(schema.roles).values(add.map((r) => ({ tenantId: t.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions }))).onConflictDoNothing();
+  return add.map((r) => r.key);
 }

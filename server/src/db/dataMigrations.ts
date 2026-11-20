@@ -18,13 +18,9 @@ export async function grantNewAdminPermissions() {
     const missing = ALL_PERMISSIONS.filter((p) => !have.has(p));
     if (missing.length) await db.update(schema.roles).set({ permissions: [...have, ...missing] }).where(eq(schema.roles.id, r.id as string));
   }
-  // Roles added to the defaults later (Buyer, Contract Manager, Legal Counsel) are created in workspaces that don't have them yet.
-  const { DEFAULT_ROLES } = await import('../lib/permissions.js');
-  for (const def of DEFAULT_ROLES.filter((d) => ['BUYER', 'CONTRACT_MANAGER', 'LEGAL'].includes(d.key))) {
-    for (const t of await rows(sql`select t.id from tenants t where not exists (select 1 from roles r where r.tenant_id = t.id and r.key = ${def.key})`)) {
-      await db.insert(schema.roles).values({ tenantId: t.id as string, key: def.key, name: def.name, description: def.description, permissions: def.permissions }).onConflictDoNothing();
-    }
-  }
+  // Roles added to the defaults later are created in workspaces that don't have them yet — only for products the workspace has.
+  const { ensureDefaultRoles } = await import('../services/tenants.js');
+  for (const t of await db.select().from(schema.tenants)) await ensureDefaultRoles(t, { keys: ['BUYER', 'CONTRACT_MANAGER', 'LEGAL', 'CONTRACT_VIEWER', 'CONTRACT_APPROVER'] });
 }
 
 export async function sealExistingData(force = false) {

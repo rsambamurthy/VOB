@@ -8,7 +8,8 @@ import { loc, localeInfo } from '../../lib/format';
 export function Workspace() {
   const { me, refresh } = useSession();
   const t = me!.tenant;
-  const arabic = !!t.supplierLanguages?.includes('ar');
+  const onb = me!.plan?.features.onboarding !== false;
+  const arabic = onb && !!t.supplierLanguages?.includes('ar');
   const welcome = useSearchParams()[0].get('welcome') === '1';
   const [f, setF] = useState({
     name: t.name, productName: t.branding.productName ?? '', primaryColor: t.branding.primaryColor ?? '#1f2758', logoUrl: t.branding.logoUrl ?? '',
@@ -30,9 +31,15 @@ export function Workspace() {
         <Alert kind="success"><strong>Welcome to VendorGate — {t.name} is ready.</strong>
           {me!.plan?.trialEndsAt && <> Your free trial runs until {new Date(me!.plan.trialEndsAt).toLocaleDateString(loc(), { day: 'numeric', month: 'long' })}.</>}
           <ol className="welcome-steps">
-            <li>Add your logo and colour below, so suppliers recognise you.</li>
-            <li><Link to="/staff/admin/users">Invite your team</Link> — reviewers, finance and approvers.</li>
-            <li><Link to="/staff/admin/config">Review the supplier form and approval flow</Link>, then <Link to="/staff/vendors">invite your first vendor</Link>.</li>
+            {onb ? <>
+              <li>Add your logo and colour below, so suppliers recognise you.</li>
+              <li><Link to="/staff/admin/users">Invite your team</Link> — reviewers, finance and approvers.</li>
+              <li><Link to="/staff/admin/config">Review the supplier form and approval flow</Link>, then <Link to="/staff/vendors">invite your first vendor</Link>.</li>
+            </> : <>
+              <li>Add your logo and colour below — they appear on contracts, review links and emails.</li>
+              <li><Link to="/staff/admin/users">Invite your team</Link> — contract managers, Legal and approvers.</li>
+              <li><Link to="/staff/admin/contracts">Set up Contracts</Link>, then <Link to="/staff/contracts/migration">bring your existing contracts in</Link>.</li>
+            </>}
           </ol>
         </Alert>
       )}
@@ -40,7 +47,7 @@ export function Workspace() {
       <form onSubmit={save} className="stack">
         <section className="card pad section-card">
           <h3>Company & branding</h3>
-          <p className="muted small">Shown to your staff and to suppliers in the vendor portal and emails.</p>
+          <p className="muted small">{onb ? 'Shown to your staff and to suppliers in the vendor portal and emails.' : 'Shown to your staff, and to the other party on review links and emails.'}</p>
           <div className="field-grid">
             <div className="field"><label htmlFor="w-name">Company name</label><input id="w-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
             <div className="field"><label htmlFor="w-prod">Portal name</label><input id="w-prod" value={f.productName} placeholder="VendorGate" onChange={(e) => setF({ ...f, productName: e.target.value })} /></div>
@@ -49,7 +56,7 @@ export function Workspace() {
             <div className="field"><label htmlFor="w-logo">Logo URL</label><input id="w-logo" value={f.logoUrl} placeholder="https://…/logo.png" onChange={(e) => setF({ ...f, logoUrl: e.target.value })} /></div>
           </div>
         </section>
-        <CountryChoice onChanged={refresh} />
+        <CountryChoice onChanged={refresh} onb={onb} />
         {arabic && (
           <section className="card pad section-card">
             <h3>Supplier portal language</h3>
@@ -66,21 +73,23 @@ export function Workspace() {
           <div className="field" style={{ maxWidth: 260, marginTop: 12 }}><label htmlFor="w-hours">Sign-in session length (hours)</label><input id="w-hours" type="number" min={1} max={72} value={f.sessionHours} onChange={(e) => setF({ ...f, sessionHours: Number(e.target.value) })} /></div>
         </section>
         <section className="card pad section-card">
-          <h3>Vendor lifecycle</h3>
-          <p className="muted small">Approved vendors are re-checked on this cycle: their online checks are run again and the vendor is asked to confirm their details. Problems are flagged to approvers. Document expiry reminders go out 30 days, 7 days and on the day a document expires.</p>
-          <div className="field" style={{ maxWidth: 260 }}><label htmlFor="w-rekyc">Re-verify every (months)</label><input id="w-rekyc" type="number" min={0} max={60} value={f.reKycMonths} onChange={(e) => setF({ ...f, reKycMonths: Number(e.target.value) })} /><div className="field-help">0 turns periodic re-checks off.</div></div>
-          <label className="check-item" style={{ marginTop: 12 }}><input type="checkbox" checked={f.skipWeekends} onChange={(e) => setF({ ...f, skipWeekends: e.target.checked })} /><span><strong>Count deadlines in working days</strong><span className="muted small block">Approval deadlines and purchase-order auto-accept skip the weekend{weekendText(me!.tenant.country)}. Applies to steps and orders from now on.</span></span></label>
+          <h3>{onb ? 'Vendor lifecycle' : 'Deadlines'}</h3>
+          {onb && <>
+            <p className="muted small">Approved vendors are re-checked on this cycle: their online checks are run again and the vendor is asked to confirm their details. Problems are flagged to approvers. Document expiry reminders go out 30 days, 7 days and on the day a document expires.</p>
+            <div className="field" style={{ maxWidth: 260 }}><label htmlFor="w-rekyc">Re-verify every (months)</label><input id="w-rekyc" type="number" min={0} max={60} value={f.reKycMonths} onChange={(e) => setF({ ...f, reKycMonths: Number(e.target.value) })} /><div className="field-help">0 turns periodic re-checks off.</div></div>
+          </>}
+          <label className="check-item" style={{ marginTop: onb ? 12 : 0 }}><input type="checkbox" checked={f.skipWeekends} onChange={(e) => setF({ ...f, skipWeekends: e.target.checked })} /><span><strong>Count deadlines in working days</strong><span className="muted small block">{onb ? 'Approval deadlines and purchase-order auto-accept skip' : 'Contract approval deadlines skip'} the weekend{weekendText(me!.tenant.country)}. Applies to steps{onb ? ' and orders' : ''} from now on.</span></span></label>
         </section>
         <div><button className="btn btn-primary">Save settings</button></div>
       </form>
       <EmailSettings />
-      <PrivacySettings />
+      {onb && <PrivacySettings />}
     </div>
   );
 }
 
 /** Home country: shown always; can be changed once, before suppliers are invited or the form is edited. */
-function CountryChoice({ onChanged }: { onChanged: () => unknown }) {
+function CountryChoice({ onChanged, onb }: { onChanged: () => unknown; onb: boolean }) {
   const [d, setD] = useState<{ country: string; countryName: string; confirmed: boolean; canChange: boolean; reason: string | null; countries: { code: string; name: string }[] }>();
   const [pick, setPick] = useState('');
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
@@ -96,12 +105,12 @@ function CountryChoice({ onChanged }: { onChanged: () => unknown }) {
     <section className="card pad section-card">
       <h3>Country</h3>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-      <p className="muted small">The home country sets the starting supplier form, currency, working week, privacy law and the ERP record.</p>
+      <p className="muted small">{onb ? 'The home country sets the starting supplier form, currency, working week, privacy law and the ERP record.' : 'The home country sets the currency, working week, built-in clauses and the tax and registration numbers asked for on contracts.'}</p>
       {d.canChange ? (
         <div className="inline-form">
           <select aria-label="Home country" value={pick} onChange={(e) => setPick(e.target.value)}>{d.countries.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
           <button type="button" className="btn btn-secondary btn-sm" onClick={save}>{pick === d.country ? 'Confirm country' : `Change to ${d.countries.find((c) => c.code === pick)?.name}`}</button>
-          <span className="small muted">You can do this once, before inviting suppliers.</span>
+          <span className="small muted">{onb ? 'You can do this once, before inviting suppliers.' : 'You can do this once, before your first contract.'}</span>
         </div>
       ) : <p><strong>{d.countryName}</strong> <span className="small muted">· {d.confirmed ? 'confirmed' : d.reason}</span></p>}
     </section>

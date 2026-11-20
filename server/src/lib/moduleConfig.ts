@@ -19,7 +19,8 @@ import { HttpError } from './http.js';
 import type { Feature } from './features.js';
 
 export interface KindDef { label: string; help: string; available: boolean }
-export interface OptionDef { area: string; label: string; help: string; default: boolean; available: boolean; requires?: Feature }
+/** `requires`: plan features the option needs (one or several, e.g. ERP and supplier onboarding). */
+export interface OptionDef { area: string; label: string; help: string; default: boolean; available: boolean; requires?: Feature | readonly Feature[] }
 /** `workspace` = a setting for the whole workspace rather than a default each record starts with (no lock). */
 export type RuleDef =
   | { kind: 'choice'; label: string; help: string; options: Record<string, string>; default: string; requires?: string; workspace?: boolean }
@@ -76,7 +77,8 @@ export function defineModule<K extends string, O extends string, R extends strin
   function optionState(t: Tenant, k: O): { on: boolean; available: boolean; chosen: boolean; needs?: Feature } {
     const d = spec.options[k];
     const chosen = stored(t).features?.[k] ?? d.default;
-    const needs = d.requires && effectiveLimits(t).features[d.requires] !== true ? d.requires : undefined;
+    const features = effectiveLimits(t).features;
+    const needs = (d.requires === undefined ? [] : typeof d.requires === 'string' ? [d.requires] : d.requires).find((f) => features[f] !== true);
     return { on: on(t) && d.available && chosen && !needs, available: d.available, chosen, ...(needs ? { needs } : {}) };
   }
   const optionOn = (t: Tenant, k: O) => optionState(t, k).on;

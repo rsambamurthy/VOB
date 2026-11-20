@@ -9,7 +9,8 @@ import { db, schema } from '../lib/db.js';
 import { env } from '../lib/env.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { HttpError } from '../lib/http.js';
-import type { Permission } from '../lib/permissions.js';
+import { effectivePermissions, type Permission } from '../lib/permissions.js';
+import { effectiveLimits } from '../lib/plans.js';
 import type { Tenant, User } from '../db/schema.js';
 
 const { sessions, tenants, users, userRoles, roles } = schema;
@@ -99,7 +100,8 @@ async function loadStaff(token: string): Promise<StaffCtx | undefined> {
     user: { id: user.id, name: user.name, email: user.email, mfaEnabled: user.mfaEnabled, tenantId: user.tenantId },
     roles: rs.map(({ id, key, name }) => ({ id, key, name })),
     roleIds: new Set(rs.map((r) => r.id)),
-    permissions: new Set(rs.flatMap((r) => r.permissions) as Permission[]),
+    // Only what the plan includes: a role's onboarding permissions grant nothing in a Contracts-only workspace.
+    permissions: effectivePermissions(rs.flatMap((r) => r.permissions), effectiveLimits(tenant).features),
   };
 }
 

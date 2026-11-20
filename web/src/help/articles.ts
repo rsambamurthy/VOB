@@ -198,7 +198,7 @@ Built-in Gulf wording already has Arabic. For fields, sections, documents and gu
     id: 'roles', title: 'Roles and permissions', audience: ['staff'], perms: ['users.manage'],
     summary: 'What each default role can do, and how to create your own.',
     screens: ['^/staff/admin/roles'],
-    keywords: 'role roles permission permissions access rights administrator vendor admin tax finance master data mdm viewer who can',
+    keywords: 'role roles permission permissions access rights administrator vendor admin tax finance master data mdm viewer who can contract manager legal counsel contract viewer contract approver contracts plan',
     related: ['users', 'config-workflow'],
     body: `A role is a bundle of permissions. Every workspace starts with these roles; edit them or click **New role** to make your own.
 
@@ -210,6 +210,10 @@ Built-in Gulf wording already has Arabic. For fields, sections, documents and gu
 - **Finance Manager**: view vendors and reports; handles the finance and risk level.
 - **Master Data Manager**: final approval, ERP export, block vendors, propose changes.
 - **Viewer**: read-only.
+- **Buyer**: purchase orders and supplier collaboration.
+- With Contracts: **Contract Manager** (contracts, parties, templates), **Legal Counsel** (templates, clause library and legal review), **Contract Viewer** (read-only contracts) and **Contract Approver** (choose it in the contract approval levels).
+
+On the **Contracts plan** (no supplier onboarding) only the Administrator and the contract roles are shown, and permissions for onboarding, orders and sourcing can't be ticked — they would do nothing. If the plan later adds onboarding, its roles appear by themselves.
 
 > Who approves what is set by the approval flow, not by permissions. A person can act on an approval step when they hold the role that step is assigned to. See [Approval flow](#config-workflow).`,
   },
@@ -1435,7 +1439,7 @@ Every night, contracts past their end date become **expired** — or, if they re
     related: ['contracts'],
     body: `Administration → **Contracts** works in layers, like Sourcing:
 
-1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration.
+1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration, and Administration shows only what Contracts uses: users, contract roles, Contracts, workspace (branding, country, security, working days, email), sign-in, integrations (email, storage, AI) and the audit log. Supplier settings, the supplier form, ERP integration and onboarding permissions are hidden.
 2. **Switch Contracts on** for the workspace. When it is off the menus are hidden; your contracts are kept.
 3. **Contract types**: NDA, master agreement, SOW, rate contract, service, purchase, sales, distribution, lease, licence and other. Each has its own number prefix; some are only for suppliers or only for customers.
 4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party, e-signature, obligations and milestones, renewal and notice alerts, **contract watch** (decisions waiting on signed contracts — see Contract watch) with an optional **AI summary** from general facts only (needs the AI feature), order and invoice price checks (needs purchase orders) sending contracts to the ERP (needs ERP integration) and **reading uploaded contracts** (needs the AI feature; names, numbers, amounts and dates are masked before the AI sees the text — without it, VendorGate's own rules read the file and nothing leaves VendorGate). Rules also set the **price tolerance** (how far above the contract price is accepted) and how many days before the notice date the owner is reminded.

@@ -78,7 +78,7 @@ export function StaffShell() {
       { to: '/staff/admin/workspace', label: 'Workspace', icon: 'workspace', show: can('tenant.settings') },
       { to: '/staff/admin/sign-in', label: 'Sign-in & SSO', icon: 'signin', show: can('tenant.settings') },
       { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },
-      { to: '/staff/admin/erp', label: 'ERP integration', icon: 'erp', show: can('tenant.settings') },
+      { to: '/staff/admin/erp', label: 'ERP integration', icon: 'erp', show: onb && can('tenant.settings') },
       { to: '/staff/admin/help-topics', label: 'Help topics', icon: 'help', show: can('tenant.settings') },
       { to: '/staff/admin/billing', label: 'Billing', icon: 'billing', show: can('tenant.settings') && !me.support && me.deployment !== 'onprem' },
       { to: '/staff/admin/licence', label: 'Licence', icon: 'billing', show: can('tenant.settings') && me.deployment === 'onprem' },

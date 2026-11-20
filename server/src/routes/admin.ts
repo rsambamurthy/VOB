@@ -6,7 +6,7 @@ import { and, asc, count, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, revokeUserSessions, staffCtx } from '../auth/session.js';
-import { ALL_PERMISSIONS, visiblePermissions } from '../lib/permissions.js';
+import { ALL_PERMISSIONS, effectivePermissions, roleHidden, visiblePermissions, type Permission } from '../lib/permissions.js';
 import { effectiveLimits } from '../lib/plans.js';
 import { audit } from '../lib/audit.js';
 import { createStaffUser, sendStaffInvite } from '../services/users.js';
@@ -133,7 +133,9 @@ adminRouter.get('/roles', requireStaff('users.manage'), ah(async (req, res) => {
   const { tenant } = staffCtx(req);
   const list = await db.select().from(roles).where(eq(roles.tenantId, tenant.id)).orderBy(asc(roles.createdAt));
   const counts = await db.select({ roleId: userRoles.roleId, n: count() }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(roles.tenantId, tenant.id)).groupBy(userRoles.roleId);
-  res.json({ roles: list.map((r) => ({ ...r, userCount: counts.find((c) => c.roleId === r.id)?.n ?? 0 })), permissions: visiblePermissions(effectiveLimits(tenant).features) });
+  const features = effectiveLimits(tenant).features;
+  // Default roles for products the plan doesn't have (Vendor Admin on Contracts-only…) are kept but not shown.
+  res.json({ roles: list.filter((r) => !roleHidden(r.key, features)).map((r) => ({ ...r, permissions: [...effectivePermissions(r.permissions, features)], userCount: counts.find((c) => c.roleId === r.id)?.n ?? 0 })), permissions: visiblePermissions(features) });
 }));
 
 const roleInput = z.object({
@@ -145,6 +147,7 @@ const roleInput = z.object({
 adminRouter.post('/roles', requireStaff('users.manage'), ah(async (req, res) => {
   const s = staffCtx(req);
   const input = roleInput.parse(req.body);
+  input.permissions = [...effectivePermissions(input.permissions, effectiveLimits(s.tenant).features)];
   const key = input.name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'ROLE';
   if (await db.query.roles.findFirst({ where: and(eq(roles.tenantId, s.tenant.id), eq(roles.key, key)) })) throw new HttpError(409, 'A role with a similar name already exists');
   const [role] = await db.insert(roles).values({ tenantId: s.tenant.id, key, ...input }).returning();
@@ -157,6 +160,11 @@ adminRouter.patch('/roles/:id', requireStaff('users.manage'), ah(async (req, res
   const role = await db.query.roles.findFirst({ where: and(eq(roles.tenantId, s.tenant.id), eq(roles.id, req.params.id)) });
   if (!role) throw new HttpError(404, 'Role not found');
   const input = roleInput.partial().parse(req.body);
+  if (input.permissions) {
+    // Permissions for products the plan doesn't have can't be set here, and ones the role already has are kept for a later upgrade.
+    const features = effectiveLimits(s.tenant).features, shown = effectivePermissions(role.permissions, features);
+    input.permissions = [...new Set([...effectivePermissions(input.permissions, features), ...(role.permissions as Permission[]).filter((p) => !shown.has(p))])];
+  }
   if (role.key === 'ADMIN' && input.permissions && input.permissions.length !== ALL_PERMISSIONS.length) throw new HttpError(409, 'The Administrator role always has every permission');
   await db.update(roles).set(input).where(eq(roles.id, role.id));
   await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'ROLE_UPDATED', detail: { name: role.name, ...input }, ip: req.ip });
@@ -298,7 +306,9 @@ function ssoView(tenant: typeof tenants.$inferSelect) {
 
 adminRouter.get('/sso', requireStaff('tenant.settings'), ah(async (req, res) => {
   const { tenant } = staffCtx(req);
-  const roles = await db.select({ id: schema.roles.id, name: schema.roles.name }).from(schema.roles).where(eq(schema.roles.tenantId, tenant.id)).orderBy(asc(schema.roles.name));
+  const features = effectiveLimits(tenant).features;
+  const roles = (await db.select({ id: schema.roles.id, key: schema.roles.key, name: schema.roles.name }).from(schema.roles).where(eq(schema.roles.tenantId, tenant.id)).orderBy(asc(schema.roles.name)))
+    .filter((r) => !roleHidden(r.key, features)).map(({ key: _k, ...r }) => r);
   res.json({ ...ssoView(tenant), roles });
 }));
 
