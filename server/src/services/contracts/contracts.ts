@@ -19,15 +19,19 @@ import { DOCX, removeStored, storeUpload } from '../../integrations/storage/inde
 import { CONTRACT_TYPES, CONTRACT_TYPE_KEYS, assertTypeOn, contractRules, typeState, directionsOn, optionOn, ruleDefaults, type ContractType, type Direction } from './config.js';
 import { createParty, getParty, KIND_LABEL } from './parties.js';
 import { draftView, touchDraft } from './drafting.js';
+import { negotiationView } from './negotiation.js';
+import { signingView } from './signing.js';
 
 const { contracts: C, parties: P, contractFiles: F, users: U } = schema;
 type By = { id: string; name: string; ip?: string };
 
 /** Contract statuses in Step 0 (later steps add approval, negotiation and signature). */
-export const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', IN_APPROVAL: 'In approval', APPROVED: 'Approved', ACTIVE: 'Active', EXPIRED: 'Expired', TERMINATED: 'Terminated' };
+export const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', IN_APPROVAL: 'In approval', APPROVED: 'Approved', WITH_PARTY: 'With the other party', AGREED: 'Agreed', SIGNING: 'Out for signature', ACTIVE: 'Active', EXPIRED: 'Expired', TERMINATED: 'Terminated' };
 export const DIRECTION_LABEL: Record<Direction, string> = { BUY: 'Supplier contract', SELL: 'Customer contract' };
 export const PARTY_KIND_FOR: Record<Direction, 'SUPPLIER' | 'CUSTOMER'> = { BUY: 'SUPPLIER', SELL: 'CUSTOMER' };
-export const FILE_KINDS = { SIGNED: 'Signed copy', DRAFT: 'Draft', ANNEXURE: 'Annexure / schedule', OTHER: 'Other' } as const;
+export const FILE_KINDS = { SIGNED: 'Signed copy', DRAFT: 'Draft', ANNEXURE: 'Annexure / schedule', OTHER: 'Other', REDLINE: 'Their marked-up copy', SIGNING: 'Being signed' } as const;
+/** Kinds staff can upload (the others are added by VendorGate). */
+export const UPLOAD_KINDS = ['SIGNED', 'DRAFT', 'ANNEXURE', 'OTHER'];
 export const today = () => new Date().toISOString().slice(0, 10);
 const addMonths = (d: string, m: number) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCMonth(x.getUTCMonth() + m); return x.toISOString().slice(0, 10); };
 const addDays = (d: string, n: number) => new Date(new Date(`${d}T00:00:00Z`).getTime() + n * 86_400_000).toISOString().slice(0, 10);
@@ -129,11 +133,12 @@ export async function updateContract(t: Tenant, id: string, raw: unknown, by: By
   const c = await getContract(t.id, id);
   if (c.status === 'TERMINATED' || c.status === 'EXPIRED') throw new HttpError(409, 'Ended contracts can’t be changed.');
   if (c.status === 'IN_APPROVAL') throw new HttpError(409, 'The contract is waiting for approval. Withdraw it to make changes.');
+  if (c.status === 'SIGNING') throw new HttpError(409, 'The contract is out for signature. Cancel the signature request to change it.');
   const input = contractInput.parse({ ...contractToInput(c), ...(raw as object) });
-  if (c.status === 'ACTIVE' || c.status === 'APPROVED') {
+  if (['ACTIVE', 'APPROVED', 'WITH_PARTY', 'AGREED', 'SIGNING'].includes(c.status)) {
     const before = contractToInput(c) as Record<string, unknown>;
     const changedLocked = Object.keys(raw as object).filter((k) => !(ACTIVE_EDITABLE as readonly string[]).includes(k) && JSON.stringify((input as Record<string, unknown>)[k] ?? null) !== JSON.stringify(before[k] ?? null));
-    if (changedLocked.length) throw new HttpError(409, c.status === 'APPROVED' ? 'The contract is approved. Reopen it as a draft to change its parties, dates or value (it then needs approval again).' : 'An active contract’s parties, dates and value change through an amendment. You can change the owner, description, category, reference and renewal terms.', { fields: changedLocked });
+    if (changedLocked.length) throw new HttpError(409, ['APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status) ? 'The contract is approved. Reopen it as a draft to change its parties, dates or value (it then needs approval again).' : 'An active contract’s parties, dates and value change through an amendment. You can change the owner, description, category, reference and renewal terms.', { fields: changedLocked });
   }
   await check(t, input, c);
   const data = withDefaults(t, input);
@@ -148,7 +153,7 @@ export async function updateContract(t: Tenant, id: string, raw: unknown, by: By
 /** Mark a draft as signed (outside VendorGate for now — e-signature arrives in Step 2). */
 export async function markSigned(t: Tenant, id: string, raw: unknown, by: By) {
   const c = await getContract(t.id, id);
-  if (c.status !== 'DRAFT' && c.status !== 'APPROVED') throw new HttpError(409, c.status === 'IN_APPROVAL' ? 'The contract is still waiting for approval.' : 'Only a draft or approved contract can be marked as signed.');
+  if (!['DRAFT', 'APPROVED', 'AGREED', 'WITH_PARTY'].includes(c.status)) throw new HttpError(409, c.status === 'IN_APPROVAL' ? 'The contract is still waiting for approval.' : c.status === 'SIGNING' ? 'It is out for e-signature — cancel that first to record a paper signature.' : 'Only a draft, approved or agreed contract can be marked as signed.');
   if (c.status === 'DRAFT' && c.draft && optionOn(t, 'internalApproval')) throw new HttpError(409, 'Submit the contract for approval first.');
   const { signedDate } = z.object({ signedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter the date it was signed') }).parse(raw);
   if (signedDate > today()) throw new HttpError(400, 'The signing date can’t be in the future.');
@@ -191,7 +196,7 @@ const contractToInput = (c: Contract) => ({
 
 export async function addFile(t: Tenant, id: string, kind: string, file: { buffer: Buffer; originalname: string }, by: By) {
   const c = await getContract(t.id, id);
-  if (!(kind in FILE_KINDS)) throw new HttpError(400, 'Choose what the file is');
+  if (!UPLOAD_KINDS.includes(kind)) throw new HttpError(400, 'Choose what the file is');
   if (c.status === 'TERMINATED' || c.status === 'EXPIRED') throw new HttpError(409, 'Ended contracts can’t take new files.');
   const stored = await storeUpload(t.id, `contracts/${c.id}`, file, { types: [DOCX, 'application/pdf', 'image/png', 'image/jpeg'] });
   const [row] = await db.insert(F).values({ tenantId: t.id, contractId: c.id, kind, ...stored, uploadedByName: by.name }).returning();
@@ -273,8 +278,10 @@ export async function contractDetail(t: Tenant, id: string, userId: string) {
     children: children.map(summary),
     files: files.map((f) => ({ id: f.id, kind: f.kind, fileName: f.fileName, size: f.size, uploadedByName: f.uploadedByName, uploadedAt: f.uploadedAt, generated: f.generated, version: f.version })),
     history,
-    editable: c.status === 'DRAFT' ? 'all' : c.status === 'ACTIVE' || c.status === 'APPROVED' ? ACTIVE_EDITABLE : [],
+    editable: c.status === 'DRAFT' ? 'all' : ['ACTIVE', 'APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status) ? ACTIVE_EDITABLE : [],
     drafting: await draftView(t, c, userId),
+    negotiation: await negotiationView(t, c),
+    signing: await signingView(t, c, (await db.query.users.findFirst({ where: eq(U.id, userId), columns: { email: true } }))?.email ?? ''),
   };
 }
 

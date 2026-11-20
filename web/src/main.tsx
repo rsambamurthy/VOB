@@ -69,6 +69,7 @@ import { ContractsList } from './pages/contracts/Contracts';
 import { ContractDetail } from './pages/contracts/ContractDetail';
 import { PartiesList, PartyDetail } from './pages/contracts/Parties';
 import { ClauseLibrary, TemplateEditor, TemplatesList } from './pages/contracts/Library';
+import { ReviewPage, ReviewSignIn, SupplierContract, SupplierContracts } from './pages/contracts/Review';
 import { StaffHome } from './components/StaffHome';
 import { LangGate } from './i18n/LangGate';
 
@@ -163,6 +164,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/vendor/payments" element={<SupplierShell><SupplierPayments /></SupplierShell>} />
             <Route path="/vendor/performance" element={<SupplierShell><SupplierPerformance /></SupplierShell>} />
             <Route path="/vendor/events" element={<SupplierShell><BidderEventList /></SupplierShell>} />
+            <Route path="/vendor/contracts" element={<SupplierShell><SupplierContracts /></SupplierShell>} />
+            <Route path="/vendor/contracts/:id" element={<SupplierShell><SupplierContract /></SupplierShell>} />
+            <Route path="/review/:token" element={<ReviewSignIn />} />
+            <Route path="/review" element={<ReviewPage />} />
             <Route path="/vendor/events/:id" element={<SupplierShell><BidderEvent /></SupplierShell>} />
             <Route path="/s/:workspace" element={<SupplierLogin />} />
             <Route path="*" element={<Navigate to="/" replace />} />

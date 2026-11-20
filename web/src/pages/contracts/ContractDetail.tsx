@@ -10,6 +10,7 @@ import { HistoryCard } from '../../components/HistoryCard';
 import { ContractStatus, DIRECTION_LABEL, KIND_LABEL, typeLabel, useContractSetup, type Direction } from '../../components/Contracts';
 import { contractBody, ContractForm, type ContractData } from './ContractForm';
 import { DraftingCard, ReopenButton, type Drafting } from './Drafting';
+import { NegotiationCard, SigningCard, type Negotiation, type Signing } from './Negotiation';
 import { FlowPanel, type FlowDecision } from '../../components/ApprovalFlow';
 
 interface Summary { id: string; number: string; reference: string | null; title: string; direction: Direction; type: string; status: string; value: number | null; currency: string; startDate: string | null; endDate: string | null; signedDate: string | null; autoRenew: boolean }
@@ -19,6 +20,8 @@ interface Detail {
   owner: { id: string; name: string } | null; parent: Summary | null; children: Summary[];
   files: { id: string; kind: string; fileName: string; size: number; uploadedByName: string; uploadedAt: string; generated: boolean; version: number | null }[];
   drafting: Drafting;
+  negotiation: Negotiation;
+  signing: Signing;
   history: { actor: string; action: string; detail: Record<string, unknown> | null; createdAt: string }[];
   editable: 'all' | string[];
 }
@@ -26,7 +29,10 @@ const ACTIONS: Record<string, string> = {
   CONTRACT_CREATED: 'Created', CONTRACT_UPDATED: 'Details changed', CONTRACT_SIGNED: 'Marked as signed', CONTRACT_TERMINATED: 'Terminated', CONTRACT_EXPIRED: 'Expired',
   CONTRACT_RENEWED: 'Renewed automatically', CONTRACT_FILE_ADDED: 'File added', CONTRACT_FILE_REMOVED: 'File removed',
   CONTRACT_DRAFT_STARTED: 'Drafted from a template', CONTRACT_DRAFT_SAVED: 'Wording changed', CONTRACT_DOCUMENT_MADE: 'Document made', CONTRACT_SUBMITTED: 'Submitted for approval',
-  CONTRACT_APPROVED: 'Approved', CONTRACT_WITHDRAWN: 'Withdrawn from approval', CONTRACT_REOPENED: 'Reopened as draft', FLOW_STARTED: 'Approval started', FLOW_DECISION: 'Approval decision',
+  CONTRACT_APPROVED: 'Approved', CONTRACT_SENT_FOR_REVIEW: 'Sent to the other party', CONTRACT_REVIEWER_SIGNED_IN: 'Opened by the other party', CONTRACT_PARTY_COMMENTED: 'Comment from the other party',
+  CONTRACT_PARTY_UPLOADED: 'Marked-up copy from the other party', CONTRACT_PARTY_ACCEPTED: 'Accepted by the other party', CONTRACT_PARTY_CHANGES: 'Changes asked for', CONTRACT_COMMENT_SENT: 'Reply sent', CONTRACT_NOTE_ADDED: 'Internal note',
+  CONTRACT_COMMENT_ACCEPTED: 'Their wording accepted', CONTRACT_COMMENT_DECLINED: 'Their wording declined', CONTRACT_COMMENT_RESOLVED: 'Comment resolved', CONTRACT_SENT_FOR_SIGNATURE: 'Sent for signature',
+  CONTRACT_SIGNED_BY: 'Signed by', CONTRACT_SIGNATURE_DECLINED: 'Signature declined', CONTRACT_SIGNATURE_EXPIRED: 'Signature request expired', CONTRACT_SIGNATURE_CANCELLED: 'Signature request cancelled', CONTRACT_SIGNATURE_CANCELLED_BY: 'Signature request cancelled', CONTRACT_WITHDRAWN: 'Withdrawn from approval', CONTRACT_REOPENED: 'Reopened as draft', FLOW_STARTED: 'Approval started', FLOW_DECISION: 'Approval decision',
 };
 const toForm = (d: Detail): ContractData => ({
   title: d.contract.title, direction: d.contract.direction, type: d.contract.type, partyId: d.contract.partyId, reference: d.contract.reference ?? '', value: d.contract.value === null ? '' : String(d.contract.value),
@@ -39,7 +45,7 @@ export function ContractDetail() {
   useHelpContext('contracts');
   const { id } = useParams();
   const nav = useNavigate();
-  const { can } = useSession();
+  const { can, me } = useSession();
   const setup = useContractSetup();
   const [d, setD] = useState<Detail>();
   const [form, setForm] = useState<ContractData>();
@@ -59,6 +65,9 @@ export function ContractDetail() {
   const editable = d.editable === 'all' ? 'all' : d.editable;
   const signedCopy = d.files.some((f) => f.kind === 'SIGNED');
   const needsApproval = c.status === 'DRAFT' && !!d.drafting.draft && d.drafting.approvalOn;
+  const freeDraft = c.status === 'DRAFT' && !d.drafting.approvalOn;
+  const canShare = ['APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status) || (freeDraft && (d.drafting.draft ? d.drafting.draft.upToDate : d.files.some((f) => f.kind === 'DRAFT')));
+  const canSign = c.status === 'AGREED' || c.status === 'APPROVED' || (freeDraft && !d.drafting.draft);
   const onDetail = (r: Detail | undefined, text?: string, kind: 'success' | 'warning' | 'error' = 'success') => { if (r) take(r); setFlash(text ? { kind: text.includes('Still blank') ? 'warning' : kind, text } : undefined); };
   async function decide(action: FlowDecision, remarks: string) {
     const r = await api<Detail & { decided?: boolean }>(`/staff/contracts/${c.id}/decision`, { body: { action, remarks } });
@@ -81,7 +90,7 @@ export function ContractDetail() {
         {manage && <div className="head-actions">
           {editable.length > 0 && !editing && <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>}
           <ReopenButton contractId={c.id} status={c.status} onDetail={onDetail} />
-          {((c.status === 'DRAFT' && !needsApproval) || c.status === 'APPROVED') && <button className="btn btn-primary" onClick={() => setModal('sign')} disabled={!signedCopy} title={signedCopy ? undefined : 'Upload the signed copy first'}>Mark as signed</button>}
+          {((c.status === 'DRAFT' && !needsApproval) || ['APPROVED', 'AGREED', 'WITH_PARTY'].includes(c.status)) && <button className="btn btn-secondary" onClick={() => setModal('sign')} disabled={!signedCopy} title={signedCopy ? undefined : 'Upload the signed copy first'}>Mark as signed</button>}
           {c.status === 'ACTIVE' && <button className="btn btn-danger" onClick={() => setModal('terminate')}>Terminate</button>}
           {c.status === 'DRAFT' && <button className="btn btn-secondary" onClick={async () => { if (confirm(`Delete draft ${c.number}? This can’t be undone.`) && await run(() => api(`/staff/contracts/${c.id}`, { method: 'DELETE' }).then(() => {}), 'Deleted.')) nav('/staff/contracts'); }}>Delete draft</button>}
         </div>}
@@ -89,7 +98,10 @@ export function ContractDetail() {
       {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
       {c.status === 'DRAFT' && !d.drafting.draft && <Alert kind="info">Draft — draft the wording from a template below, or upload your own draft. Once it is signed, upload the signed copy and mark it as signed.</Alert>}
       {c.status === 'IN_APPROVAL' && <Alert kind="info">Waiting for approval{d.drafting.approval.current ? ` — ${d.drafting.approval.current.label}` : ''}. The contract can’t be changed while it is in approval.</Alert>}
-      {c.status === 'APPROVED' && <Alert kind="success">Approved. Send the document to {d.party.kind === 'CUSTOMER' ? 'the customer' : 'the supplier'} for signature, then upload the signed copy and mark it as signed. (Sending and e-signature from VendorGate come in the next release.)</Alert>}
+      {c.status === 'APPROVED' && <Alert kind="success">Approved. Send it to {d.party.name} for review, or straight for signature.</Alert>}
+      {c.status === 'WITH_PARTY' && <Alert kind="info">With {d.party.name} for review. Their comments and answer appear below.</Alert>}
+      {c.status === 'AGREED' && <Alert kind="success">{d.party.name} accepted the wording. Send it for signature.</Alert>}
+      {c.status === 'SIGNING' && <Alert kind="info">Out for signature. It becomes active automatically when everyone has signed.</Alert>}
       {c.status === 'TERMINATED' && <Alert kind="warning">Terminated{c.terminatedAt ? ` on ${fmtDate(c.terminatedAt)}` : ''}: {c.terminationReason}</Alert>}
       {c.expiring && <Alert kind="warning">Ends in {c.daysLeft} day{c.daysLeft === 1 ? '' : 's'}{c.autoRenew ? ' — it renews automatically' : ''}.{c.noticeBy && c.autoRenew ? (c.noticeBy < new Date().toISOString().slice(0, 10) ? ` The last day to give notice (${fmtDate(c.noticeBy)}) has passed, so it will renew.` : ` Notice to stop the renewal is due by ${fmtDate(c.noticeBy)}.`) : ''}</Alert>}
 
@@ -117,6 +129,8 @@ export function ContractDetail() {
           </section>
 
           <DraftingCard<Detail> contractId={c.id} status={c.status} drafting={d.drafting} manage={manage} onDetail={onDetail} />
+          <NegotiationCard contractId={c.id} status={c.status} partyName={d.party.name} clauses={d.drafting.draft?.clauses ?? []} n={d.negotiation} manage={manage} canShare={canShare} onDetail={onDetail} />
+          <SigningCard contractId={c.id} status={c.status} partyName={d.party.name} s={d.signing} contacts={d.negotiation.contacts} me={{ name: me?.user.name ?? '', email: me?.user.email ?? '' }} manage={manage} canSend={canSign} onDetail={onDetail} />
 
           <section className="card pad section-card">
             <h3>Files</h3>

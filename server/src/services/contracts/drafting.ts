@@ -225,8 +225,10 @@ export async function submitForApproval(t: Tenant, id: string, by: By) {
 /** Back to draft: withdraw from approval, or reopen an approved contract for changes (approval must then be repeated). */
 export async function reopenDraft(t: Tenant, id: string, by: By) {
   const c = await getContract(t.id, id);
-  if (c.status !== 'IN_APPROVAL' && c.status !== 'APPROVED') throw new HttpError(409, 'Only a contract in approval or approved can go back to draft.');
+  if (!['IN_APPROVAL', 'APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status)) throw new HttpError(409, c.status === 'SIGNING' ? 'Cancel the signature request first.' : 'Only a contract in approval, approved or with the other party can go back to draft.');
   if (c.status === 'IN_APPROVAL') await cancelFlow(t.id, 'contract', c.id);
+  // Whatever was with the other party is withdrawn; they see it again when a new version is sent.
+  await db.update(schema.contractVersions).set({ status: 'WITHDRAWN' }).where(and(eq(schema.contractVersions.contractId, c.id), eq(schema.contractVersions.status, 'OPEN')));
   const [row] = await db.update(C).set({ status: 'DRAFT' }).where(eq(C.id, c.id)).returning();
   await draftAudit(t, c, by, c.status === 'IN_APPROVAL' ? 'CONTRACT_WITHDRAWN' : 'CONTRACT_REOPENED');
   return row;

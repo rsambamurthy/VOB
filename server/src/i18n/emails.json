@@ -718,5 +718,45 @@
       "subject": "{buyer}: نتيجة {number}",
       "body": "مرحباً {first}،\n\nشكراً لمشاركتكم في {number} «{title}». بعد التقييم، رسا {buyer} الفعالية على مشارك آخر هذه المرة. نقدّر مشاركتكم ونتطلع إلى عروضكم في الفعاليات القادمة."
     }
+  },
+  "contractReview": {
+    "en": {
+      "subject": "{buyer}: please review contract {number}",
+      "body": "Dear {first},\n\n{buyer} has sent you “{title}” ({number}) to review.{note}\n\nOpen the link below and sign in with the one-time code sent to this email address. You can comment on each clause, propose new wording, upload your marked-up copy, and accept the contract or ask for changes."
+    },
+    "ar": {
+      "subject": "{buyer}: يرجى مراجعة العقد {number}",
+      "body": "مرحباً {first}،\n\nأرسل إليكم {buyer} العقد «{title}» ({number}) للمراجعة.{note}\n\nافتحوا الرابط أدناه وسجّلوا الدخول برمز التحقق الذي سيُرسل إلى هذا البريد الإلكتروني. يمكنكم التعليق على كل بند، واقتراح صياغة جديدة، ورفع نسختكم المعدّلة، ثم قبول العقد أو طلب تعديلات."
+    }
+  },
+  "contractCode": {
+    "en": {
+      "subject": "Your code to open contract {number}",
+      "body": "Your one-time code is {code}. It expires in 10 minutes. Never share this code."
+    },
+    "ar": {
+      "subject": "رمز فتح العقد {number}",
+      "body": "رمز التحقق الخاص بكم هو {code}، وهو صالح لمدة 10 دقائق. لا تشاركوا هذا الرمز مع أحد."
+    }
+  },
+  "contractSign": {
+    "en": {
+      "subject": "{buyer}: please sign contract {number}",
+      "body": "Dear {first},\n\n“{title}” ({number}) is ready for your signature. Open the link below, sign in with the one-time code sent to this email address and choose Sign."
+    },
+    "ar": {
+      "subject": "{buyer}: يرجى توقيع العقد {number}",
+      "body": "مرحباً {first}،\n\nالعقد «{title}» ({number}) جاهز لتوقيعكم. افتحوا الرابط أدناه، وسجّلوا الدخول برمز التحقق الذي سيُرسل إلى هذا البريد الإلكتروني، ثم اختاروا «توقيع»."
+    }
+  },
+  "contractSigned": {
+    "en": {
+      "subject": "{buyer}: contract {number} is signed",
+      "body": "Dear {first},\n\n“{title}” ({number}) has been signed by everyone. The signed copy is attached to the contract — open the link below to download it."
+    },
+    "ar": {
+      "subject": "{buyer}: تم توقيع العقد {number}",
+      "body": "مرحباً {first}،\n\nتم توقيع العقد «{title}» ({number}) من جميع الأطراف. النسخة الموقّعة متاحة في العقد — افتحوا الرابط أدناه لتنزيلها."
+    }
   }
 }

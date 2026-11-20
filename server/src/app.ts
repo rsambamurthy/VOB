@@ -40,6 +40,7 @@ import { agreementsRouter } from './routes/agreements.js';
 import { questionnairesRouter } from './routes/questionnaires.js';
 import { riskRouter } from './routes/risk.js';
 import { actionsRouter } from './routes/correctiveActions.js';
+import { esignRouter, reviewRouter } from './routes/contractReview.js';
 import { contractLibraryRouter, contractsAdminRouter, contractsRouter, partiesRouter } from './routes/contracts.js';
 import { sourcingAdminRouter, sourcingRouter } from './routes/sourcing.js';
 import { applicationsRouter, applyRouter, registrationLinksRouter } from './routes/applications.js';
@@ -71,6 +72,8 @@ export function createApp() {
     },
   }));
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => !req.url?.startsWith('/api') || req.url === '/api/health' } }));
+  // E-signature provider webhooks and signers coming back from the provider: raw body, before JSON parsing and CSRF.
+  app.use('/api/esign', esignRouter);
   // Email provider webhooks (bounces, complaints, deliveries): raw body for the signature check, before JSON parsing and CSRF.
   app.post('/api/webhooks/resend', express.raw({ type: '*/*', limit: '256kb' }), async (req, res) => {
     const secret = env.int.RESEND_WEBHOOK_SECRET;
@@ -122,6 +125,7 @@ export function createApp() {
   app.use('/api/staff/contracts', contractsRouter);
   app.use('/api/staff/parties', partiesRouter);
   app.use('/api/staff/contract-library', contractLibraryRouter);
+  app.use('/api/review', reviewRouter);
   app.use('/api/staff/registration-links', registrationLinksRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);

@@ -26,6 +26,9 @@ import { answerRoutes } from './questionnaires.js';
 import { guideRoutes } from './guide.js';
 import { supplierActionRoutes } from './correctiveActions.js';
 import { supplierSourcingRoutes } from './supplierSourcing.js';
+import { supplierContractRoutes } from './contractReview.js';
+import { contractsOn } from '../services/contracts/config.js';
+import { vendorContracts } from '../services/contracts/negotiation.js';
 import { invitationCount } from '../services/sourcing/bidders.js';
 import { sourcingOn } from '../services/sourcing/config.js';
 import { actionsFor } from '../services/correctiveActions.js';
@@ -124,6 +127,7 @@ vendorRouter.get('/', ah(async (req, res) => {
     // The buyer shares the supplier's performance scorecard with them.
     scorecard: !!tenant.settings.scorecard?.showToSuppliers && v.status === 'APPROVED',
     // Sourcing: the portal shows My events; outside bidders go there instead of the onboarding form.
+    contracts: contractsOn(tenant) ? (await vendorContracts(tenant, v.id)).length : 0,
     sourcing: sourcingOn(tenant) ? { invitations: await invitationCount(v.id), bidderOnly: v.bidderOnly, registered: !v.bidderOnly || !!v.bidderRegisteredAt } : null,
   });
 }));
@@ -214,6 +218,8 @@ vendorRouter.post('/agreements/:id/accept', ah(async (req, res) => {
 // Questionnaires: the same answering routes as a buyer filling in for the supplier.
 // Corrective actions the buyer asked for (answered also after approval).
 supplierActionRoutes(vendorRouter, { vendor: loadMine, tenant: (req) => vendorCtx(req).tenant, actor: (req, v) => supplier(req, v) });
+// Contracts shared with the supplier: the same review routes as the email-link portal.
+supplierContractRoutes(vendorRouter, (req) => vendorCtx(req));
 supplierSourcingRoutes(vendorRouter, { vendor: loadMine, tenant: (req) => vendorCtx(req).tenant, actor: (req, v) => supplier(req, v), lang: (req, v) => vendorLanguage(vendorCtx(req).tenant, v) });
 
 // The supplier guide: next step, check before submitting, send-back to-do, questions.

@@ -44,8 +44,8 @@ export const OPTIONS = {
   templates: { area: 'authoring', label: 'Templates and clause library', help: 'Draft contracts from templates with standard and fallback clauses.', default: true, available: true },
   wordTemplates: { area: 'authoring', label: 'Your own Word templates', help: 'Upload Word templates with merge fields; contracts come out as Word and PDF.', default: true, available: true },
   internalApproval: { area: 'authoring', label: 'Internal approval', help: 'Contracts go through approval levels (by value, type or non-standard clauses) before they are sent.', default: true, available: true },
-  counterpartyPortal: { area: 'negotiation', label: 'Counterparty review in the portal', help: 'Suppliers and customers review, comment and propose changes online.', default: true, available: false },
-  esign: { area: 'signature', label: 'E-signature', help: 'Send for signature through the connector set up in Integrations (DocuSign, Aadhaar eSign / DSC, Adobe Sign, UAE Pass, Zoho Sign).', default: false, available: false },
+  counterpartyPortal: { area: 'negotiation', label: 'Counterparty review in the portal', help: 'Suppliers and customers review, comment and propose changes online.', default: true, available: true },
+  esign: { area: 'signature', label: 'E-signature', help: 'Send for signature through the connector set up in Integrations (DocuSign, Aadhaar eSign / DSC, Adobe Sign, UAE Pass, Zoho Sign).', default: false, available: true },
   obligations: { area: 'management', label: 'Obligations and milestones', help: 'Deliverables, service levels and payment milestones with owners and reminders.', default: true, available: false },
   renewalAlerts: { area: 'management', label: 'Renewal and notice alerts', help: 'Remind the owner before the notice date and the end date.', default: true, available: false },
   priceCompliance: { area: 'management', label: 'Order and invoice price checks', help: 'Compare purchase order and invoice prices with the contract price.', default: true, available: false, requires: 'collab' },
@@ -68,7 +68,7 @@ export type ContractRule = keyof typeof RULES;
 const M = defineModule({
   name: 'Contracts', feature: 'contracts', settingsKey: 'contracts', kindsKey: 'types', kindNoun: 'contract type',
   kinds: CONTRACT_TYPES, options: OPTIONS, areas: AREA_LABELS, rules: RULES as Record<ContractRule, RuleDef>,
-  keep: ['approval', 'company'],
+  keep: ['approval', 'company', 'esign'],
 });
 
 export const contractsSettingsSchema = M.settingsSchema;

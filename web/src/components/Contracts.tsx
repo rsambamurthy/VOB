@@ -13,8 +13,8 @@ export interface Setup {
   currency: string; country: string; countries: { code: string; name: string }[]; onboarding: boolean;
 }
 
-export const STATUS_CLS: Record<string, string> = { DRAFT: 'badge-invited', IN_APPROVAL: 'flag-medium', APPROVED: 'badge-approved', ACTIVE: 'badge-approved', EXPIRED: '', TERMINATED: 'badge-rejected' };
-export const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', IN_APPROVAL: 'In approval', APPROVED: 'Approved', ACTIVE: 'Active', EXPIRED: 'Expired', TERMINATED: 'Terminated' };
+export const STATUS_CLS: Record<string, string> = { DRAFT: 'badge-invited', IN_APPROVAL: 'flag-medium', APPROVED: 'badge-approved', WITH_PARTY: 'badge-under_review', AGREED: 'badge-approved', SIGNING: 'badge-under_review', ACTIVE: 'badge-approved', EXPIRED: '', TERMINATED: 'badge-rejected' };
+export const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', IN_APPROVAL: 'In approval', APPROVED: 'Approved', WITH_PARTY: 'With the other party', AGREED: 'Agreed', SIGNING: 'Out for signature', ACTIVE: 'Active', EXPIRED: 'Expired', TERMINATED: 'Terminated' };
 export const DIRECTION_LABEL: Record<Direction, string> = { BUY: 'Supplier contract', SELL: 'Customer contract' };
 export const KIND_LABEL: Record<string, string> = { SUPPLIER: 'Supplier', CUSTOMER: 'Customer' };
 export const KIND_FOR: Record<Direction, 'SUPPLIER' | 'CUSTOMER'> = { BUY: 'SUPPLIER', SELL: 'CUSTOMER' };

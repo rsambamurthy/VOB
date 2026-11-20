@@ -11,6 +11,7 @@ import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
+import { env } from '../lib/env.js';
 import { effectiveLimits } from '../lib/plans.js';
 import { contractUpload, excelUpload } from '../lib/upload.js';
 import { z } from 'zod';
@@ -21,6 +22,9 @@ import { assertContractsOn, checkContractsSettings, companyDetails, companySchem
 import { decideFlow, flowView } from '../services/approvalFlow.js';
 import { approvalSetupFor, saveFlowLevels } from './approvalAdmin.js';
 import { generateDocument, reopenDraft, saveDraft, startDraft, submitForApproval } from '../services/contracts/drafting.js';
+import { decideComment, shareForReview, staffComment } from '../services/contracts/negotiation.js';
+import { cancelSignature, esignSettings, refreshFor, sendForSignature, startSigning } from '../services/contracts/signing.js';
+import { esignView, providerOf, sealCredentials, openCredentials, cfgOf } from '../integrations/esign/index.js';
 import { clauseGroups, getClause, listClauses, listTemplates, resetClause, saveClause, saveTemplate, saveWordTemplate, setClauseArchived, setTemplateArchived, templateDetail, templateFile } from '../services/contracts/templates.js';
 import { MERGE_FIELDS } from '../services/contracts/fields.js';
 import { pdfAvailable } from '../integrations/office/index.js';
@@ -64,6 +68,37 @@ contractsAdminRouter.put('/approval', requireStaff('tenant.settings'), ah(async 
   const { tenant } = await saveFlowLevels(s.tenant, req.body?.levels, { catalog: contractApprovalCatalog(), settingsKey: 'contracts', field: 'approval', auditAction: 'CONTRACTS_APPROVAL_FLOW_CHANGED', actor: s.user.name, ip: req.ip });
   res.json({ approval: await approvalSetupFor(tenant.id, contractApprovalLevels(tenant), contractApprovalCatalog()) });
 }));
+/** E-signature provider: which one, sandbox or live, credentials (secrets kept when left empty; never sent back). */
+contractsAdminRouter.put('/esign', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const body = z.object({ provider: z.string().nullable(), sandbox: z.boolean().default(true), values: z.record(z.string().max(8000)).default({}) }).parse(req.body);
+  const prev = esignSettings(s.tenant);
+  let esign = {};
+  if (body.provider) {
+    const p = providerOf(body.provider);
+    if (!p) throw new HttpError(400, 'Choose a provider from the list.');
+    const old = prev.provider === p.key ? openCredentials(prev) : {};
+    const values: Record<string, string> = {};
+    for (const f of p.fields) {
+      const v = (body.values[f.key] ?? '').trim();
+      values[f.key] = v || (f.secret ? old[f.key] ?? '' : '');
+      if (!values[f.key] && !f.optional) throw new HttpError(400, `Fill in ${f.label}.`);
+      if (f.options && values[f.key] && !(values[f.key] in f.options)) throw new HttpError(400, `Choose ${f.label} from the list.`);
+    }
+    esign = { provider: p.key, sandbox: body.sandbox, credentials: sealCredentials(values) };
+  }
+  const settings = { ...s.tenant.settings, contracts: { ...(s.tenant.settings.contracts ?? {}), esign } };
+  await db.update(schema.tenants).set({ settings }).where(eq(schema.tenants.id, s.tenant.id));
+  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'CONTRACTS_ESIGN_CHANGED', detail: { provider: body.provider, sandbox: body.sandbox }, ip: req.ip });
+  res.json(await adminView({ ...s.tenant, settings }));
+}));
+/** Try the saved credentials. */
+contractsAdminRouter.post('/esign/check', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = esignSettings(staffCtx(req).tenant);
+  const p = s.provider ? providerOf(s.provider) : null;
+  if (!p) throw new HttpError(400, 'Choose and save a provider first.');
+  try { res.json({ ok: true, message: await p.check(cfgOf(s)) }); } catch (e) { res.json({ ok: false, message: (e as Error).message }); }
+}));
 /** Our company details printed on contracts (us.* merge fields). Empty values fall back to the billing details. */
 contractsAdminRouter.put('/company', requireStaff('tenant.settings'), ah(async (req, res) => {
   const s = staffCtx(req);
@@ -77,6 +112,7 @@ contractsAdminRouter.put('/company', requireStaff('tenant.settings'), ah(async (
 async function adminView(tenant: Parameters<typeof contractsConfig>[0]) {
   return { ...contractsConfig(tenant), plan: effectiveLimits(tenant).label, onboarding: onboardingOn(tenant),
     approval: await approvalSetupFor(tenant.id, contractApprovalLevels(tenant), contractApprovalCatalog()),
+    esign: { ...esignView(esignSettings(tenant)), webhookBase: `${env.appBaseUrl}/api/esign/webhook/${tenant.id}/` },
     company: (tenant.settings.contracts as { company?: object } | undefined)?.company ?? {}, companyDefaults: companyDetails({ ...tenant, settings: { ...tenant.settings, contracts: { ...(tenant.settings.contracts ?? {}), company: {} } } }) };
 }
 
@@ -156,6 +192,24 @@ contractsRouter.post('/:id/decision', ah(async (req, res) => {
   await decideFlow(s.tenant.id, 'contract', req.params.id, { id: s.user.id, name: s.user.name }, action, remarks, req.ip);
   // An approver without contracts.view can't open it again once they have decided.
   res.json(s.permissions.has('contracts.view' as Permission) ? await detail(req, req.params.id) : { decided: true });
+}));
+
+/* ---------- review by the other party, and signature ---------- */
+
+contractsRouter.post('/:id/share', requireStaff('contracts.manage'), act(shareForReview));
+contractsRouter.post('/:id/comments', requireStaff('contracts.manage'), act(staffComment));
+contractsRouter.put('/:id/comments/:commentId', requireStaff('contracts.manage'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  await decideComment(s.tenant, req.params.id, req.params.commentId, req.body ?? {}, by(req));
+  res.json(await detail(req, req.params.id));
+}));
+contractsRouter.post('/:id/signature', requireStaff('contracts.manage'), act(sendForSignature));
+contractsRouter.post('/:id/signature/refresh', requireStaff('contracts.manage'), act((t, id) => refreshFor(t, id)));
+contractsRouter.post('/:id/signature/cancel', requireStaff('contracts.manage'), act(cancelSignature));
+/** Our signer signs (link providers): only the person named as the signer, by their email. */
+contractsRouter.post('/:id/signature/start', ah(async (req, res) => {
+  const s = staffCtx(req);
+  res.json({ url: await startSigning(s.tenant, req.params.id, s.user.email, `/staff/contracts/${req.params.id}`) });
 }));
 
 /* ---------------- templates and the clause library ---------------- */

@@ -24,6 +24,8 @@ export interface SupplierInfo {
   privacy?: { needsConsent: boolean };
   /** Sourcing is on for the buyer: open invitations; outside bidders (bidderOnly) see only their events. */
   sourcing?: { invitations: number; bidderOnly: boolean; registered: boolean } | null;
+  /** Contracts the buyer shared for review or signature. */
+  contracts?: number;
 }
 
 export function rememberWorkspace(ws?: string) { if (ws) try { localStorage.setItem('vg.supplierWorkspace', ws); } catch { /* ignore */ } }
@@ -51,6 +53,7 @@ export function SupplierFrame({ info, onLanguage, children }: { info: SupplierIn
       { to: '/vendor/invoices', label: t('shell.navInvoices'), icon: 'invoices' },
       { to: '/vendor/payments', label: t('shell.navPayments'), icon: 'payments' },
     ] : []),
+    ...(info.contracts && !bidderOnly ? [{ to: '/vendor/contracts', label: t('review.navContracts'), icon: 'contracts' }] : []),
     ...(info.scorecard && !bidderOnly ? [{ to: '/vendor/performance', label: t('shell.navPerformance'), icon: 'scorecard' }] : []),
   ];
   return (

@@ -48,6 +48,7 @@
     "nodemailer": "^10.6.0",
     "openid-client": "^6.8.9",
     "otplib": "^13.5.0",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.15.2",
     "pg": "^8.23.1",
     "pg-boss": "^12.35.1",

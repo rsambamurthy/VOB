@@ -8,7 +8,9 @@ import { ModuleSettings, type ModuleConfig } from '../../components/ModuleSettin
 import { ApprovalLevelsCard, type ApprovalSetup } from '../../components/ApprovalLevelsCard';
 
 type Company = Partial<Record<'legalName' | 'address' | 'city' | 'country' | 'registrationNo' | 'taxNo' | 'signatoryName' | 'signatoryRole', string>>;
-interface ContractsConfig extends ModuleConfig { approval: ApprovalSetup; company: Company; companyDefaults: Company }
+interface ProviderDef { key: string; label: string; kind: 'email' | 'link'; help: string; methods: string[]; fields: { key: string; label: string; secret?: boolean; optional?: boolean; help?: string; options?: Record<string, string> }[] }
+interface ESign { provider: string | null; sandbox: boolean; values: Record<string, string>; secretsSet: string[]; providers: ProviderDef[]; webhookBase: string }
+interface ContractsConfig extends ModuleConfig { approval: ApprovalSetup; company: Company; companyDefaults: Company; esign: ESign }
 
 const APPROVAL_TEXT = {
   title: 'Contract approval', subject: 'contracts', field: 'contract.value', saved: 'Contract approval flow saved. It applies to contracts submitted from now on.',
@@ -31,6 +33,7 @@ export function ContractsSettings() {
       {(cfg) => <>
         {contractsOnly && <Alert kind="info">This workspace has the Contracts plan, without supplier onboarding. Parties are kept as light records; linking them to onboarded suppliers needs supplier onboarding.</Alert>}
         <CompanyCard company={cfg.company} defaults={cfg.companyDefaults} />
+        {cfg.features.find((f) => f.key === 'esign')?.on && <ESignCard initial={cfg.esign} />}
         {cfg.approval && <ApprovalLevelsCard endpoint="/admin/contracts/approval" setup={cfg.approval} text={APPROVAL_TEXT} />}
       </>}
     </ModuleSettings>
@@ -62,6 +65,50 @@ function CompanyCard({ company, defaults }: { company: Company; defaults: Compan
         ))}
       </div>
       <div className="btn-row"><button className="btn btn-primary" onClick={save}>Save company details</button></div>
+    </section>
+  );
+}
+
+/** The e-signature provider: one per workspace. Secrets are write-only (left empty = keep the saved one). */
+function ESignCard({ initial }: { initial: ESign }) {
+  const [e, setE] = useState(initial);
+  const [values, setValues] = useState<Record<string, string>>(initial.values);
+  const [msg, setMsg] = useState<{ kind: 'success' | 'error' | 'info'; text: string }>();
+  const p = e.providers.find((x) => x.key === e.provider);
+  async function save() {
+    setMsg(undefined);
+    try { const r = await api<{ esign: ESign }>('/admin/contracts/esign', { method: 'PUT', body: { provider: e.provider, sandbox: e.sandbox, values } }); setE(r.esign); setValues(r.esign.values); setMsg({ kind: 'success', text: 'E-signature settings saved.' }); }
+    catch (err: any) { setMsg({ kind: 'error', text: err.message }); }
+  }
+  async function check() {
+    setMsg({ kind: 'info', text: 'Checking…' });
+    const r = await api<{ ok: boolean; message: string }>('/admin/contracts/esign/check', { method: 'POST' }).catch((err) => ({ ok: false, message: err.message }));
+    setMsg({ kind: r.ok ? 'success' : 'error', text: r.message });
+  }
+  return (
+    <section className="card pad section-card" style={{ marginTop: 24 }} aria-label="E-signature">
+      <h3>E-signature</h3>
+      <p className="muted small" style={{ marginTop: 0 }}>Contracts are sent for signature through this provider. Use the provider’s sandbox until you have tried it end to end.</p>
+      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      <div className="field-grid">
+        <div className="field"><label htmlFor="es-p">Provider</label>
+          <select id="es-p" value={e.provider ?? ''} onChange={(ev) => { setE({ ...e, provider: ev.target.value || null }); setValues({}); }}>
+            <option value="">None — sign on paper and upload</option>{e.providers.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}</select></div>
+        {p && p.key !== 'test' && <div className="field"><label className="check-item"><input type="checkbox" checked={e.sandbox} onChange={(ev) => setE({ ...e, sandbox: ev.target.checked })} /> <span>Sandbox / test environment</span></label></div>}
+      </div>
+      {p && <>
+        <p className="small">{p.help}</p>
+        {p.key === 'test' && <Alert kind="warning">Test signing adds a certificate page marked TEST. It is not a legal signature — use it to try the flow only.</Alert>}
+        <div className="field-grid">{p.fields.map((f) => (
+          <div key={f.key} className={`field${f.key === 'privateKey' ? ' field-wide' : ''}`}><label htmlFor={`es-${f.key}`}>{f.label}{f.optional ? ' (optional)' : ''}</label>
+            {f.options ? <select id={`es-${f.key}`} value={values[f.key] ?? ''} onChange={(ev) => setValues({ ...values, [f.key]: ev.target.value })}><option value="">Choose…</option>{Object.entries(f.options).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+              : f.key === 'privateKey' ? <textarea id={`es-${f.key}`} rows={4} value={values[f.key] ?? ''} placeholder={e.secretsSet.includes(f.key) && e.provider === initial.provider ? 'Saved — paste a new key to replace it' : '-----BEGIN RSA PRIVATE KEY-----'} onChange={(ev) => setValues({ ...values, [f.key]: ev.target.value })} />
+              : <input id={`es-${f.key}`} type={f.secret ? 'password' : 'text'} autoComplete="off" value={values[f.key] ?? ''} placeholder={f.secret && e.secretsSet.includes(f.key) ? 'Saved — leave empty to keep' : ''} onChange={(ev) => setValues({ ...values, [f.key]: ev.target.value })} />}
+            {f.help && <div className="field-help">{f.help}</div>}</div>))}</div>
+        {p.kind === 'email' && <p className="small muted">Webhook URL for the provider: <span className="mono">{e.webhookBase}{p.key}</span> — VendorGate also checks every 15 minutes.</p>}
+        {p.kind === 'link' && p.key !== 'test' && <p className="small muted">Signers sign from VendorGate with their own {p.label} account.</p>}
+      </>}
+      <div className="btn-row"><button className="btn btn-secondary" disabled={!initial.provider} onClick={check}>Test the connection</button><button className="btn btn-primary" onClick={save}>Save e-signature settings</button></div>
     </section>
   );
 }

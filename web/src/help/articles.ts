@@ -1438,11 +1438,12 @@ Every night, contracts past their end date become **expired** — or, if they re
 1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration.
 2. **Switch Contracts on** for the workspace. When it is off the menus are hidden; your contracts are kept.
 3. **Contract types**: NDA, master agreement, SOW, rate contract, service, purchase, sales, distribution, lease, licence and other. Each has its own number prefix; some are only for suppliers or only for customers.
-4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates and internal approval. E-signature, obligations and renewal alerts are shown as *coming later*.
+4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party and e-signature. Obligations and renewal alerts are shown as *coming later*.
 5. **Rule defaults**: notice period, renewal term, how many days before the end a contract counts as *expiring*, and whether a value is required. **Lock** a rule so it can't be changed on a contract.
 
 6. **Our company on contracts**: your legal name, registration and tax numbers, address, city (used for courts, the arbitration seat and the place of signing) and signatory — printed in documents. Empty boxes use your billing details.
-7. **Contract approval**: levels like the onboarding approval flow. Rules can use the value, type, supplier or customer, category, *wording changed from the library* and *a fallback clause is used*. By default: Legal Counsel when the wording was changed or a fallback is used, Finance above 10 lakh, and senior management above 1 crore. If no level applies, the contract is approved straight away.
+7. **E-signature** (when the option is on): choose the provider — DocuSign, Adobe Acrobat Sign, Zoho Sign, Aadhaar eSign / DSC through Digio, UAE PASS, or *Test signing* to try the flow (not a legal signature). Enter the credentials from the provider (secrets are stored encrypted and never shown again; leave a secret empty to keep it), keep *Sandbox* ticked until you have tried it, and use **Test the connection**. For DocuSign, Adobe, Zoho and Digio, give the provider the webhook URL shown; VendorGate also checks every 15 minutes.
+8. **Contract approval**: levels like the onboarding approval flow. Rules can use the value, type, supplier or customer, category, *wording changed from the library* and *a fallback clause is used*. By default: Legal Counsel when the wording was changed or a fallback is used, Finance above 10 lakh, and senior management above 1 crore. If no level applies, the contract is approved straight away.
 
 People also need permissions (Administration → Roles): *View contracts and contract parties*, *Create and edit contracts and parties* and *Manage contract templates and the clause library*. The **Contract Manager** role has all three; **Legal Counsel** can view contracts and manage templates.`,
   },
@@ -1489,6 +1490,25 @@ Changing a template never changes contracts already drafted. Managing templates 
 - Merge fields are inserted with *Insert a field*; unknown fields are refused.
 
 The built-in wording is a starting point — have your counsel review it before first use.`,
+  },
+  {
+    id: 'contract-signing', title: 'Review by the other party and signature', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'Send a version to the supplier or customer, work through their comments, and send it for e-signature.',
+    screens: ['^/staff/contracts/'], contexts: ['contracts'],
+    keywords: 'review counterparty supplier customer comment propose wording redline marked up accept changes version signature esign docusign adobe zoho aadhaar dsc digio uae pass sign',
+    related: ['contract-drafting', 'contracts-settings'],
+    body: `**Review by the other party.** Once the contract is approved (or straight from a draft when approval is off), **Send to … for review**: choose their contacts and add a message. Each person gets an email link and opens the contract with a one-time code; an onboarded supplier also finds it under *Contracts* in their supplier portal. They can download the Word and PDF, comment on any clause, **propose new wording**, upload their marked-up copy, and **accept** the version or **ask for changes**.
+
+- Their comments appear on the contract. **Accept their wording** puts it into the draft (the contract becomes non-standard and goes back to draft — make the document again, get approval again if needed, and send the new version). You can also decline or mark a comment resolved.
+- **Reply or note** sends a reply they can see; tick *Internal note* for your team only.
+- Each version and their answer is listed; an older version is replaced when you send a new one.
+
+**Signature.** When they accept (or straight after approval), **Send for signature**: check the signers — at least one for them and one for us. They sign first, then us.
+
+- With DocuSign, Adobe Acrobat Sign, Zoho Sign or Aadhaar eSign / DSC (Digio), the provider emails each signer; VendorGate follows the status and fetches the signed PDF.
+- With UAE PASS (and Test signing), each signer presses **Sign** in VendorGate when it is their turn and signs with their own UAE PASS account.
+- When everyone has signed, the signed PDF is stored as the signed copy and the contract becomes **active**; the owner and the other party are emailed.
+- **Cancel the request** stops it at the provider. Paper signatures still work: upload the signed copy and **Mark as signed**.`,
   },
 ];
 

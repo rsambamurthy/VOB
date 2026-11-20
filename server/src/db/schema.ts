@@ -1594,7 +1594,7 @@ export const contracts = pgTable('contracts', {
   /** Key in CONTRACT_TYPES (services/contracts/config.ts). */
   type: text('type').notNull(),
   partyId: text('party_id').notNull().references(() => parties.id),
-  /** DRAFT · IN_APPROVAL · APPROVED · ACTIVE · EXPIRED · TERMINATED (later steps add negotiation and signature states). */
+  /** DRAFT · IN_APPROVAL · APPROVED · WITH_PARTY (sent for review) · AGREED · SIGNING · ACTIVE · EXPIRED · TERMINATED */
   status: text('status').notNull().default('DRAFT'),
   /** The template it was drafted from, and the jurisdiction its clauses follow (governing law, disputes, tax). */
   templateId: text('template_id'),
@@ -1707,3 +1707,89 @@ export const contractTemplates = pgTable('contract_templates', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [index('contract_templates_tenant_idx').on(t.tenantId, t.status)]);
 export type ContractTemplate = typeof contractTemplates.$inferSelect;
+
+/**
+ * People at the other party who may open a contract in the review portal (email link + one-time code), or who
+ * sign it. The link token and the session token are stored as SHA-256 only. Onboarded suppliers also see shared
+ * contracts in their supplier portal (no reviewer row needed).
+ */
+export const contractReviewers = pgTable('contract_reviewers', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  linkHash: text('link_hash').notNull().unique(),
+  codeHash: text('code_hash'), codeExpiresAt: timestamp('code_expires_at', { withTimezone: true }), codeAttempts: integer('code_attempts').notNull().default(0),
+  /** Codes sent and wrong codes, for limits (reset by the hour / day). */
+  codesSent: integer('codes_sent').notNull().default(0), codesWindowAt: timestamp('codes_window_at', { withTimezone: true }),
+  wrongCodes: integer('wrong_codes').notNull().default(0),
+  sessionHash: text('session_hash'), sessionExpiresAt: timestamp('session_expires_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('contract_reviewers_contract_idx').on(t.contractId)]);
+export type ContractReviewer = typeof contractReviewers.$inferSelect;
+
+/** Each version sent to the other party for review, and their answer. */
+export const contractVersions = pgTable('contract_versions', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  number: integer('number').notNull(),
+  /** The files sent (contract_files ids). */
+  fileIds: text('file_ids').array().notNull().default(sql`'{}'::text[]`),
+  note: text('note'),
+  sentByName: text('sent_by_name').notNull(),
+  sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+  /** OPEN · ACCEPTED · CHANGES_REQUESTED · WITHDRAWN · SUPERSEDED */
+  status: text('status').notNull().default('OPEN'),
+  response: text('response'),
+  respondedByName: text('responded_by_name'),
+  respondedAt: timestamp('responded_at', { withTimezone: true }),
+}, (t) => [uniqueIndex('contract_versions_uq').on(t.contractId, t.number)]);
+export type ContractVersion = typeof contractVersions.$inferSelect;
+
+/** Comments on a contract under review, optionally on one clause and with proposed wording. `internal` = staff only. */
+export const contractComments = pgTable('contract_comments', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  versionId: text('version_id'),
+  clauseGroup: text('clause_group'),
+  /** US · PARTY */
+  side: text('side').notNull(),
+  authorName: text('author_name').notNull(),
+  text: text('text').notNull(),
+  proposedText: text('proposed_text'),
+  internal: boolean('internal').notNull().default(false),
+  /** OPEN · ACCEPTED · DECLINED · RESOLVED */
+  status: text('status').notNull().default('OPEN'),
+  replyTo: text('reply_to'),
+  fileId: text('file_id'),
+  createdAt: createdAt(),
+}, (t) => [index('contract_comments_contract_idx').on(t.contractId)]);
+export type ContractComment = typeof contractComments.$inferSelect;
+
+export interface SignatureSigner { name: string; email: string; side: 'US' | 'PARTY'; order: number; status: 'WAITING' | 'SENT' | 'SIGNED' | 'DECLINED'; signedAt?: string; method?: string;
+  /** Link providers: the one-time return code, the provider's process id and where the browser goes afterwards. */
+  nonce?: string; processId?: string; processState?: string; returnTo?: string }
+/** One request for signature through an e-signature provider (or the built-in test provider). */
+export const contractSignatures = pgTable('contract_signatures', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  /** Key in integrations/esign (test · docusign · adobe · zoho · digio · uaepass). */
+  provider: text('provider').notNull(),
+  externalId: text('external_id'),
+  /** SENT · COMPLETED · DECLINED · CANCELLED · EXPIRED · FAILED */
+  status: text('status').notNull().default('SENT'),
+  signers: jsonb('signers').$type<SignatureSigner[]>().notNull().default([]),
+  /** The PDF that was sent and the signed PDF that came back (contract_files ids). */
+  documentFileId: text('document_file_id').notNull(),
+  signedFileId: text('signed_file_id'),
+  /** Status the contract goes back to if this request is cancelled. */
+  previousStatus: text('previous_status').notNull(),
+  error: text('error'),
+  sentByName: text('sent_by_name').notNull(),
+  sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+}, (t) => [index('contract_signatures_contract_idx').on(t.contractId), index('contract_signatures_status_idx').on(t.status)]);
+export type ContractSignature = typeof contractSignatures.$inferSelect;
