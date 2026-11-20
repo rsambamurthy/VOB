@@ -44,7 +44,7 @@ Use this to take one business unit live on Contracts. Tick each line in a test w
 - [ ] Every new contract for the unit starts in VendorGate (draft → approval → other party → signature).
 - [ ] At least one contract goes through review by the other party with comments and a new version.
 - [ ] At least one amendment is made and signed, and its changes reach the contract.
-- [ ] Renewal and notice alert emails reach the owners; obligation reminders arrive before the due date.
+- [ ] Contract watch is on: owners decide what it lists (Contracts → Watch) and get the weekly digest; obligation reminders arrive before the due date.
 - [ ] Purchase orders and invoices from suppliers with agreed prices show **Contract prices**; lines above the price are followed up.
 - [ ] Signed supplier contracts reach the ERP (check **ERP** on the contract; **Send again** if needed).
 - [ ] Contracts → **Reports** reviewed weekly with the unit head: value under contract, ending in 90 days, overdue obligations,

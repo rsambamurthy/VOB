@@ -41,7 +41,8 @@ test('contracts: the administrator switches it on; a party and a contract are cr
   await party.selectOption({ value: await party.locator('option', { hasText: 'Coolair Services' }).getAttribute('value') ?? '' });
   await dlg.getByLabel('Value').fill('480000');
   await dlg.getByLabel('Start date').fill('2026-04-01');
-  await dlg.getByLabel('End date').fill('2027-03-31');
+  // Ends in 45 days, so contract watch asks for a decision (notice 30 days → 15 days from now).
+  await dlg.getByLabel('End date').fill(new Date(Date.now() + 45 * 86_400_000).toISOString().slice(0, 10));
   await dlg.getByRole('button', { name: 'Create draft' }).click();
   await expect(admin.getByRole('heading', { name: 'Annual maintenance — HVAC, Pune plant' })).toBeVisible();
   await expect(admin.getByText(/SVC-\d{4}-\d{4}/).first()).toBeVisible();
@@ -58,6 +59,17 @@ test('contracts: the administrator switches it on; a party and a contract are cr
   // Reading a file with no text (a scan) says so instead of guessing.
   await admin.getByRole('button', { name: 'Read hvac-amc-signed.pdf' }).click();
   await expect(admin.locator('.alert-error')).toContainText(/scan/);
+
+  // Contract watch: a renew / renegotiate / end decision; record what was done.
+  await admin.goto('/staff/contract-watch');
+  await admin.getByRole('button', { name: 'Check now' }).click();
+  await expect(admin.locator('.alert-success')).toContainText('Checked now');
+  const decide = admin.getByTestId('watch-DECIDE').filter({ hasText: 'Annual maintenance' });
+  await expect(decide).toContainText(/Decide before it ends: SVC-/);
+  await decide.getByRole('button', { name: 'Renegotiate' }).click();
+  await expect(admin.locator('.alert-success')).toContainText('Recorded');
+  await admin.getByRole('tab', { name: 'Decided' }).click();
+  await expect(admin.getByTestId('watch-DECIDE').first()).toContainText('Done: Renegotiate');
 
   // Contract reports show the active contract's value.
   await admin.goto('/staff/contract-reports');

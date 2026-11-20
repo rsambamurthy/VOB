@@ -115,7 +115,7 @@ export function ModuleSettings<C extends ModuleConfig>({ name, endpoint, kindsKe
             <tr key={r.key} className={ruleOff(r) ? 'muted' : ''}>
               <td><label htmlFor={`rule-${r.key}`}><strong>{r.label}</strong></label><div className="muted small">{r.help}{ruleOff(r) && ' (the option it belongs to is off)'}</div></td>
               <td><RuleInput rule={r} value={rules[r.key]} disabled={ruleOff(r)} currency={currency} onChange={(v) => setRules({ ...rules, [r.key]: v })} /></td>
-              <td><input type="checkbox" aria-label={`Lock ${r.label}`} checked={locked.has(r.key)} disabled={ruleOff(r)} onChange={(e) => { const n = new Set(locked); if (e.target.checked) n.add(r.key); else n.delete(r.key); setLocked(n); }} /></td>
+              <td>{r.workspace ? <span className="muted small" title="A setting for the whole workspace">—</span> : <input type="checkbox" aria-label={`Lock ${r.label}`} checked={locked.has(r.key)} disabled={ruleOff(r)} onChange={(e) => { const n = new Set(locked); if (e.target.checked) n.add(r.key); else n.delete(r.key); setLocked(n); }} />}</td>
             </tr>
           ))}</tbody>
         </table>

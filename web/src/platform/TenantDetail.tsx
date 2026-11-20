@@ -2,14 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, Modal } from '../components/ui';
 import { fmtDate, fmtDateTime, humanize, loc } from '../lib/format';
-import { PLAN_LABEL, SOURCE_LABEL, papi, relDays } from './session';
+import { PlanBadge, SOURCE_LABEL, usePlans, type PlanCatalogue, papi, relDays } from './session';
 import { TenantStatus } from './Tenants';
 import { BillingForm, InvoiceStatus, money, type BillingDetails, type InvoiceRow } from '../pages/admin/Billing';
 
 type Features = Record<string, boolean>;
 interface Limits { maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Features; sourcingFormats?: string[] | null }
 /** Plans, feature names and sourcing formats come from the server (lib/plans.ts, lib/features.ts). */
-interface PlanCatalogue { plans: Record<string, { label: string; maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Features }>; features: Record<string, string>; addOns: string[]; sourcingFormats: Record<string, { label: string; available: boolean }> }
 interface Detail {
   tenant: { id: string; slug: string; name: string; status: 'ACTIVE' | 'SUSPENDED'; statusReason: string | null; plan: string; limits: Partial<Limits>; trialEndsAt: string | null; source: string; notes: string | null; createdAt: string; country?: string; countryName?: string;
     security?: { requireMfa: boolean; enforced: boolean }; email?: { sender: string; replyTo: string | null; domain: { name: string; status: string } | null } };
@@ -37,7 +36,7 @@ export function PlatformTenantDetail() {
     <div className="page">
       <Link to="/platform/tenants" className="back">← Workspaces</Link>
       <header className="page-head">
-        <div><h1>{t.name} <TenantStatus {...t} /> <span className={`badge plan-${t.plan}`}>{PLAN_LABEL[t.plan] ?? t.plan}</span></h1>
+        <div><h1>{t.name} <TenantStatus {...t} /> <PlanBadge plan={t.plan} /></h1>
           <p className="muted">Workspace ID <span className="mono">{t.slug}</span> · created {fmtDate(t.createdAt)} via {SOURCE_LABEL[t.source] ?? t.source}</p></div>
         <div className="head-actions">
           {t.status === 'ACTIVE' && <button className="btn btn-secondary" onClick={() => setModal('support')}>Support access…</button>}
@@ -133,7 +132,8 @@ function BillingCard({ tenantId, plan, onChanged }: { tenantId: string; plan: st
   const [d, setD] = useState<TenantBillingData>();
   const [mode, setMode] = useState<'issue' | 'details' | { pay: InvoiceRow } | { void: InvoiceRow }>();
   const [err, setErr] = useState<string>();
-  const [f, setF] = useState({ plan: plan === 'enterprise' ? 'enterprise' : 'standard', cycle: 'yearly', periodStart: '', amount: '', note: '', activatesPlan: plan === 'trial', ref: '', method: 'bank transfer', paidOn: '', reason: '' });
+  const { paid } = usePlans();
+  const [f, setF] = useState({ plan: plan === 'trial' ? 'standard' : plan, cycle: 'yearly', periodStart: '', amount: '', note: '', activatesPlan: plan === 'trial', ref: '', method: 'bank transfer', paidOn: '', reason: '' });
   const load = useCallback(() => papi(`/tenants/${tenantId}/billing`).then(setD).catch((e) => setErr(e.message)), [tenantId]);
   useEffect(() => { load(); }, [load]);
   if (!d) return null;
@@ -167,7 +167,7 @@ function BillingCard({ tenantId, plan, onChanged }: { tenantId: string; plan: st
         <Modal title="Issue invoice" onClose={() => setMode(undefined)} footer={<><button className="btn btn-ghost" onClick={() => setMode(undefined)}>Cancel</button><button className="btn btn-primary" onClick={() => run(() => papi(`/tenants/${tenantId}/invoices`, { method: 'POST', body: { plan: f.plan, cycle: f.cycle, ...(f.periodStart ? { periodStart: f.periodStart } : {}), ...(f.amount ? { amount: Number(f.amount) } : {}), ...(f.note ? { note: f.note } : {}), activatesPlan: f.activatesPlan } }), 'Invoice issued and emailed.')}>Issue</button></>}>
           {err && <Alert kind="error">{err}</Alert>}
           <div className="field-grid">
-            <div className="field"><label htmlFor="i-plan">Plan</label><select id="i-plan" value={f.plan} onChange={(e) => setF({ ...f, plan: e.target.value })}><option value="standard">Standard</option><option value="enterprise">Enterprise</option></select></div>
+            <div className="field"><label htmlFor="i-plan">Plan</label><select id="i-plan" value={f.plan} onChange={(e) => setF({ ...f, plan: e.target.value })}>{paid.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
             <div className="field"><label htmlFor="i-cycle">Billing period</label><select id="i-cycle" value={f.cycle} onChange={(e) => setF({ ...f, cycle: e.target.value })}><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></div>
             <div className="field"><label htmlFor="i-start">Period starts</label><input id="i-start" type="date" value={f.periodStart} onChange={(e) => setF({ ...f, periodStart: e.target.value })} /><div className="field-help">Empty = today.</div></div>
             <div className="field"><label htmlFor="i-amount">Price before tax ({d.currency})</label><input id="i-amount" type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="Price list" /></div>
@@ -238,8 +238,8 @@ function PlanCard({ d, onSaved }: { d: Detail; onSaved: () => void }) {
   const [trialEnds, setTrialEnds] = useState(t.trialEndsAt?.slice(0, 10) ?? '');
   const [o, setO] = useState({ maxUsers: num(t.limits.maxUsers), maxVendors: num(t.limits.maxVendors), emailsPerDay: num(t.limits.emailsPerDay) });
   const [feat, setFeat] = useState<Partial<Features>>(t.limits.features ?? {});
-  const [cat, setCat] = useState<PlanCatalogue>();
-  useEffect(() => { papi<PlanCatalogue>('/plans').then(setCat).catch(() => {}); }, []);
+  const plans = usePlans();
+  const cat: PlanCatalogue | undefined = plans.cat;
   // undefined = the plan's choice (all formats); an array = only these.
   const [formats, setFormats] = useState<string[] | null | undefined>(t.limits.sourcingFormats);
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
@@ -270,7 +270,7 @@ function PlanCard({ d, onSaved }: { d: Detail; onSaved: () => void }) {
       <p className="muted small">Leave a limit empty to use the plan’s value. Type “unlimited” to remove it for this workspace only.</p>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <form onSubmit={save} className="field-grid">
-        <div className="field"><label htmlFor="pl">Plan</label><select id="pl" value={plan} onChange={(e) => setPlan(e.target.value)}>{Object.entries(PLAN_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+        <div className="field"><label htmlFor="pl">Plan</label><select id="pl" value={plan} onChange={(e) => setPlan(e.target.value)}>{plans.all.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         {plan === 'trial' && <div className="field"><label htmlFor="te">Trial ends on</label><input id="te" type="date" value={trialEnds} onChange={(e) => setTrialEnds(e.target.value)} /></div>}
         <div className="field"><label htmlFor="mu">Max users</label><input id="mu" value={o.maxUsers} onChange={(e) => setO({ ...o, maxUsers: e.target.value })} placeholder={`Plan: ${planDefault('maxUsers')}`} /></div>
         <div className="field"><label htmlFor="mv">Max vendors</label><input id="mv" value={o.maxVendors} onChange={(e) => setO({ ...o, maxVendors: e.target.value })} placeholder={`Plan: ${planDefault('maxVendors')}`} /></div>

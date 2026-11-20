@@ -302,6 +302,13 @@
       "when": 1795165012591,
       "tag": "0042_contracts_readings",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795175607989,
+      "tag": "0043_contracts_watch",
+      "breakpoints": true
     }
   ]
 }

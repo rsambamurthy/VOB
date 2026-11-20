@@ -58,6 +58,7 @@ interface Report {
   expiring: { id: string; number: string; title: string; endDate: string; autoRenew: boolean; value: number | null; currency: string; party: string }[];
   obligations: { open: number; overdue: number; soon: number; done90: number; onTimeRate: number | null };
   cycle: { type: string; label: string; n: number; avg: number; median: number }[];
+  watch: { open: number; urgent: number } | null;
   prices: { checked: number; above: number; excess: number; byContract: { id: string; number: string; above: number; excess: number }[] } | null;
 }
 const STAGES: [string, string][] = [['DRAFT', 'Draft'], ['IN_APPROVAL', 'In approval'], ['APPROVED', 'Approved'], ['WITH_PARTY', 'With the other party'], ['AGREED', 'Agreed'], ['SIGNING', 'Out for signature'], ['ACTIVE', 'Active'], ['EXPIRED', 'Expired'], ['TERMINATED', 'Terminated']];
@@ -76,6 +77,7 @@ export function ContractReports() {
         <div className="head-actions"><a className="btn btn-secondary" href="/api/staff/contracts/reports.xlsx">Download Excel</a></div></header>
       <div className="stat-row">
         {r.byDirection.map((x) => <div key={x.direction + x.currency} className="stat stat-approved"><span className="stat-n" title={money(x.value, x.currency)}>{moneyShort(x.value, x.currency)}</span><span className="stat-l">{x.n} active {x.direction === 'SELL' ? 'customer' : 'supplier'} contract{x.n === 1 ? '' : 's'}</span></div>)}
+        {r.watch && <Link className="stat stat-rejected" to="/staff/contract-watch"><span className="stat-n">{r.watch.open}</span><span className="stat-l">Waiting for a decision{r.watch.urgent ? ` (${r.watch.urgent} urgent)` : ''}</span></Link>}
         <Link className="stat stat-attention" to="/staff/contracts?tab=expiring"><span className="stat-n">{r.expiring.length}</span><span className="stat-l">Ending in 90 days</span></Link>
         <Link className="stat stat-rejected" to="/staff/contract-obligations?filter=overdue"><span className="stat-n">{r.obligations.overdue}</span><span className="stat-l">Obligations overdue</span></Link>
         <div className="stat stat-invited"><span className="stat-n">{r.obligations.onTimeRate === null ? '—' : `${r.obligations.onTimeRate}%`}</span><span className="stat-l">Obligations done on time (90 days)</span></div>

@@ -20,9 +20,10 @@ import type { Feature } from './features.js';
 
 export interface KindDef { label: string; help: string; available: boolean }
 export interface OptionDef { area: string; label: string; help: string; default: boolean; available: boolean; requires?: Feature }
+/** `workspace` = a setting for the whole workspace rather than a default each record starts with (no lock). */
 export type RuleDef =
-  | { kind: 'choice'; label: string; help: string; options: Record<string, string>; default: string; requires?: string }
-  | { kind: 'number'; label: string; help: string; min: number; max: number; step?: number; unit?: string; default: number | null; nullable?: boolean; requires?: string };
+  | { kind: 'choice'; label: string; help: string; options: Record<string, string>; default: string; requires?: string; workspace?: boolean }
+  | { kind: 'number'; label: string; help: string; min: number; max: number; step?: number; unit?: string; default: number | null; nullable?: boolean; requires?: string; workspace?: boolean };
 export type RuleValue = string | number | null;
 
 /** What a module stores in tenant.settings[module]. Extra keys (approval flows…) are kept as they are. */

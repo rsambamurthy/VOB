@@ -148,6 +148,16 @@ contractsRouter.get('/obligations', requireStaff('contracts.view'), ah(async (re
 }));
 contractsRouter.get('/reports', requireStaff('contracts.view'), ah(async (req, res) => { res.json(await (await import('../services/contracts/reports.js')).contractReport(staffCtx(req).tenant)); }));
 contractsRouter.get('/reports.xlsx', requireStaff('contracts.view'), ah(async (req, res) => { await sendXlsx(res, 'contract-report.xlsx', await (await import('../services/contracts/reports.js')).contractReportXlsx(staffCtx(req).tenant)); }));
+/* Contract watch: what needs a decision (services/contracts/watch.ts). */
+const watch = () => import('../services/contracts/watch.js');
+contractsRouter.get('/watch', requireStaff('contracts.view'), ah(async (req, res) => { const s = staffCtx(req); res.json(await (await watch()).listSuggestions(s.tenant, req.query as Record<string, string>, s.user.id)); }));
+contractsRouter.get('/watch/count', requireStaff('contracts.view'), ah(async (req, res) => { res.json(await (await watch()).openCount(staffCtx(req).tenant)); }));
+contractsRouter.post('/watch/run', requireStaff('contracts.manage'), ah(async (req, res) => {
+  const t = staffCtx(req).tenant; const w = await watch();
+  if (!w.watchOn(t)) throw new HttpError(409, 'Contract watch is switched off in Administration → Contracts.');
+  res.json(await w.runWatchFor(t));
+}));
+contractsRouter.post('/suggestions/:sid', requireStaff('contracts.manage'), ah(async (req, res) => { res.json({ suggestion: await (await watch()).decideSuggestion(staffCtx(req).tenant, req.params.sid, req.body, by(req)) }); }));
 contractsRouter.get('/prices-template.xlsx', requireStaff('contracts.manage'), ah(async (_req, res) => { await sendXlsx(res, 'contract-prices.xlsx', await pricesTemplate()); }));
 contractsRouter.get('/parents', requireStaff('contracts.view'), ah(async (req, res) => {
   res.json({ contracts: await parentOptions(staffCtx(req).tenant, String(req.query.partyId ?? '')) });

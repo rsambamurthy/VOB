@@ -1860,3 +1860,33 @@ export const contractReadings = pgTable('contract_readings', {
   createdAt: createdAt(),
 }, (t) => [index('contract_readings_contract_idx').on(t.contractId)]);
 export type ContractReading = typeof contractReadings.$inferSelect;
+
+/**
+ * Contract watch: something on a contract that needs a decision (services/contracts/watch.ts). One row per contract,
+ * kind and `key` (the period or threshold it is about), so the nightly run never repeats one. Open → used / dismissed /
+ * snoozed by a person, or resolved when the reason has gone.
+ */
+export const contractSuggestions = pgTable('contract_suggestions', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  /** DECIDE · PRICE · SPEND · OVERDUE · SUPPLIER · OWNER · IDLE */
+  kind: text('kind').notNull(),
+  key: text('key').notNull(),
+  /** URGENT · NORMAL */
+  severity: text('severity').notNull(),
+  title: text('title').notNull(),
+  reasons: jsonb('reasons').$type<string[]>().notNull().default([]),
+  facts: jsonb('facts').$type<Record<string, string | number | boolean | null>>().notNull().default({}),
+  /** OPEN · USED · DISMISSED · SNOOZED · RESOLVED */
+  status: text('status').notNull().default('OPEN'),
+  /** What was done with "Use" (renew, end, raised…) and the note given with it or with Dismiss. */
+  action: text('action'), note: text('note'),
+  snoozeUntil: date('snooze_until', { mode: 'string' }),
+  decidedByName: text('decided_by_name'), decidedAt: timestamp('decided_at', { withTimezone: true }),
+  /** When the owner was emailed about it (urgent ones straight away). */
+  notifiedAt: timestamp('notified_at', { withTimezone: true }),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('contract_suggestions_uq').on(t.contractId, t.kind, t.key), index('contract_suggestions_open_idx').on(t.tenantId, t.status, t.severity)]);
+export type ContractSuggestion = typeof contractSuggestions.$inferSelect;

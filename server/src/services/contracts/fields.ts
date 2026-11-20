@@ -77,7 +77,8 @@ export function amountInWords(amount: number, currency: string) {
   const words = parts.join(' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
-const money = (v: number, cur: string) => `${cur} ${v.toLocaleString(cur === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** An amount as text in the currency's own grouping (INR 18,60,000.00). */
+export const money = (v: number, cur: string) => `${cur} ${v.toLocaleString(cur === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const addressOf = (a: Party['address']) => [a?.line1, a?.city, a?.region, a?.postalCode].filter(Boolean).join(', ');
 
 /** Every field's value for one contract (empty string = no value yet). */

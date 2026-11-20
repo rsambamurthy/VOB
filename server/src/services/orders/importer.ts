@@ -188,6 +188,11 @@ export async function importPurchaseOrders(tenant: Tenant, inputs: unknown[], so
   const [imp] = await db.insert(poImports).values({ tenantId: tenant.id, source, requestedBy, status, created: res.created, updated: res.updated, unchanged: res.unchanged, failed: res.failed, unmapped: res.unmapped, errors: res.errors.slice(0, 50) }).returning();
   res.importId = imp.id;
   if (notify) for (const x of toNotify) await notifySupplierOfPo(tenant, x.po, x.kind).catch((err) => logger.warn({ err }, 'PO notification failed'));
+  // Contract watch looks again at these suppliers' contracts (prices, spend, unused).
+  if (res.created + res.updated && res.poIds.length) {
+    const vendorIds = (await db.selectDistinct({ v: purchaseOrders.vendorId }).from(purchaseOrders).where(inArray(purchaseOrders.id, res.poIds))).map((x) => x.v).filter((v): v is string => !!v);
+    await (await import('../contracts/watch.js')).watchSuppliers(tenant, vendorIds).catch((err) => logger.warn({ err }, 'contract watch after PO import failed'));
+  }
   return res;
 }
 

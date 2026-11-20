@@ -45,7 +45,7 @@ export function AmendmentsCard({ contract, m, manage }: { contract: { id: string
   const [open, setOpen] = useState(false);
   if (!m.amendments.length && !(manage && m.canAmend)) return null;
   return (
-    <section className="card pad section-card" aria-label="Amendments">
+    <section className="card pad section-card" aria-label="Amendments" id="amendments">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <div><h3 style={{ marginBottom: 2 }}>Amendments</h3><p className="muted small" style={{ marginTop: 0 }}>Dates, value, renewal or terms change through a signed amendment — drafted, approved, reviewed and signed like any contract.</p></div>
         {manage && m.canAmend && <button className="btn btn-secondary btn-sm" onClick={() => setOpen(true)}>+ New amendment</button>}

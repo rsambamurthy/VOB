@@ -45,42 +45,52 @@ export function contractReport(t: Tenant) {
       obligations: { ...ob, onTimeRate: ob.done90 ? Math.round((ob.onTime90 / ob.done90) * 100) : null },
       cycle: cycle.map((r) => ({ ...r, label: typeInfo(r.type).label })),
       prices: optionOn(t, 'priceCompliance') ? await priceLeakage(t) : null,
+      watch: optionOn(t, 'watch') ? await (await import('./watch.js')).openCount(t) : null,
     };
   });
 }
 
-/** Purchase order lines of the last 90 days against contract prices: lines above the price and the excess paid. */
 async function priceLeakage(t: Tenant) {
+  const b = await priceBreaches(t);
+  return { checked: b.checked, above: b.above, excess: b.excess, byContract: [...b.per.values()].sort((a, c) => c.excess - a.excess).slice(0, 10) };
+}
+
+/** Purchase order lines of the last 90 days against contract prices: lines above the price and the excess paid, per contract (reports and contract watch). */
+export async function priceBreaches(t: Tenant) {
   const active = await db.select({ id: C.id, number: C.number, currency: C.currency, vendorId: P.vendorId }).from(C).innerJoin(P, eq(P.id, C.partyId))
     .where(and(eq(C.tenantId, t.id), eq(C.status, 'ACTIVE'), isNotNull(P.vendorId)));
-  if (!active.length) return { checked: 0, above: 0, excess: 0, byContract: [] as { id: string; number: string; above: number; excess: number }[] };
+  type Row = { id: string; number: string; above: number; excess: number; lines: number };
+  const none = { checked: 0, above: 0, excess: 0, per: new Map<string, Row>() };
+  if (!active.length) return none;
   const prices = await db.select().from(PR).where(inArray(PR.contractId, active.map((c) => c.id)));
   const priceOf = new Map<string, { price: number; contract: (typeof active)[number] }>();
   for (const p of prices) {
     const c = active.find((x) => x.id === p.contractId)!;
     if (p.itemCode) priceOf.set(`${c.vendorId}|${c.currency}|${p.itemCode.toLowerCase()}`, { price: Number(p.price), contract: c });
   }
-  if (!priceOf.size) return { checked: 0, above: 0, excess: 0, byContract: [] };
+  if (!priceOf.size) return none;
   const lines = await rows<{ vendor_id: string; currency: string; item_code: string; unit_price: string; quantity: string }>(sql`select po.vendor_id, po.currency, l.item_code, l.unit_price::text, l.quantity::text
     from po_lines l join purchase_orders po on po.id = l.po_id where po.tenant_id = ${t.id} and po.vendor_id is not null and l.item_code is not null
     and po.created_at >= now() - interval '90 days' and po.vendor_id in (${sql.join([...new Set(active.map((c) => c.vendorId!))].map((v) => sql`${v}`), sql`, `)}) limit 20000`);
   const tol = Number(ruleDefaults(t).priceTolerance ?? 0);
   let checked = 0, above = 0, excess = 0;
-  const per = new Map<string, { id: string; number: string; above: number; excess: number }>();
+  const per = new Map<string, Row>();
   for (const l of lines) {
     const hit = priceOf.get(`${l.vendor_id}|${l.currency}|${l.item_code.toLowerCase()}`);
     if (!hit) continue;
     checked++;
+    const seen = per.get(hit.contract.id) ?? { id: hit.contract.id, number: hit.contract.number, above: 0, excess: 0, lines: 0 };
+    seen.lines++; per.set(hit.contract.id, seen);
     const up = Number(l.unit_price);
     if (up > hit.price * (1 + tol / 100)) {
       above++;
       const x = (up - hit.price) * Number(l.quantity);
       excess += x;
-      const row = per.get(hit.contract.id) ?? { id: hit.contract.id, number: hit.contract.number, above: 0, excess: 0 };
-      row.above++; row.excess += x; per.set(hit.contract.id, row);
+      seen.above++; seen.excess = Math.round((seen.excess + x) * 100) / 100;
     }
   }
-  return { checked, above, excess: Math.round(excess * 100) / 100, byContract: [...per.values()].sort((a, b) => b.excess - a.excess).slice(0, 10) };
+  for (const [k, v] of per) if (!v.above) per.delete(k);
+  return { checked, above, excess: Math.round(excess * 100) / 100, per };
 }
 
 /** The report as an Excel workbook (text cells only, like every export). */

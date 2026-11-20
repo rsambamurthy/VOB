@@ -68,6 +68,8 @@ export function contracts() {
   if (__ITER % 2 === 0) { get('/api/staff/contracts/obligations?filter=overdue', o, 'obligations'); sleep(2 + Math.random() * 3); }
   if (__ITER % 3 === 0) { get('/api/staff/contracts/reports', o, 'contract reports'); sleep(3 + Math.random() * 3); }
   if (__ITER % 10 === 0) { get('/api/staff/parties?page=1', o, 'parties'); sleep(2); }
+  get('/api/staff/contracts/watch/count', o, 'watch count');
+  if (__ITER % 3 === 1) { get(`/api/staff/contracts/watch?page=${1 + (__ITER % 5)}`, o, 'watch list'); sleep(2 + Math.random() * 3); }
   if (Math.random() < 0.15) { // about one contract read every few minutes per manager
     const r = http.post(`${B}/api/staff/contracts/${T.readContract}/files/${T.readFile}/read`, null, { ...o, tags: { kind: 'page', name: 'read contract' } });
     check(r, { 'read contract 200': (x) => x.status === 200 }); sleep(3);

@@ -37,7 +37,26 @@ export function RequirePlatform({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export const PLAN_LABEL: Record<string, string> = { trial: 'Trial', standard: 'Standard', enterprise: 'Enterprise' };
+/** Plans, features and sourcing formats as the server defines them (lib/plans.ts, lib/features.ts) — never re-typed here. Fetched once. */
+export interface PlanCatalogue {
+  plans: Record<string, { label: string; maxUsers: number | null; maxVendors: number | null; emailsPerDay: number | null; features: Record<string, boolean> }>;
+  paidPlans: string[]; features: Record<string, string>; addOns: string[]; sourcingFormats: Record<string, { label: string; available: boolean }>;
+  countries?: { code: string; name: string; currency: string }[];
+}
+let catalogue: Promise<PlanCatalogue> | undefined;
+export const loadPlans = () => (catalogue ??= papi<PlanCatalogue>('/plans').catch((e) => { catalogue = undefined; throw e; }));
+/** A workspace's plan as a badge (label from the catalogue). */
+export function PlanBadge({ plan }: { plan: string }) {
+  const { label } = usePlans();
+  return <span className={`badge plan-${plan}`}>{label(plan)}</span>;
+}
+/** The plan catalogue, with helpers: `label(key)`, every plan as [key, label], and the invoiced (paid) plans. */
+export function usePlans() {
+  const [cat, setCat] = useState<PlanCatalogue>();
+  useEffect(() => { loadPlans().then(setCat).catch(() => {}); }, []);
+  const label = (k: string) => cat?.plans[k]?.label ?? k;
+  return { cat, label, all: Object.entries(cat?.plans ?? {}).map(([k, p]) => [k, p.label] as const), paid: (cat?.paidPlans ?? []).map((k) => [k, label(k)] as const) };
+}
 export const SOURCE_LABEL: Record<string, string> = { platform: 'Console', signup: 'Self sign-up', cli: 'Command line', bootstrap: 'First deploy' };
 
 /** "in 5 days" / "3 days ago" / "today" */

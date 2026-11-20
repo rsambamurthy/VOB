@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Alert } from '../components/ui';
 import { fmtDate, loc } from '../lib/format';
-import { PLAN_LABEL, SOURCE_LABEL, papi, relDays } from './session';
+import { PlanBadge, SOURCE_LABEL, papi, relDays } from './session';
 
 interface Overview {
   tenants: { total: number; active: number; suspended: number; byPlan: Record<string, number> };
@@ -50,7 +50,7 @@ export function PlatformOverview() {
                 <tbody>{d.recent.map((t) => (
                   <tr key={t.id} onClick={() => nav(`/platform/tenants/${t.id}`)}>
                     <td><Link to={`/platform/tenants/${t.id}`}>{t.name}</Link> <span className="muted small">{t.slug}</span></td>
-                    <td><span className={`badge plan-${t.plan}`}>{PLAN_LABEL[t.plan] ?? t.plan}</span></td>
+                    <td><PlanBadge plan={t.plan} /></td>
                     <td className="muted small">{SOURCE_LABEL[t.source] ?? t.source}</td>
                     <td className="num muted small">{fmtDate(t.createdAt)}</td>
                   </tr>))}</tbody>

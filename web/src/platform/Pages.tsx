@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Alert, Empty, Modal } from '../components/ui';
 import { fmtDateTime, humanize } from '../lib/format';
-import { PLAN_LABEL, papi, usePlatform, type PlatformAdmin } from './session';
+import { papi, usePlans, usePlatform, type PlatformAdmin } from './session';
 
 /* ---------- Sign-ups ---------- */
 
@@ -41,6 +41,7 @@ export function PlatformSignups() {
 interface Settings { signupEnabled: boolean; signupPlan: string; trialDays: number; blockFreeEmail: boolean; notifyEmail: string | null; termsUrl: string | null; updatedAt: string }
 
 export function PlatformSettings() {
+  const plans = usePlans();
   const [s, setS] = useState<Settings>();
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
   useEffect(() => { papi('/settings').then(setS); }, []);
@@ -63,7 +64,7 @@ export function PlatformSettings() {
         <section className="card pad section-card">
           <h3>New sign-ups get</h3>
           <div className="field-grid">
-            <div className="field"><label htmlFor="sp">Plan</label><select id="sp" value={s.signupPlan} onChange={(e) => setS({ ...s, signupPlan: e.target.value })}>{Object.entries(PLAN_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+            <div className="field"><label htmlFor="sp">Plan</label><select id="sp" value={s.signupPlan} onChange={(e) => setS({ ...s, signupPlan: e.target.value })}>{plans.all.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
             {s.signupPlan === 'trial' && <div className="field"><label htmlFor="td">Trial length (days)</label><input id="td" type="number" min={1} max={365} value={s.trialDays} onChange={(e) => setS({ ...s, trialDays: Number(e.target.value) })} /></div>}
           </div>
           <p className="muted small">Trial: 5 users, 25 vendors, 200 emails a day, no ERP or AI. When a trial ends, people can still sign in and see their data but can’t add vendors or users until you change the plan.</p>
@@ -207,6 +208,7 @@ interface BillingCfg {
 }
 
 export function PlatformBilling() {
+  const plans = usePlans();
   const [d, setD] = useState<{ billing: BillingCfg; states: { code: string; name: string }[]; online: boolean }>();
   const [b, setB] = useState<Required<Pick<BillingCfg, 'gstRate' | 'sac' | 'dueDays' | 'prefix'>> & BillingCfg>();
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
@@ -224,7 +226,7 @@ export function PlatformBilling() {
   async function save(e: React.FormEvent) {
     e.preventDefault(); setMsg(undefined);
     const prices: Record<string, Record<string, { monthly?: number; yearly?: number }>> = {};
-    for (const cur of ['INR', 'USD']) { prices[cur] = {}; for (const plan of ['standard', 'enterprise']) prices[cur][plan] = { ...(b!.prices?.[cur]?.[plan] ?? {}) }; }
+    for (const cur of ['INR', 'USD']) { prices[cur] = {}; for (const [plan] of plans.paid) prices[cur][plan] = { ...(b!.prices?.[cur]?.[plan] ?? {}) }; }
     try { await papi('/billing', { method: 'PUT', body: { ...b, prices, gstRate: Number(b!.gstRate), dueDays: Number(b!.dueDays) } }); setMsg({ kind: 'success', text: 'Billing settings saved.' }); }
     catch (err: any) { setMsg({ kind: 'error', text: err.message }); }
   }
@@ -250,8 +252,8 @@ export function PlatformBilling() {
           <p className="muted small">Indian customers are invoiced in INR with GST; customers outside India in USD as an export of services. Leave a price empty to sell that plan only by quote.</p>
           <table className="table static compact">
             <thead><tr><th>Plan</th><th>INR / month</th><th>INR / year</th><th>USD / month</th><th>USD / year</th></tr></thead>
-            <tbody>{['standard', 'enterprise'].map((plan) => (
-              <tr key={plan}><td className="strong">{PLAN_LABEL[plan]}</td>
+            <tbody>{plans.paid.map(([plan, planLabel]) => (
+              <tr key={plan}><td className="strong">{planLabel}</td>
                 {(['INR', 'USD'] as const).flatMap((cur) => (['monthly', 'yearly'] as const).map((cy) => <td key={cur + cy}><input type="number" min={0} aria-label={`${plan} ${cur} ${cy}`} value={price(cur, plan, cy)} onChange={(e) => setPrice(cur, plan, cy, e.target.value)} /></td>))}
               </tr>))}</tbody>
           </table>

@@ -24,10 +24,10 @@ import { getParty } from './parties.js';
 
 const { contracts: C, contractObligations: O, contractPrices: PR, users: U } = schema;
 type By = { id: string; name: string; ip?: string };
-const today = () => new Date().toISOString().slice(0, 10);
-const addDays = (d: string, n: number) => new Date(new Date(`${d}T00:00:00Z`).getTime() + n * 86_400_000).toISOString().slice(0, 10);
+export const today = () => new Date().toISOString().slice(0, 10);
+export const addDays = (d: string, n: number) => new Date(new Date(`${d}T00:00:00Z`).getTime() + n * 86_400_000).toISOString().slice(0, 10);
 const addMonths = (d: string, m: number) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCMonth(x.getUTCMonth() + m); return x.toISOString().slice(0, 10); };
-const longDate = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+export const longDate = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 const link = (id: string) => `${env.appBaseUrl}/staff/contracts/${id}`;
 const cAudit = (t: Pick<Tenant, 'id'>, c: Pick<Contract, 'id' | 'number'>, actor: string, action: string, extra: Record<string, unknown> = {}, ip?: string) =>
   audit({ tenantId: t.id, actor, action, detail: { subjectId: c.id, number: c.number, ...extra }, ip });
@@ -36,7 +36,8 @@ async function getContract(tenantId: string, id: string) {
   if (!c) throw new HttpError(404, 'Contract not found');
   return c;
 }
-async function mailUser(tenantId: string, userId: string | null, subject: string, body: string, contractId: string) {
+/** Email one of our users about a contract (active users only). Shared by reminders and contract watch. */
+export async function mailUser(tenantId: string, userId: string | null, subject: string, body: string, contractId: string) {
   if (!userId) return false;
   const u = await db.query.users.findFirst({ where: eq(U.id, userId) });
   if (u?.status !== 'ACTIVE') return false;
@@ -248,7 +249,8 @@ export async function runContractReminders(now = today()) {
   const active = await db.select().from(C).where(and(eq(C.status, 'ACTIVE'), isNotNull(C.endDate), gte(C.endDate, now), ne(C.type, 'amendment'))).limit(5000);
   for (const c of active) {
     const t = await tenantOf(c.tenantId);
-    if (!t || !contractsOn(t) || !optionOn(t, 'renewalAlerts')) continue;
+    // With contract watch on, renewal and notice dates become watch decisions instead (one email, not two).
+    if (!t || !contractsOn(t) || !optionOn(t, 'renewalAlerts') || optionOn(t, 'watch')) continue;
     const r = ruleDefaults(t);
     const alerts = { ...(c.alerts ?? {}) };
     const sends: [string, string][] = [];

@@ -20,6 +20,10 @@ export function StaffShell() {
   const [applications, setApplications] = useState<number>();
   const canScreen = !!me && can('vendors.create');
   useEffect(() => { if (canScreen) api<{ pending: number }>('/staff/applications/count').then((r) => setApplications(r.pending)).catch(() => {}); }, [canScreen, pathname]);
+  // Contracts waiting for a decision (contract watch).
+  const [watchN, setWatchN] = useState<number>();
+  const canContracts = !!me?.contracts?.on && can('contracts.view');
+  useEffect(() => { if (canContracts) api<{ open: number }>('/staff/contracts/watch/count').then((r) => setWatchN(r.open)).catch(() => {}); }, [canContracts, pathname]);
   if (!me) return null;
   const product = me.tenant.branding.productName ?? 'VendorGate';
   const initials = me.user.name.split(' ').map((s) => s[0]).join('').slice(0, 2).toUpperCase();
@@ -53,6 +57,7 @@ export function StaffShell() {
       { to: '/staff/contracts', label: 'All contracts', icon: 'contracts', end: true, show: contracts },
       { to: '/staff/parties', label: 'Parties', icon: 'parties', show: contracts },
       { to: '/staff/contract-obligations', label: 'Obligations', icon: 'actions', show: contracts },
+      { to: '/staff/contract-watch', label: 'Watch', icon: 'risk', count: watchN || undefined, countLabel: 'waiting for a decision', show: contracts },
       { to: '/staff/contract-reports', label: 'Reports', icon: 'reports', show: contracts },
       { to: '/staff/contract-templates', label: 'Templates', icon: 'agreement', show: contracts },
       { to: '/staff/contract-clauses', label: 'Clause library', icon: 'questionnaire', show: contracts },

@@ -305,6 +305,7 @@ export async function contractDetail(t: Tenant, id: string, userId: string) {
     negotiation: await negotiationView(t, c),
     manage: await (await import('./manage.js')).manageView(t, c),
     reading: await (await import('./reading.js')).readingsView(t, c),
+    watch: await (await import('./watch.js')).contractSuggestions(t, c),
     signing: await signingView(t, c, (await db.query.users.findFirst({ where: eq(U.id, userId), columns: { email: true } }))?.email ?? ''),
   };
 }
@@ -433,4 +434,4 @@ export async function runContractEndDates() {
   if (expired || renewed) logger.info({ expired, renewed }, 'contract end dates');
   return { expired, renewed };
 }
-defineJob('contracts.daily', async () => { await runContractEndDates(); await (await import('./manage.js')).runContractReminders(); }, { retryLimit: 1, expireInSeconds: 1800 });
+defineJob('contracts.daily', async () => { await runContractEndDates(); await (await import('./manage.js')).runContractReminders(); await (await import('./watch.js')).runWatch(); }, { retryLimit: 1, expireInSeconds: 1800 });

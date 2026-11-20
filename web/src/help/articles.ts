@@ -1438,7 +1438,7 @@ Every night, contracts past their end date become **expired** — or, if they re
 1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration.
 2. **Switch Contracts on** for the workspace. When it is off the menus are hidden; your contracts are kept.
 3. **Contract types**: NDA, master agreement, SOW, rate contract, service, purchase, sales, distribution, lease, licence and other. Each has its own number prefix; some are only for suppliers or only for customers.
-4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party, e-signature, obligations and milestones, renewal and notice alerts, order and invoice price checks (needs purchase orders) sending contracts to the ERP (needs ERP integration) and **reading uploaded contracts** (needs the AI feature; names, numbers, amounts and dates are masked before the AI sees the text — without it, VendorGate's own rules read the file and nothing leaves VendorGate). Rules also set the **price tolerance** (how far above the contract price is accepted) and how many days before the notice date the owner is reminded.
+4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party, e-signature, obligations and milestones, renewal and notice alerts, **contract watch** (decisions waiting on signed contracts — see Contract watch), order and invoice price checks (needs purchase orders) sending contracts to the ERP (needs ERP integration) and **reading uploaded contracts** (needs the AI feature; names, numbers, amounts and dates are masked before the AI sees the text — without it, VendorGate's own rules read the file and nothing leaves VendorGate). Rules also set the **price tolerance** (how far above the contract price is accepted) and how many days before the notice date the owner is reminded.
 5. **Rule defaults**: notice period, renewal term, how many days before the end a contract counts as *expiring*, and whether a value is required. **Lock** a rule so it can't be changed on a contract.
 
 6. **Our company on contracts**: your legal name, registration and tax numbers, address, city (used for courts, the arbitration seat and the place of signing) and signatory — printed in documents. Empty boxes use your billing details.
@@ -1556,6 +1556,26 @@ A scanned PDF has no text to read — upload the Word file or a text PDF instead
 - **Order prices against contract prices** (with price checks on): purchase order lines of the last 90 days that were above the agreed price, and how much was paid over it.
 
 Figures refresh every minute. **Download Excel** gives the same figures as a workbook.`,
+  },
+  {
+    id: 'contract-watch', title: 'Contract watch', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'Contracts that need a decision — renewals, notice dates, prices above the contract, spend near the value, late obligations, supplier holds, missing owners and unused contracts.',
+    screens: ['^/staff/contract-watch', '^/staff/contracts/'], contexts: ['contract-watch', 'contracts'],
+    keywords: 'watch agent decision renew renegotiate end notice auto renewal spend value price above leakage overdue late obligation supplier hold risk owner unused idle snooze dismiss digest weekly email',
+    related: ['contract-obligations', 'contract-reports', 'contracts-settings'],
+    body: `Every night VendorGate looks at your active contracts and lists the ones that need a decision. It also looks again when purchase orders arrive.
+
+- **Renew, renegotiate or end**: the last day to give notice is inside your decision window (90 days by default). Urgent near the notice date, or when it has passed.
+- **Prices above the contract**: order lines in the last 90 days above the agreed price (after your tolerance), and the excess paid.
+- **Spend against the contract value**: orders have reached your warning share of the value (80% by default), and again at 100%.
+- **The other party is late**: their obligations are overdue (urgent after 30 days).
+- **Supplier on hold or high risk**: worth a look before renewing.
+- **No owner**: nobody would get its reminders.
+- **Not used**: an active supplier contract with no orders for some months.
+
+Each one says why. Click what you did (for example **Renew or extend** — then start the amendment on the contract — or **Taken up with the supplier**), **Dismiss** it with a reason, or **Snooze** it until a date. Decisions show in the contract's history; anything decided isn't raised again for the same date or period, and anything whose reason has gone disappears by itself.
+
+Contracts → **Watch** lists everything (only mine, by kind, snoozed, decided); each contract shows its own in **For your review**. Owners are emailed straight away about urgent ones and get a weekly digest. Nothing is sent to the other party. Administration → Contracts switches watch on or off and sets the decision window, spend warning, "unused after" and digest day.`,
   },
 ];
 

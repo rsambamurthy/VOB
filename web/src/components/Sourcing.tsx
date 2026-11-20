@@ -12,7 +12,7 @@ export function EventStatus({ status, template }: { status: string; template?: b
   return <span className={`badge sm ${s.cls}`}>{s.label}</span>;
 }
 
-export interface RuleRow { key: string; kind: 'choice' | 'number'; label: string; help: string; options?: Record<string, string>; min?: number; max?: number; step?: number; unit?: string; nullable?: boolean; requires?: string; value: string | number | null; locked: boolean }
+export interface RuleRow { key: string; kind: 'choice' | 'number'; label: string; help: string; options?: Record<string, string>; min?: number; max?: number; step?: number; unit?: string; nullable?: boolean; requires?: string; workspace?: boolean; value: string | number | null; locked: boolean }
 
 /** One rule's input (a list or a number with its unit). `value` is text: '' = empty. */
 export function RuleInput({ rule, value, onChange, disabled, currency }: { rule: RuleRow; value: string; onChange: (v: string) => void; disabled?: boolean; currency: string }) {

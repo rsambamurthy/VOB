@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Empty, Modal } from '../components/ui';
 import { fmtDate } from '../lib/format';
-import { PLAN_LABEL, SOURCE_LABEL, papi, relDays } from './session';
+import { PlanBadge, SOURCE_LABEL, loadPlans, usePlans, papi, relDays } from './session';
 
 interface Row { id: string; slug: string; name: string; status: 'ACTIVE' | 'SUSPENDED'; plan: string; source: string; trialEndsAt: string | null; createdAt: string; users: number; vendors: number; lastActiveAt: string | null }
 
@@ -13,6 +13,7 @@ export function TenantStatus({ status, plan, trialEndsAt }: { status: string; pl
 }
 
 export function PlatformTenants() {
+  const plans = usePlans();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<Row[]>();
@@ -44,7 +45,7 @@ export function PlatformTenants() {
             <option value="">All statuses</option><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option>
           </select>
           <select value={plan} onChange={(e) => setFilter('plan', e.target.value)} aria-label="Plan">
-            <option value="">All plans</option>{Object.entries(PLAN_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            <option value="">All plans</option>{plans.all.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
           {rows && <span className="muted small">{rows.length} workspace{rows.length === 1 ? '' : 's'}</span>}
         </div>
@@ -56,7 +57,7 @@ export function PlatformTenants() {
                 {rows.map((t) => (
                   <tr key={t.id} onClick={() => nav(`/platform/tenants/${t.id}`)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && nav(`/platform/tenants/${t.id}`)}>
                     <td><div className="strong">{t.name}</div><div className="muted small mono">{t.slug}</div></td>
-                    <td><span className={`badge plan-${t.plan}`}>{PLAN_LABEL[t.plan] ?? t.plan}</span>
+                    <td><PlanBadge plan={t.plan} />
                       {t.plan === 'trial' && t.trialEndsAt && <div className="muted small">{new Date(t.trialEndsAt) < new Date() ? 'ended' : 'ends'} {relDays(t.trialEndsAt)}</div>}</td>
                     <td><TenantStatus {...t} /></td>
                     <td className="num">{t.users}</td>
@@ -76,6 +77,7 @@ export function PlatformTenants() {
 }
 
 function NewTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const plans = usePlans();
   const [f, setF] = useState({ name: '', slug: '', adminName: '', adminEmail: '', plan: 'trial', trialDays: 14, country: 'IN', primaryColor: '', productName: '', notes: '' });
   const [slugTouched, setSlugTouched] = useState(false);
   const [slugState, setSlugState] = useState<{ available: boolean; reason: string | null }>();
@@ -85,7 +87,7 @@ function NewTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
   useEffect(() => { papi('/settings').then((s) => setF((x) => ({ ...x, trialDays: s.trialDays }))).catch(() => {}); }, []);
   const [countries, setCountries] = useState<{ code: string; name: string; currency: string }[]>([]);
-  useEffect(() => { papi('/plans').then((r) => setCountries(r.countries ?? [])).catch(() => {}); }, []);
+  useEffect(() => { loadPlans().then((r) => setCountries(r.countries ?? [])).catch(() => {}); }, []);
   // Suggest a workspace ID from the company name until the user edits it.
   useEffect(() => {
     if (slugTouched || !f.name.trim()) return;
@@ -119,7 +121,7 @@ function NewTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <select id="nt-country" value={f.country} onChange={set('country')} disabled={countries.length < 2}>{(countries.length ? countries : [{ code: 'IN', name: 'India', currency: 'INR' }]).map((c) => <option key={c.code} value={c.code}>{c.name} ({c.currency})</option>)}</select>
           <div className="field-help">Sets the onboarding template, tax and bank checks, currency and privacy notice. More countries are added as country packs.</div></div>
         <div className="field"><label htmlFor="nt-plan">Plan</label>
-          <select id="nt-plan" value={f.plan} onChange={set('plan')}>{Object.entries(PLAN_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+          <select id="nt-plan" value={f.plan} onChange={set('plan')}>{plans.all.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         {f.plan === 'trial' && <div className="field"><label htmlFor="nt-td">Trial length (days)</label><input id="nt-td" type="number" min={1} max={365} value={f.trialDays} onChange={set('trialDays')} /></div>}
         <div className="field"><label htmlFor="nt-pn">Product name shown to them (optional)</label><input id="nt-pn" value={f.productName} onChange={set('productName')} placeholder="VendorGate" maxLength={40} /></div>
         <div className="field"><label htmlFor="nt-col">Brand colour (optional)</label><input id="nt-col" value={f.primaryColor} onChange={set('primaryColor')} placeholder="#1f2758" maxLength={7} /></div>

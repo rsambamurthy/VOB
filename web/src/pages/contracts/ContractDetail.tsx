@@ -12,6 +12,8 @@ import { contractBody, ContractForm, type ContractData } from './ContractForm';
 import { DraftingCard, ReopenButton, type Drafting } from './Drafting';
 import { NegotiationCard, SigningCard, type Negotiation, type Signing } from './Negotiation';
 import { AmendmentsCard, AmendsCard, ErpCard, ObligationsCard, PricesCard, type Manage } from './Manage';
+import { ReadingCard, type Reading } from './Insights';
+import { ForReviewCard, type ContractWatch } from './Watch';
 import { FlowPanel, type FlowDecision } from '../../components/ApprovalFlow';
 
 interface Summary { id: string; number: string; reference: string | null; title: string; direction: Direction; type: string; status: string; value: number | null; currency: string; startDate: string | null; endDate: string | null; signedDate: string | null; autoRenew: boolean }
@@ -24,6 +26,8 @@ interface Detail {
   negotiation: Negotiation;
   signing: Signing;
   manage: Manage;
+  reading: { ai: boolean; readings: Reading[] };
+  watch: ContractWatch;
   history: { actor: string; action: string; detail: Record<string, unknown> | null; createdAt: string }[];
   editable: 'all' | string[];
 }
@@ -132,7 +136,9 @@ export function ContractDetail() {
             )}
           </section>
 
+          <ForReviewCard watch={d.watch} manage={manage} onChanged={(text) => { setFlash({ kind: 'success', text: text ?? 'Recorded.' }); load(); }} />
           <AmendsCard m={d.manage} />
+          {c.status !== 'SIGNING' && <ReadingCard contractId={c.id} files={d.files} reading={d.reading} editable={editable} manage={manage} onDetail={onDetail} />}
           <DraftingCard<Detail> contractId={c.id} status={c.status} drafting={d.drafting} manage={manage} onDetail={onDetail} />
           <NegotiationCard contractId={c.id} status={c.status} partyName={d.party.name} clauses={d.drafting.draft?.clauses ?? []} n={d.negotiation} manage={manage} canShare={canShare} onDetail={onDetail} />
           <AmendmentsCard contract={{ ...c, noticeDays: d.contract.noticeDays, renewalTermMonths: d.contract.renewalTermMonths }} m={d.manage} manage={manage} />
