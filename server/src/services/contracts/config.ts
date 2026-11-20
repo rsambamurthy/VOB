@@ -59,7 +59,7 @@ export const OPTIONS = {
   renewalAlerts: { area: 'management', label: 'Renewal and notice alerts', help: 'Remind the owner before the notice date and the end date.', default: true, available: true },
   priceCompliance: { area: 'management', label: 'Order and invoice price checks', help: 'Compare purchase order and invoice prices with the contract price.', default: true, available: true, requires: 'collab' },
   contractToErp: { area: 'integrations', label: 'Send contracts to the ERP', help: 'Create the blanket agreement / contract in the connected ERP when it becomes active.', default: false, available: true, requires: 'erp' },
-  aiExtraction: { area: 'ai', label: 'Read uploaded contracts', help: 'Suggest the dates, value, parties and renewal terms from an uploaded contract.', default: false, available: false, requires: 'ai' },
+  aiExtraction: { area: 'ai', label: 'Read uploaded contracts', help: 'Suggest dates, value, notice and renewal terms from an uploaded contract. Names, numbers and amounts are masked before the AI sees the text.', default: false, available: true, requires: 'ai' },
 } as const satisfies Record<string, ContractOptionDef>;
 export type ContractOption = keyof typeof OPTIONS;
 

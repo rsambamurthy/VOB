@@ -35,17 +35,30 @@ ids = {
     'link': one(f"select id from registration_links where tenant_id='{ACME}'"), 'bid': one(f"select id from sourcing_bids where tenant_id='{ACME}'"),
 }
 ids['sundaramDoc'] = one(f"select id from documents where vendor_id='{sundaram}'")
+
+# Contracts: two NDAs with the other party (made through the API if missing); a reviewer of the first one only.
+import contracts_fixture
+cA, cB = contracts_fixture.ensure(B, psql, ACME)
+rtok = secrets.token_hex(24)
+psql(f"update contract_reviewers set session_hash='{hashlib.sha256(rtok.encode()).hexdigest()}', session_expires_at=now()+interval '2 hours', revoked_at=null where contract_id='{cA}'")
+S['reviewerA'] = {'vg_c': rtok}
+ids.update({'contract': cB, 'contractFile': one(f"select id from contract_files where contract_id='{cB}'"), 'party': one(f"select party_id from contracts where id='{cB}'"),
+            'clause': one(f"select id from contract_clauses where tenant_id='{ACME}'"), 'template': one(f"select id from contract_templates where tenant_id='{ACME}'"),
+            'obligation': one(f"select id from contract_obligations where contract_id='{cB}'"), 'comment': one(f"select id from contract_comments where tenant_id='{ACME}'") or cB,
+            'reading': one(f"select id from contract_readings where tenant_id='{ACME}'") or cB, 'signature': one(f"select id from contract_signatures where tenant_id='{ACME}'") or cB})
 def fill(path, who):
     # Pick the most likely id for each parameter from the path around it.
     def sub(m):
         seg = path[:m.start()].rstrip('/').split('/')[-1]
         key = {'vendors': 'vendor', 'documents': 'doc', 'events': 'event', 'orders': 'po', 'users': 'user', 'roles': 'role', 'questionnaires': 'questionnaire',
-               'agreements': 'agreement', 'actions': 'action', 'registration-links': 'link', 'bids': 'bid'}.get(seg)
+               'agreements': 'agreement', 'actions': 'action', 'registration-links': 'link', 'bids': 'bid', 'contracts': 'contract', 'parties': 'party',
+               'files': 'contractFile', 'clauses': 'clause', 'templates': 'template', 'obligations': 'obligation', 'comments': 'comment', 'readings': 'reading',
+               'return': 'signature'}.get(seg)
         if who == 'supplierSundaram' and seg == 'documents': return ids['doc']  # another supplier's document
         return ids.get(key) or ids['vendor']
     return re.sub(r':[A-Za-z]+', sub, path)
 
-PUBLIC = re.compile(r'^/api/(health|auth/(login|forgot-password|reset-password|invite|accept-invite|mfa|sso|logout|me)|vendor-auth|apply|signup|meta|platform/auth|webhooks|help/public|scim)')
+PUBLIC = re.compile(r'^/api/(health|auth/(login|forgot-password|reset-password|invite|accept-invite|mfa|sso|logout|me)|vendor-auth|apply|signup|meta|platform/auth|webhooks|help/public|scim|review/(link|sign-out)|esign/(webhook|return))')
 routes = json.load(open('routes.json'))
 findings = []
 counts = {}
@@ -57,6 +70,7 @@ for r in routes:
         if who.startswith('supplier') and not path.startswith('/api/staff') and not path.startswith('/api/admin') and not path.startswith('/api/reports') and who != 'supplierSundaram': continue
         if who == 'supplierSundaram' and not (path.startswith('/api/vendor') or path.startswith('/api/documents') or path.startswith('/api/staff') or path.startswith('/api/admin')): continue
         if who == 'bidderGulf' and not path.startswith('/api/vendor/events'): continue
+        if who == 'reviewerA' and not (path.startswith('/api/review') or path.startswith('/api/staff/contract') or path.startswith('/api/vendor/contracts')): continue
         if who == 'acmeTax' and not (path.startswith('/api/admin') or '/sourcing' in path): continue
         url = B + fill(path, who)
         try:
@@ -72,6 +86,7 @@ for r in routes:
         elif who == 'supplierSundaram' and ok and (path.startswith('/api/staff') or path.startswith('/api/admin') or precision in resp.text or ids['doc'] in resp.text): findings.append((who, m, path, resp.status_code, resp.text[:100]))
         elif who in ('acmeViewer', 'acmeTax') and ok: findings.append((who, m, path, resp.status_code, resp.text[:100]))
         elif resp.status_code >= 500: findings.append((who, m, path, resp.status_code, resp.text[:100]))
+        elif who == 'reviewerA' and ok and (not path.startswith('/api/review') or cB in resp.text or ids['contractFile'] in resp.text): findings.append((who, m, path, resp.status_code, resp.text[:120]))
         elif who == 'bidderGulf' and ok and re.search(r'Nordic|Valvex|Precision|Hotel', resp.text): findings.append((who, m, path, resp.status_code, resp.text[:160]))
 print('status counts', counts)
 for f in findings: print(f)

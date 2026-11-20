@@ -1,4 +1,5 @@
-// VendorGate pilot-size load: 150 staff + 50 suppliers browsing with think time, and 49 bidders bidding in one live auction.
+// VendorGate pilot-size load: 150 staff + 50 suppliers browsing with think time, 49 bidders bidding in one live auction,
+// and (after contracts_setup.py) contract managers on 5,000 contracts plus 20 other parties reviewing contracts.
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
@@ -16,6 +17,10 @@ export const options = {
     staff: { executor: 'ramping-vus', exec: 'staff', stages: ramp(150 * SCALE, __ENV.HOLD || '3m') },
     suppliers: { executor: 'ramping-vus', exec: 'supplier', stages: ramp(50 * SCALE, __ENV.HOLD || '3m') },
     bidders: { executor: 'ramping-vus', exec: 'bidder', stages: ramp(49, __ENV.HOLD || '3m') },
+    ...(T.contracts && __ENV.CONTRACTS !== '0' ? {
+      contracts: { executor: 'ramping-vus', exec: 'contracts', stages: ramp(30 * SCALE, __ENV.HOLD || '3m') },
+      reviewers: { executor: 'ramping-vus', exec: 'reviewer', stages: ramp(T.reviewers.length, __ENV.HOLD || '3m') },
+    } : {}),
   },
   thresholds: { 'http_req_failed': ['rate<0.01'], 'http_req_duration{kind:page}': ['p(95)<800'], 'bid_ms': ['p(95)<500'] },
 };
@@ -51,4 +56,25 @@ export function bidder() {
   if (r.status === 201 || r.status === 200) bidOk.add(1); else if (r.status < 500) bidRejected.add(1);
   check(r, { 'bid not 5xx': (x) => x.status < 500 });
   sleep(2 + Math.random() * 4);
+}
+
+// Contract managers (admin sessions): lists, search, a contract, obligations, reports; now and then read an uploaded Word contract.
+export function contracts() {
+  const o = hdr(`vg_s=${T.staff[((__VU - 1) * 5) % T.staff.length]}`, ip(300000 + __VU));
+  get(`/api/staff/contracts?page=${1 + (__ITER % 30)}`, o, 'contract list'); sleep(1 + Math.random() * 3);
+  get(`/api/staff/contracts?tab=expiring`, o, 'contracts expiring'); sleep(1 + Math.random() * 2);
+  get(`/api/staff/contracts?q=Load%20contract%20${(__VU * 13 + __ITER) % 5000}`, o, 'contract search'); sleep(1 + Math.random() * 2);
+  get(`/api/staff/contracts/${T.contracts[(__VU * 7 + __ITER) % T.contracts.length]}`, o, 'contract detail'); sleep(3 + Math.random() * 5);
+  if (__ITER % 2 === 0) { get('/api/staff/contracts/obligations?filter=overdue', o, 'obligations'); sleep(2 + Math.random() * 3); }
+  if (__ITER % 3 === 0) { get('/api/staff/contracts/reports', o, 'contract reports'); sleep(3 + Math.random() * 3); }
+  if (__ITER % 10 === 0) { get('/api/staff/parties?page=1', o, 'parties'); sleep(2); }
+  if (Math.random() < 0.15) { // about one contract read every few minutes per manager
+    const r = http.post(`${B}/api/staff/contracts/${T.readContract}/files/${T.readFile}/read`, null, { ...o, tags: { kind: 'page', name: 'read contract' } });
+    check(r, { 'read contract 200': (x) => x.status === 200 }); sleep(3);
+  }
+}
+// The other party, signed in with the email link + code, reading the contract and its versions.
+export function reviewer() {
+  const o = hdr(`vg_c=${T.reviewers[(__VU - 1) % T.reviewers.length]}`, ip(400000 + __VU));
+  get('/api/review/session', o, 'review view'); sleep(5 + Math.random() * 10);
 }

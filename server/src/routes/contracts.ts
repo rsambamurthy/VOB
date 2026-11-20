@@ -146,6 +146,8 @@ contractsRouter.get('/obligations', requireStaff('contracts.view'), ah(async (re
   const s = staffCtx(req);
   res.json(await listObligations(s.tenant, { ...(req.query as Record<string, string>), userId: s.user.id }));
 }));
+contractsRouter.get('/reports', requireStaff('contracts.view'), ah(async (req, res) => { res.json(await (await import('../services/contracts/reports.js')).contractReport(staffCtx(req).tenant)); }));
+contractsRouter.get('/reports.xlsx', requireStaff('contracts.view'), ah(async (req, res) => { await sendXlsx(res, 'contract-report.xlsx', await (await import('../services/contracts/reports.js')).contractReportXlsx(staffCtx(req).tenant)); }));
 contractsRouter.get('/prices-template.xlsx', requireStaff('contracts.manage'), ah(async (_req, res) => { await sendXlsx(res, 'contract-prices.xlsx', await pricesTemplate()); }));
 contractsRouter.get('/parents', requireStaff('contracts.view'), ah(async (req, res) => {
   res.json({ contracts: await parentOptions(staffCtx(req).tenant, String(req.query.partyId ?? '')) });
@@ -241,6 +243,16 @@ contractsRouter.put('/:id/prices', requireStaff('contracts.manage'), act(savePri
 contractsRouter.post('/:id/prices/import', requireStaff('contracts.manage'), excelUpload.single('file'), ah(async (req, res) => {
   if (!req.file) throw new HttpError(400, 'Choose the Excel file to upload');
   res.json(await importPrices(staffCtx(req).tenant, req.params.id, req.file.buffer, by(req), req.query.commit === '1'));
+}));
+/** Read an uploaded contract for its key terms (masked before any AI sees it). */
+contractsRouter.post('/:id/files/:fileId/read', requireStaff('contracts.manage'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const r = await (await import('../services/contracts/reading.js')).readContract(s.tenant, req.params.id, req.params.fileId, by(req));
+  res.json({ readingId: r.id, ...(await detail(req, req.params.id)) });
+}));
+contractsRouter.post('/:id/readings/:rid/apply', requireStaff('contracts.manage'), ah(async (req, res) => {
+  await (await import('../services/contracts/reading.js')).applyReading(staffCtx(req).tenant, req.params.id, req.params.rid, req.body ?? {}, by(req));
+  res.json(await detail(req, req.params.id));
 }));
 contractsRouter.post('/:id/erp', requireStaff('contracts.manage'), act((t, id, _b, who) => resendToErp(t, id, who)));
 

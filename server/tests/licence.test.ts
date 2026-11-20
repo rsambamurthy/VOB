@@ -76,6 +76,10 @@ describe('licence', () => {
     expect(r.status).toBe(403);
     expect(r.body.error).toMatch(/^Your VendorGate licence allows 2 users/);
     expect((await admin.get('/api/auth/me')).body.plan).toMatchObject({ label: 'On-premises licence', features: { ai: false, erp: true } });
+    // Contracts only (licence tool: --contracts --no-onboarding): purchase orders and sourcing go off with onboarding.
+    await install({ features: { contracts: true, onboarding: false, sourcing: true } });
+    expect((await admin.get('/api/auth/me')).body.plan.features).toMatchObject({ contracts: true, onboarding: false, collab: false, sourcing: false });
+    expect((await admin.get('/api/staff/vendors')).status).toBe(404);
     await install();
   });
 

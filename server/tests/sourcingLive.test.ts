@@ -70,7 +70,7 @@ describe('live reverse auction', () => {
     expect(view.lots[0]).toMatchObject({ myRank: 1, myBest: 700, best: null, ladder: null, maxNext: 696.5, bidders: 3 });
     const bView = (await B.get(`/api/vendor/events/${e.id}/live`)).body;
     expect(bView.lots[0]).toMatchObject({ myRank: 2, myBest: 990, best: null });
-    expect(JSON.stringify(bView)).not.toMatch(/700|995|Ann|Cal/);
+    expect(JSON.stringify(bView)).not.toMatch(/[:,]700\b|[:,]995\b|Ann|Cal/); // amounts as JSON values (ids may contain the digits)
     expect(bView.alias).toBe('Bidder 2');
 
     // Per-item lot: every item priced; the total is quantity × price.

@@ -30,6 +30,9 @@ export const num = (n: number, opts?: Intl.NumberFormatOptions) => n.toLocaleStr
 /** Money with the currency's own number of decimals (INR 2, BHD 3, JPY 0). */
 export const money = (v: string | number | null | undefined, cur = current.currency) =>
   v === null || v === undefined ? '—' : new Intl.NumberFormat(current.locale, { style: 'currency', currency: cur }).format(Number(v));
+/** Money in short form for tiles (India: ₹1.64 Cr, ₹14.4 L; elsewhere $1.2M). */
+export const moneyShort = (v: string | number | null | undefined, cur = current.currency) =>
+  v === null || v === undefined ? '—' : new Intl.NumberFormat(current.locale, { style: 'currency', currency: cur, notation: 'compact', maximumFractionDigits: 2 }).format(Number(v));
 
 export const fmtDate = (s?: string | null) => (!s ? '—' : getLang() === 'ar' ? arabicDate(s) : new Date(s).toLocaleDateString(loc(), { day: '2-digit', month: 'short', year: 'numeric' }));
 export const fmtDateTime = (s?: string | null) => (!s ? '—' : getLang() === 'ar' ? arabicDate(s, true) : new Date(s).toLocaleString(loc(), { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }));

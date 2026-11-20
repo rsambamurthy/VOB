@@ -26,7 +26,7 @@ import { GST_STATES } from '../countries/in/gstStates.js';
 import { COUNTRY_LIST } from '../countries/list.js';
 import { currencyFor, invoicePdf, issueInvoice, markPaid, razorpayLive, validGstin, voidInvoice } from '../services/billing.js';
 import { billingDetailsSchema, cleanBilling, publicInvoice } from '../routes/billing.js';
-import { effectiveLimits, FEATURE_LABELS, PLAN_KEYS, PLANS } from '../lib/plans.js';
+import { effectiveLimits, FEATURE_LABELS, PAID_PLANS, PLAN_KEYS, PLANS } from '../lib/plans.js';
 import { homeCountries, packFor } from '../countries/registry.js';
 import { adminByToken, createPlatformSession, destroyPlatformSession, issuePlatformToken, platformCtx, platformLog, requirePlatform, verifyTotp } from './session.js';
 import { getPlatformSettings } from './settings.js';
@@ -169,7 +169,7 @@ platformRouter.post('/auth/change-password', sensitiveLimiter, ah(async (req, re
 platformRouter.use(requirePlatform);
 const actor = (req: Parameters<typeof platformCtx>[0]) => platformCtx(req).admin.email;
 
-platformRouter.get('/plans', (_req, res) => { res.json({ plans: PLANS, features: FEATURE_LABELS, addOns: FEATURE_KEYS.filter(isAddOn), sourcingFormats: SOURCING_FORMATS, countries: homeCountries() }); });
+platformRouter.get('/plans', (_req, res) => { res.json({ plans: PLANS, paidPlans: PAID_PLANS, features: FEATURE_LABELS, addOns: FEATURE_KEYS.filter(isAddOn), sourcingFormats: SOURCING_FORMATS, countries: homeCountries() }); });
 
 platformRouter.get('/overview', ah(async (_req, res) => {
   const now = new Date(), in7 = new Date(Date.now() + 7 * DAY), ago30 = new Date(Date.now() - 30 * DAY);
@@ -391,7 +391,7 @@ platformRouter.get('/billing', ah(async (_req, res) => {
 platformRouter.put('/billing', ah(async (req, res) => {
   const input = z.object({
     seller: z.object({ name: z.string().trim().min(2).max(160), gstin: z.string().trim().toUpperCase().max(15).optional().or(z.literal('')), pan: z.string().trim().toUpperCase().max(10).optional().or(z.literal('')), address: z.string().trim().min(5).max(300), stateCode: z.string().regex(/^\d{2}$/, 'Choose the state'), email: z.string().trim().email().optional().or(z.literal('')), bank: z.string().trim().max(400).optional().or(z.literal('')) }),
-    prices: z.record(z.enum(['INR', 'USD']), z.record(z.enum(['standard', 'enterprise']), priceSchema)),
+    prices: z.record(z.enum(['INR', 'USD']), z.record(z.enum(PAID_PLANS), priceSchema)),
     gstRate: z.number().min(0).max(28), sac: z.string().trim().regex(/^\d{4,8}$/, 'SAC is 4 to 8 digits'), dueDays: z.number().int().min(0).max(90),
     prefix: z.string().trim().regex(/^[A-Z0-9-]{1,10}$/, 'Use capitals, digits or dashes'), exportNote: z.string().trim().max(300).optional().or(z.literal('')),
   }).parse(req.body);
@@ -417,7 +417,7 @@ platformRouter.put('/tenants/:id/billing', ah(async (req, res) => {
 }));
 platformRouter.post('/tenants/:id/invoices', ah(async (req, res) => {
   const t = await loadTenant(req.params.id);
-  const input = z.object({ plan: z.enum(['standard', 'enterprise']), cycle: z.enum(['monthly', 'yearly']), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), amount: z.number().positive().max(1e10).optional(), note: z.string().max(500).optional(), activatesPlan: z.boolean().optional() }).parse(req.body);
+  const input = z.object({ plan: z.enum(PAID_PLANS), cycle: z.enum(['monthly', 'yearly']), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), amount: z.number().positive().max(1e10).optional(), note: z.string().max(500).optional(), activatesPlan: z.boolean().optional() }).parse(req.body);
   const inv = await issueInvoice(t, { plan: input.plan, cycle: input.cycle, periodStart: input.periodStart ? new Date(`${input.periodStart}T00:00:00Z`) : undefined, amountOverride: input.amount, note: input.note, activatesPlan: input.activatesPlan, actor: 'VendorGate' });
   await platformLog({ actor: actor(req), action: 'INVOICE_ISSUED', tenantId: t.id, detail: { number: inv.number }, ip: req.ip });
   res.status(201).json({ invoice: publicInvoice(inv) });

@@ -7,8 +7,8 @@ test('contracts: the administrator switches it on; a party and a contract are cr
   await expect(admin.getByRole('link', { name: 'All contracts' })).toHaveCount(0);
   await admin.goto('/staff/admin/contracts');
   await expect(admin.getByRole('heading', { name: 'Contracts', exact: true })).toBeVisible();
-  // Later options are shown but can't be chosen.
-  await expect(admin.getByRole('checkbox', { name: /Read uploaded contracts/ })).toBeDisabled();
+  // Every option is released now; reading uploaded contracts needs the AI feature, which the plan has.
+  await expect(admin.getByRole('checkbox', { name: /Read uploaded contracts/ })).toBeEnabled();
   await admin.getByRole('checkbox', { name: /Switch Contracts on/ }).check();
   await admin.getByRole('checkbox', { name: /Non-disclosure agreement/ }).check();
   await admin.getByRole('checkbox', { name: /Service \/ maintenance contract/ }).check();
@@ -54,6 +54,16 @@ test('contracts: the administrator switches it on; a party and a contract are cr
   await admin.getByRole('button', { name: 'Mark as signed' }).click();
   await admin.getByRole('dialog').getByRole('button', { name: 'Mark as signed' }).click();
   await expect(admin.locator('.badge', { hasText: 'Active' }).first()).toBeVisible();
+
+  // Reading a file with no text (a scan) says so instead of guessing.
+  await admin.getByRole('button', { name: 'Read hvac-amc-signed.pdf' }).click();
+  await expect(admin.locator('.alert-error')).toContainText(/scan/);
+
+  // Contract reports show the active contract's value.
+  await admin.goto('/staff/contract-reports');
+  await expect(admin.getByRole('heading', { name: 'Contract reports' })).toBeVisible();
+  await expect(admin.getByText('1 active supplier contract')).toBeVisible();
+  await expect(admin.getByRole('link', { name: 'Download Excel' })).toBeVisible();
 
   await admin.goto('/staff/contracts');
   await expect(admin.getByRole('cell', { name: /Annual maintenance/ })).toBeVisible();

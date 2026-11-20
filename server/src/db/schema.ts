@@ -1840,3 +1840,23 @@ export const contractPrices = pgTable('contract_prices', {
   createdAt: createdAt(),
 }, (t) => [index('contract_prices_contract_idx').on(t.contractId), index('contract_prices_item_idx').on(t.tenantId, t.itemCode)]);
 export type ContractPrice = typeof contractPrices.$inferSelect;
+
+/**
+ * An uploaded contract read for its key terms. Names, numbers, amounts and dates are masked locally before any AI
+ * sees the text; `sentToAi` is exactly what left the server (shown as "What the AI saw"); suggestions hold real values.
+ */
+export const contractReadings = pgTable('contract_readings', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  fileId: text('file_id').notNull(),
+  /** anthropic · local */
+  reader: text('reader').notNull(),
+  sentToAi: text('sent_to_ai'),
+  suggestions: jsonb('suggestions').$type<{ field: string; value: string | number | boolean; label: string; evidence: string | null }[]>().notNull().default([]),
+  notes: jsonb('notes').$type<string[]>().notNull().default([]),
+  masked: integer('masked').notNull().default(0),
+  appliedFields: text('applied_fields').array().notNull().default(sql`'{}'::text[]`),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('contract_readings_contract_idx').on(t.contractId)]);
+export type ContractReading = typeof contractReadings.$inferSelect;

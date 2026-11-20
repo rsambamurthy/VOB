@@ -169,6 +169,8 @@ export function createApp() {
     // An update with no fields to change (e.g. an empty PATCH) is a bad request.
     if (err instanceof Error && err.message === 'No values to set') return res.status(400).json({ error: tx('Nothing to change.') });
     if (bodyErr?.type === 'entity.too.large') return res.status(413).json({ error: tx('The request is too large.') });
+    // A malformed address (e.g. /vendors/%ff) can't be decoded: Express marks it 400.
+    if (err instanceof URIError || (bodyErr?.status === 400 && /decode param/i.test((err as Error)?.message ?? ''))) return res.status(400).json({ error: tx('The address is not valid.') });
     if (bodyErr?.type === 'entity.parse.failed' || bodyErr?.type === 'encoding.unsupported' || bodyErr?.type === 'charset.unsupported') return res.status(400).json({ error: tx('The request could not be read.') });
     req.log?.error({ err }, 'unhandled error');
     res.status(500).json({ error: 'Something went wrong' });

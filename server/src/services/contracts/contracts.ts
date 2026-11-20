@@ -58,6 +58,17 @@ export const contractInput = z.object({
 });
 export type ContractInput = z.input<typeof contractInput>;
 
+/** Plain-English names of contract fields (history, reading suggestions). One list — use it, don't re-type labels. */
+export const CONTRACT_FIELD_LABELS: Record<string, string> = {
+  title: 'Title', direction: 'Supplier or customer', type: 'Contract type', partyId: 'Other party', reference: 'Reference', value: 'Value', currency: 'Currency',
+  startDate: 'Start date', endDate: 'End date', signedDate: 'Signed on', autoRenew: 'Renews automatically', renewalTermMonths: 'Renewal term (months)',
+  noticeDays: 'Notice period (days)', ownerId: 'Owner', parentId: 'Master agreement', description: 'Description', category: 'Category', jurisdiction: 'Governing law',
+};
+const fieldNames = (d: unknown) => {
+  const x = d as { fields?: unknown } | null;
+  return x && Array.isArray(x.fields) ? { ...x, fields: (x.fields as string[]).map((f) => CONTRACT_FIELD_LABELS[f] ?? f) } : d;
+};
+
 /** Fields that can still be changed once a contract is active (anything else needs an amendment — Step 3). */
 const ACTIVE_EDITABLE = ['ownerId', 'description', 'category', 'noticeDays', 'autoRenew', 'renewalTermMonths', 'reference'] as const;
 
@@ -288,11 +299,12 @@ export async function contractDetail(t: Tenant, id: string, userId: string) {
     parent: parent ? summary(parent) : null,
     children: children.map(summary),
     files: files.map((f) => ({ id: f.id, kind: f.kind, fileName: f.fileName, size: f.size, uploadedByName: f.uploadedByName, uploadedAt: f.uploadedAt, generated: f.generated, version: f.version })),
-    history,
+    history: history.map((h) => ({ ...h, detail: fieldNames(h.detail) as typeof h.detail })),
     editable: c.status === 'DRAFT' ? 'all' : ['ACTIVE', 'APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status) ? ACTIVE_EDITABLE : [],
     drafting: await draftView(t, c, userId),
     negotiation: await negotiationView(t, c),
     manage: await (await import('./manage.js')).manageView(t, c),
+    reading: await (await import('./reading.js')).readingsView(t, c),
     signing: await signingView(t, c, (await db.query.users.findFirst({ where: eq(U.id, userId), columns: { email: true } }))?.email ?? ''),
   };
 }

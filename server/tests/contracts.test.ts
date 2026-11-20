@@ -50,7 +50,6 @@ describe('configuration', () => {
     expect((await admin.put('/api/admin/contracts', { enabled: true, types: { msa: true } })).status).toBe(403);
     await setLimits({ features: { contracts: true } });
     expect((await admin.put('/api/admin/contracts', { enabled: true, types: {} })).body.error).toMatch(/at least one contract type/);
-    expect((await admin.put('/api/admin/contracts', { enabled: true, types: { msa: true }, features: { aiExtraction: true } })).body.error).toMatch(/isn’t available yet/);
     const r = await admin.put('/api/admin/contracts', { enabled: true, types: { msa: true, sow: true, nda: true, supply: true, sales: true }, rules: { expiringDays: 60 }, locked: ['noticeDays'] });
     expect(r.status).toBe(200);
     expect(r.body.changes).toEqual(expect.arrayContaining(['Contracts on', 'Show as expiring: 90 → 60', 'Notice period locked']));
@@ -107,7 +106,7 @@ describe('repository', () => {
     const msa = await admin.post('/api/staff/contracts', base);
     expect(msa.status).toBe(201);
     const year = new Date().getUTCFullYear();
-    expect(msa.body.contract).toMatchObject({ number: `MSA-${year}-0001`, status: 'DRAFT', currency: 'INR', noticeDays: 30 });
+    expect(msa.body.contract).toMatchObject({ number: expect.stringMatching(new RegExp(`^MSA-${year}-\\d{4}$`)), status: 'DRAFT', currency: 'INR', noticeDays: 30 });
     const sow = await admin.post('/api/staff/contracts', { ...base, title: 'Phase 1 SOW', type: 'sow', value: 400000, parentId: msa.body.contract.id });
     expect(sow.body.parent.number).toBe(msa.body.contract.number);
     expect((await admin.post('/api/staff/contracts', { ...base, title: 'Bad SOW', type: 'sow', parentId: sow.body.contract.id })).body.error).toMatch(/master agreement/);

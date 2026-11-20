@@ -32,6 +32,8 @@ export const PLANS: Record<string, PlanDef> = {
   contracts: { label: 'Contracts', maxUsers: 25, maxVendors: 0, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 0, features: { onboarding: false, erp: true, ai: true, kyc: true, collab: false, sourcing: false, contracts: true } },
 };
 export const PLAN_KEYS = Object.keys(PLANS) as [string, ...string[]];
+/** Plans that are invoiced (every plan except the trial) — prices, invoices and automatic invoicing use this list. */
+export const PAID_PLANS = PLAN_KEYS.filter((k) => k !== 'trial') as [string, ...string[]];
 
 export function effectiveLimits(t: Pick<Tenant, 'plan' | 'limits'>): PlanDef {
   // On-prem: the licence sets users, suppliers and features; nothing else is limited.

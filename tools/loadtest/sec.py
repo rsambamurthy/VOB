@@ -172,5 +172,58 @@ r = requests.get(B + '/index.js.map'); m = re.findall(r'/assets/[^"]+\.js', requ
 sm = requests.get(B + m[0] + '.map') if m else None
 rec('Disclosure', 'No source maps published', sm is None or sm.status_code != 200 or 'sourcesContent' not in sm.text, sm.status_code if sm is not None else '-')
 
+# ---------- 13. Contracts: review links, other party's access, e-signature callbacks, reading, exports
+import contracts_fixture
+cA, cB = contracts_fixture.ensure(B, psql, ACME)
+link = secrets.token_hex(24)
+psql(f"update contract_reviewers set link_hash='{hashlib.sha256(link.encode()).hexdigest()}', session_hash=null, code_hash=null, codes_sent=0, wrong_codes=0, code_attempts=0, revoked_at=null where contract_id='{cA}'")
+r = requests.get(B + f'/api/review/link/{secrets.token_hex(24)}', headers=hx())
+rec('Contracts', 'An unknown review link answers 404', r.status_code == 404, r.status_code)
+r = requests.post(B + f'/api/review/link/{link}/code', headers=hx())
+rec('Contracts', 'A review sign-in code is emailed, never returned in production', r.status_code == 200 and not re.search(r'\b\d{6}\b', r.text), f'{r.status_code} {r.text[:80]}')
+codes = [requests.post(B + f'/api/review/link/{link}/verify', json={'code': f'{n:06d}'}, headers=hx()).status_code for n in range(7)]
+r = requests.post(B + f'/api/review/link/{link}/verify', json={'code': '999999'}, headers=hx())
+rec('Contracts', 'Wrong review codes are limited (the code stops working after 5 tries)', codes[:5].count(200) == 0 and codes[5:] != [200, 200] and r.status_code != 200, codes)
+rtok = secrets.token_hex(24)
+psql(f"update contract_reviewers set session_hash='{hashlib.sha256(rtok.encode()).hexdigest()}', session_expires_at=now()+interval '1 hour' where contract_id='{cA}'")
+rv = requests.Session(); rv.cookies.set('vg_c', rtok)
+fileB = psql(f"select id from contract_files where contract_id='{cB}' limit 1")
+r = rv.get(B + f'/api/review/session/files/{fileB}', headers=hx())
+rec('Contracts', "A reviewer cannot download another contract's file", r.status_code == 404, r.status_code)
+txt = rv.get(B + '/api/review/session', headers=hx()).text
+rec('Contracts', 'The review view shows no internal notes, approvers or other contracts', cB not in txt and 'internal' not in txt.lower() and 'Authz NDA 1' not in txt, re.findall(r'internal|Authz NDA 1', txt)[:3])
+r = rv.get(B + f'/api/staff/contracts/{cA}', headers=hx())
+rec('Contracts', 'A reviewer session is not a staff session', r.status_code in (401, 403), r.status_code)
+r = requests.post(B + f'/api/esign/webhook/{ACME}/docusign', data=json.dumps({'event': 'envelope-completed', 'data': {'envelopeId': 'x'}}), headers=hx({'Content-Type': 'application/json', 'X-DocuSign-Signature-1': 'bm90LXJpZ2h0'}))
+rec('Contracts', 'An e-signature webhook with a wrong signature changes nothing', r.status_code in (200, 401, 404) and 'completed' not in r.text, f'{r.status_code} {r.text[:60]}')
+r = requests.get(B + f'/api/esign/return/{uuid.uuid4()}/{secrets.token_hex(16)}', headers=hx(), allow_redirects=False)
+rec('Contracts', 'A made-up signing return link does not sign anything', r.status_code in (303, 400, 404) and 'signed' not in (r.headers.get('location') or ''), f"{r.status_code} {r.headers.get('location')}")
+r = requests.get(B + f'/api/esign/webhook/{ACME}/adobe', headers=hx({'X-AdobeSign-ClientId': 'abc'}))
+rec('Contracts', 'Adobe webhook check echoes only its client id header', r.headers.get('X-AdobeSign-ClientId') == 'abc' and r.status_code == 200, r.status_code)
+# Reading: a file that is not really Word, and a zip bomb disguised as Word, give a clean 400 — never a crash.
+bomb = io.BytesIO(); zf = zipfile.ZipFile(bomb, 'w', zipfile.ZIP_DEFLATED); zf.writestr('word/document.xml', '<w:t>' + 'A' * 60_000_000 + '</w:t>'); zf.close()
+for name, data in [('fake.docx', b'MZ\x90\x00 not a zip at all'), ('bomb.docx', bomb.getvalue())]:
+    up = admin.post(B + f'/api/staff/contracts/{cB}/files', data={'kind': 'OTHER'}, files={'file': (name, data, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}, headers=hx())
+    fid = next((f['id'] for f in up.json().get('files', []) if f['fileName'] == name), None) if up.status_code < 300 else None
+    rr = admin.post(B + f'/api/staff/contracts/{cB}/files/{fid}/read', headers=hx()) if fid else up
+    rec('Contracts', f'Reading {name} is refused cleanly (no 5xx, no hang)', rr.status_code < 500, f'upload {up.status_code} read {rr.status_code} {rr.text[:80]}')
+r = admin.get(B + f'/api/staff/contracts/{cB}', headers=hx()).json()
+sent = [x['sentToAi'] for x in r.get('reading', {}).get('readings', [])]
+rec('Contracts', 'Without an AI provider nothing is sent (readings are local)', all(x is None for x in sent), sent[:2])
+tax, _ = staff('tax@acme.test')
+r = tax.get(B + '/api/staff/contracts/reports', headers=hx())
+rec('Contracts', 'Contract reports need the contracts permission', r.status_code == 403, r.status_code)
+psql(f"update parties set name='=HYPERLINK(\"http://evil.example\",\"x\")' where name='Authz Customer 0'")
+psql(f"update contracts set status='ACTIVE', value=1000, signed_date=current_date where id='{cA}'")
+time.sleep(61)  # reports are cached for a minute
+x = admin.get(B + '/api/staff/contracts/reports.xlsx', headers=hx())
+try:
+    z = zipfile.ZipFile(io.BytesIO(x.content)); xml = ''.join(z.read(n).decode('utf8', 'ignore') for n in z.namelist() if 'sheet' in n or 'sharedStrings' in n)
+    cell = 'formula' if '<f>' in xml and 'HYPERLINK' in xml else ('text' if 'HYPERLINK' in xml else 'absent')
+except Exception as e: cell = f'not xlsx ({x.status_code})'
+rec('Exports', 'Party names starting with = are text in the contract report export', cell == 'text', cell)
+psql(f"update parties set name='Authz Customer 0' where name like '=HYPERLINK%'")
+psql(f"update contracts set status='WITH_PARTY', value=null, signed_date=null where id='{cA}'")
+
 json.dump(R, open('sec-results.json', 'w'))
 print('\n', sum(1 for x in R if x[2]), 'passed,', sum(1 for x in R if not x[2]), 'failed')

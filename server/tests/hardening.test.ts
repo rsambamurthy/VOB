@@ -48,6 +48,10 @@ describe('input handling', () => {
     expect(nul.status).toBe(200);
     expect(nul.headers['cache-control']).toBe('no-store');
     expect((await admin.get('/api/admin/config/versions/abc')).status).toBe(404);
+    // A malformed address is the caller's mistake (found by the contracts security sweep).
+    const odd = await admin.get('/api/staff/vendors/%ff');
+    expect(odd.status).toBe(400);
+    expect(odd.body.error).toBe('The address is not valid.');
   });
 
   test('a huge invalid body gives a short error (at most 20 problems listed)', async () => {

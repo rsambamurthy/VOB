@@ -38,7 +38,8 @@ npm run -w server licence -- keygen          # ONCE: private key → ~/.vendorga
                                              # public key → server/src/lib/licenceKeys.ts (commit it)
 ./onprem/build-kit.sh 1.4.0 --sign-key ~/.vendorgate/licence-signing-key.pem --docs <folder with the guides + manual>
 npm run -w server licence -- issue --customer "Acme Industries Ltd" --id VG-2026-0001 \
-    --from 2026-12-01 --until 2027-11-30 --users 50 --vendors 5000 [--no-ai] --out acme.lic
+    --from 2026-12-01 --until 2027-11-30 --users 50 --vendors 5000 [--no-ai] [--sourcing all] [--contracts] --out acme.lic
+# Contracts only (no supplier onboarding): add --contracts --no-onboarding
 npm run -w server licence -- show acme.lic
 ```
 

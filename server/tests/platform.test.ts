@@ -209,6 +209,26 @@ describe('self-service sign-up', () => {
     expect(signups.find((s: any) => s.email === form.email).state).toBe('COMPLETED');
   });
 
+  test('Contracts plan: offered by the console, priced and invoiced like the other paid plans', async () => {
+    const c = await platform();
+    const cat = (await c.get('/api/platform/plans')).body;
+    expect(cat.plans.contracts).toMatchObject({ label: 'Contracts', features: { onboarding: false, contracts: true } });
+    expect(cat.paidPlans).toEqual(expect.arrayContaining(['standard', 'enterprise', 'contracts']));
+    expect(cat.paidPlans).not.toContain('trial');
+    const g = (pan: string, st: string) => { const b = `${st}${pan}1Z`; return b + gstinCheckChar(b); };
+    const saved = await c.put('/api/platform/billing', { seller: { name: 'Integratatech.ai Pvt Ltd', gstin: g('AAFCI1234K', '33'), address: '1 Anna Salai, Chennai', stateCode: '33' },
+      prices: { INR: { standard: { monthly: 25000 }, contracts: { monthly: 15000 } } }, gstRate: 18, sac: '997331', dueDays: 15, prefix: 'VGP' });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const created = await c.post('/api/platform/tenants', { slug: 'lexcorp', name: 'Lex Contracts Ltd', plan: 'contracts', adminName: 'Lex Admin', adminEmail: 'admin@lexcorp.test' });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.tenant?.id ?? created.body.id;
+    expect((await c.put(`/api/platform/tenants/${id}/billing`, { legalName: 'Lex Contracts Ltd', address: 'T Nagar, Chennai 600017', country: 'IN', stateCode: '33', email: 'ap@lexcorp.test', autoInvoice: false })).status).toBe(200);
+    const inv = await c.post(`/api/platform/tenants/${id}/invoices`, { plan: 'contracts', cycle: 'monthly' });
+    expect(inv.status, JSON.stringify(inv.body)).toBe(201);
+    expect(inv.body.invoice).toMatchObject({ planLabel: 'Contracts', subtotal: 1_500_000, taxMode: 'INTRA' });
+    expect((await c.post(`/api/platform/tenants/${id}/invoices`, { plan: 'trial', cycle: 'monthly' })).status).toBe(400);
+  });
+
   test('billing: seller settings, issue an invoice, record a bank transfer, cancel another, PDF; 2FA enforcement', async () => {
     const c = await platform();
     const g = (pan: string, st: string) => { const b = `${st}${pan}1Z`; return b + gstinCheckChar(b); };

@@ -1438,7 +1438,7 @@ Every night, contracts past their end date become **expired** — or, if they re
 1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration.
 2. **Switch Contracts on** for the workspace. When it is off the menus are hidden; your contracts are kept.
 3. **Contract types**: NDA, master agreement, SOW, rate contract, service, purchase, sales, distribution, lease, licence and other. Each has its own number prefix; some are only for suppliers or only for customers.
-4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party, e-signature, obligations and milestones, renewal and notice alerts, order and invoice price checks (needs purchase orders) and sending contracts to the ERP (needs ERP integration). Rules also set the **price tolerance** (how far above the contract price is accepted) and how many days before the notice date the owner is reminded.
+4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party, e-signature, obligations and milestones, renewal and notice alerts, order and invoice price checks (needs purchase orders) sending contracts to the ERP (needs ERP integration) and **reading uploaded contracts** (needs the AI feature; names, numbers, amounts and dates are masked before the AI sees the text — without it, VendorGate's own rules read the file and nothing leaves VendorGate). Rules also set the **price tolerance** (how far above the contract price is accepted) and how many days before the notice date the owner is reminded.
 5. **Rule defaults**: notice period, renewal term, how many days before the end a contract counts as *expiring*, and whether a value is required. **Lock** a rule so it can't be changed on a contract.
 
 6. **Our company on contracts**: your legal name, registration and tax numbers, address, city (used for courts, the arbitration seat and the place of signing) and signatory — printed in documents. Empty boxes use your billing details.
@@ -1525,6 +1525,37 @@ The built-in wording is a starting point — have your counsel review it before 
 **Agreed prices.** Add the contract's prices (or import them from Excel), matched on the ERP item code. Purchase orders and supplier invoices from that supplier show **Contract prices**: each line's price against the contract price, flagged when it is above the price plus your tolerance.
 
 **ERP.** When a supplier contract (with an onboarded supplier) is signed, it goes to the ERP as a blanket agreement with its prices, through your ERP connection; the contract shows whether it was sent, and **Send again** retries.`,
+  },
+  {
+    id: 'contract-reading', title: 'Reading an uploaded contract', audience: ['staff'], perms: ['contracts.manage'], feature: 'contracts',
+    summary: 'Upload the other party’s contract (Word or PDF) and let VendorGate find the dates, value, notice and renewal terms for you.',
+    screens: ['^/staff/contracts/'], contexts: ['contracts'],
+    keywords: 'read extract ai upload their paper third party pdf word dates value notice renewal governing law suggestions mask privacy what the ai saw scan',
+    related: ['contracts', 'contracts-settings', 'contract-obligations'],
+    body: `When a contract is on the other party's paper, upload it (Word .docx or a PDF with text) to the contract and click **Read** next to the file in **Read the contract**.
+
+VendorGate suggests the **start, end and signing dates**, the **value**, the **notice period**, whether it **renews automatically** and for how long, the **contract type** and the **governing law** — each with the sentence it was found in. Tick the ones that are right and **Use the ticked values**; nothing changes until you do. On an active contract only the terms you could edit anyway can be used; dates and value change through an amendment.
+
+**Privacy.** With the *Read uploaded contracts* option on, the text goes to the AI only after VendorGate replaces every party name, tax and registration number, email, phone, account number, amount and date with a placeholder such as [PARTY-1] or [DATE-2]. The AI only says which placeholder is which term; VendorGate puts the real values back here. If anything from the record would still be sent, nothing is sent. **What the AI saw** shows exactly what left VendorGate. Without the option, VendorGate's own rules read the file and nothing is sent anywhere.
+
+A scanned PDF has no text to read — upload the Word file or a text PDF instead. The AI may also add short notes (for example a notice period that is unusually short).`,
+  },
+  {
+    id: 'contract-reports', title: 'Contract reports', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'What is under contract, what ends soon, obligations kept on time, time to sign and order prices against contract prices.',
+    screens: ['^/staff/contract-reports'], contexts: ['contract-reports'],
+    keywords: 'report reports dashboard value under contract spend by type top suppliers customers pipeline expiring renewal obligations on time cycle time to sign price leakage excel download',
+    related: ['contracts', 'contract-obligations'],
+    body: `Contracts → **Reports** shows:
+
+- **Under contract**: the value of active supplier and customer contracts, by type and by the largest parties.
+- **Pipeline**: how many contracts are at each stage, from draft to signed.
+- **Ending in the next 90 days**, and whether each renews automatically.
+- **Obligations**: overdue, and the share done on time in the last 90 days.
+- **Time to sign**: average and median days from creating a contract in VendorGate to signing, by type (last 12 months).
+- **Order prices against contract prices** (with price checks on): purchase order lines of the last 90 days that were above the agreed price, and how much was paid over it.
+
+Figures refresh every minute. **Download Excel** gives the same figures as a workbook.`,
   },
 ];
 

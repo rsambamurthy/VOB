@@ -11,7 +11,7 @@ import { logger } from '../lib/logger.js';
 import { HttpError } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { sendMail } from '../lib/mailer.js';
-import { PLANS } from '../lib/plans.js';
+import { PAID_PLANS, PLANS } from '../lib/plans.js';
 import { getPlatformSettings } from '../platform/settings.js';
 import { GST_STATES } from '../countries/in/gstStates.js';
 import { gstinCheckChar } from '../lib/validators.js';
@@ -179,7 +179,7 @@ export async function voidInvoice(inv: Invoice, actor: string, reason: string) {
 
 export async function runBillingDaily(now = new Date()) {
   const today = now.toISOString().slice(0, 10);
-  const due = await db.select().from(tenants).where(and(eq(tenants.status, 'ACTIVE'), inArray(tenants.plan, ['standard', 'enterprise']), sql`${tenants.billing}->>'autoInvoice' = 'true'`, sql`${tenants.billing}->>'nextInvoiceOn' <= ${today}`));
+  const due = await db.select().from(tenants).where(and(eq(tenants.status, 'ACTIVE'), inArray(tenants.plan, PAID_PLANS), sql`${tenants.billing}->>'autoInvoice' = 'true'`, sql`${tenants.billing}->>'nextInvoiceOn' <= ${today}`));
   let issued = 0;
   for (const t of due) {
     const open = await db.query.invoices.findFirst({ where: and(eq(invoices.tenantId, t.id), eq(invoices.status, 'DUE'), sql`${invoices.periodStart}::date = ${t.billing.nextInvoiceOn}::date`) });

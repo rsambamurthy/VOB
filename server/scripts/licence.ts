@@ -6,12 +6,14 @@
  *       backed up, never in git); the PUBLIC key is written into src/lib/licenceKeys.ts — commit that.
  *
  *   npm run licence -- issue --customer "Acme Industries Ltd" --id VG-2026-0001 --from 2026-12-01 --until 2027-11-30 \
- *       --users 50 --vendors 5000 [--no-ai] [--no-erp] [--no-kyc] [--no-collab] [--sourcing all|rfq,reverse] [--grace 15] [--key <private.pem>] [--out <file>]
+ *       --users 50 --vendors 5000 [--no-ai] [--no-erp] [--no-kyc] [--no-collab] [--sourcing all|rfq,reverse] [--contracts] [--no-onboarding]
+ *       [--grace 15] [--key <private.pem>] [--out <file>]
+ *       Contracts only: --contracts --no-onboarding (purchase orders and sourcing need onboarding, so they go off too).
  *
  *   npm run licence -- show <file>      check a licence file and print what it contains
  */
 import fs from 'node:fs';
-import { SOURCING_FORMAT_KEYS, type SourcingFormat } from '../src/lib/features.js';
+import { resolveFeatures, SOURCING_FORMAT_KEYS, type SourcingFormat } from '../src/lib/features.js';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -34,18 +36,18 @@ if (cmd === 'keygen') {
   console.log(`Private signing key: ${defaultKey}\n  Keep it offline and backed up (e.g. in a password manager). Anyone with it can issue licences.\nPublic key written to src/lib/licenceKeys.ts — commit it and rebuild the image.`);
 } else if (cmd === 'issue') {
   const { values } = parseArgs({ args, options: { customer: { type: 'string' }, id: { type: 'string' }, from: { type: 'string' }, until: { type: 'string' }, users: { type: 'string' }, vendors: { type: 'string' },
-    'no-ai': { type: 'boolean' }, 'no-erp': { type: 'boolean' }, 'no-kyc': { type: 'boolean' }, 'no-collab': { type: 'boolean' }, sourcing: { type: 'string' }, grace: { type: 'string' }, key: { type: 'string' }, out: { type: 'string' }, notes: { type: 'string' } } });
-  if (!values.customer || !values.id || !values.from || !values.until) die('Usage: npm run licence -- issue --customer "<name>" --id <licence no.> --from YYYY-MM-DD --until YYYY-MM-DD [--users N] [--vendors N] [--no-ai] [--sourcing all|rfq,reverse] [--out file]');
+    'no-ai': { type: 'boolean' }, 'no-erp': { type: 'boolean' }, 'no-kyc': { type: 'boolean' }, 'no-collab': { type: 'boolean' }, sourcing: { type: 'string' }, contracts: { type: 'boolean' }, 'no-onboarding': { type: 'boolean' }, grace: { type: 'string' }, key: { type: 'string' }, out: { type: 'string' }, notes: { type: 'string' } } });
+  if (!values.customer || !values.id || !values.from || !values.until) die('Usage: npm run licence -- issue --customer "<name>" --id <licence no.> --from YYYY-MM-DD --until YYYY-MM-DD [--users N] [--vendors N] [--no-ai] [--sourcing all|rfq,reverse] [--contracts] [--no-onboarding] [--out file]');
   const keyFile = values.key ?? defaultKey;
   if (!fs.existsSync(keyFile)) die(`No signing key at ${keyFile}. Run "npm run licence -- keygen" first (once).`);
   const num = (x?: string) => (x === undefined || x === 'unlimited' ? null : Number(x));
   const lic: Licence = { v: 1, id: values.id!, customer: values.customer!, issuedAt: new Date().toISOString(), validFrom: values.from!, validUntil: values.until!, maxUsers: num(values.users), maxVendors: num(values.vendors),
-    features: { ai: !values['no-ai'], erp: !values['no-erp'], kyc: !values['no-kyc'], collab: !values['no-collab'], sourcing: !!values.sourcing },
+    features: { onboarding: !values['no-onboarding'], ai: !values['no-ai'], erp: !values['no-erp'], kyc: !values['no-kyc'], collab: !values['no-collab'], sourcing: !!values.sourcing, contracts: !!values.contracts },
     ...(values.sourcing && values.sourcing !== 'all' ? { sourcingFormats: sourcingFormatsArg(values.sourcing) } : {}), graceDays: values.grace ? Number(values.grace) : 15, ...(values.notes ? { notes: values.notes } : {}) };
   const token = signLicence(lic, fs.readFileSync(keyFile, 'utf8'));
   const out = values.out ?? `vendorgate-licence-${lic.id}.lic`;
   fs.writeFileSync(out, `${token}\n`);
-  console.log(`Licence ${lic.id} for ${lic.customer}, ${lic.validFrom} to ${lic.validUntil}, users ${lic.maxUsers ?? 'unlimited'}, suppliers ${lic.maxVendors ?? 'unlimited'} → ${out}`);
+  console.log(`Licence ${lic.id} for ${lic.customer}, ${lic.validFrom} to ${lic.validUntil}, users ${lic.maxUsers ?? 'unlimited'}, suppliers ${lic.maxVendors ?? 'unlimited'}, includes ${Object.entries(resolveFeatures(lic.features)).filter(([, on]) => on).map(([k]) => k).join(', ')} → ${out}`);
 } else if (cmd === 'show') {
   const file = args[0] ?? die('Usage: npm run licence -- show <file>');
   const v = verifyLicence(fs.readFileSync(file, 'utf8'), { production: false });
