@@ -1,7 +1,8 @@
 /** Contract watch (step 1): signals from dates, orders, prices, obligations, supplier health and owners; the suggestions queue. */
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { invitedSupplier, login } from './helpers.js';
+import { login } from './helpers.js';
+import { activeContract, iso, po } from './contractsHelpers.js';
 import { lastMail } from './sourcingHelpers.js';
 import { db, schema } from '../src/lib/db.js';
 import type { Tenant } from '../src/db/schema.js';
@@ -11,7 +12,6 @@ import { runWatchFor, sendDigest, syncWatch, watchSignals } from '../src/service
 
 let acme: Tenant;
 let original: Pick<Tenant, 'settings' | 'limits' | 'plan'>;
-const iso = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10);
 const tenant = async () => (await db.query.tenants.findFirst({ where: eq(schema.tenants.id, acme.id) }))!;
 const S = schema.contractSuggestions;
 const open = async (contractId: string) => db.select().from(S).where(and(eq(S.contractId, contractId)));
@@ -25,22 +25,6 @@ beforeAll(async () => {
   expect(r.status, JSON.stringify(r.body)).toBe(200);
 });
 afterAll(async () => { await db.update(schema.tenants).set(original).where(eq(schema.tenants.id, acme.id)); });
-
-/** An active supplier contract with an onboarded supplier, owned by the admin. */
-async function activeContract(name: string, fields: Partial<typeof schema.contracts.$inferInsert>) {
-  const admin = await login('admin@acme.test');
-  const { id: vendorId } = await invitedSupplier(name, `${name.toLowerCase().replace(/\W+/g, '')}@watch.example`);
-  const party = (await admin.post('/api/staff/parties/from-supplier', { vendorId })).body.party;
-  const me = (await admin.get('/api/auth/me')).body.user;
-  const c = (await admin.post('/api/staff/contracts', { title: `${name} contract`, direction: 'BUY', type: 'supply', partyId: party.id, value: 100000, currency: 'INR', startDate: iso(-300), endDate: iso(365), ownerId: me.id })).body.contract;
-  await db.update(schema.contracts).set({ status: 'ACTIVE', signedDate: iso(-300), ...fields }).where(eq(schema.contracts.id, c.id));
-  const vendor = (await db.query.vendors.findFirst({ where: eq(schema.vendors.id, vendorId) }))!;
-  return { id: c.id as string, number: c.number as string, vendorId, vendorCode: vendor.code, admin, me };
-}
-const po = (code: string, n: string, lines: { item: string; qty: number; price: number }[], poDate = iso(-10)) => ({
-  erpId: `W-${n}`, poNumber: `W-${n}`, supplierCode: code, currency: 'INR', poDate,
-  lines: lines.map((l, i) => ({ erpId: `W-${n}-${i + 1}`, lineNo: i + 1, itemCode: l.item, description: l.item, quantity: l.qty, unitPrice: l.price })),
-});
 
 test('renewal decision: raised inside the window, urgent near the notice date, never twice, resolved when the dates move', async () => {
   const k = await activeContract('Watch Renewals', { endDate: iso(70), noticeDays: 30, autoRenew: true, renewalTermMonths: 12 });

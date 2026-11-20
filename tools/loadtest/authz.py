@@ -45,7 +45,7 @@ S['reviewerA'] = {'vg_c': rtok}
 ids.update({'contract': cB, 'contractFile': one(f"select id from contract_files where contract_id='{cB}'"), 'party': one(f"select party_id from contracts where id='{cB}'"),
             'clause': one(f"select id from contract_clauses where tenant_id='{ACME}'"), 'template': one(f"select id from contract_templates where tenant_id='{ACME}'"),
             'obligation': one(f"select id from contract_obligations where contract_id='{cB}'"), 'comment': one(f"select id from contract_comments where tenant_id='{ACME}'") or cB,
-            'reading': one(f"select id from contract_readings where tenant_id='{ACME}'") or cB, 'suggestion': one(f"select id from contract_suggestions where tenant_id='{ACME}'") or cB, 'signature': one(f"select id from contract_signatures where tenant_id='{ACME}'") or cB})
+            'reading': one(f"select id from contract_readings where tenant_id='{ACME}'") or cB, 'suggestion': one(f"select id from contract_suggestions where tenant_id='{ACME}'") or cB, 'inboxFile': one(f"select id from contract_inbox where tenant_id='{ACME}'") or cB, 'signature': one(f"select id from contract_signatures where tenant_id='{ACME}'") or cB})
 def fill(path, who):
     # Pick the most likely id for each parameter from the path around it.
     def sub(m):
@@ -53,7 +53,7 @@ def fill(path, who):
         key = {'vendors': 'vendor', 'documents': 'doc', 'events': 'event', 'orders': 'po', 'users': 'user', 'roles': 'role', 'questionnaires': 'questionnaire',
                'agreements': 'agreement', 'actions': 'action', 'registration-links': 'link', 'bids': 'bid', 'contracts': 'contract', 'parties': 'party',
                'files': 'contractFile', 'clauses': 'clause', 'templates': 'template', 'obligations': 'obligation', 'comments': 'comment', 'readings': 'reading',
-               'return': 'signature', 'suggestions': 'suggestion'}.get(seg)
+               'return': 'signature', 'suggestions': 'suggestion', 'inbox': 'inboxFile', 'review': 'contract'}.get(seg)
         if who == 'supplierSundaram' and seg == 'documents': return ids['doc']  # another supplier's document
         return ids.get(key) or ids['vendor']
     return re.sub(r':[A-Za-z]+', sub, path)

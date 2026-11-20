@@ -1438,7 +1438,7 @@ Every night, contracts past their end date become **expired** — or, if they re
 1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration.
 2. **Switch Contracts on** for the workspace. When it is off the menus are hidden; your contracts are kept.
 3. **Contract types**: NDA, master agreement, SOW, rate contract, service, purchase, sales, distribution, lease, licence and other. Each has its own number prefix; some are only for suppliers or only for customers.
-4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party, e-signature, obligations and milestones, renewal and notice alerts, **contract watch** (decisions waiting on signed contracts — see Contract watch), order and invoice price checks (needs purchase orders) sending contracts to the ERP (needs ERP integration) and **reading uploaded contracts** (needs the AI feature; names, numbers, amounts and dates are masked before the AI sees the text — without it, VendorGate's own rules read the file and nothing leaves VendorGate). Rules also set the **price tolerance** (how far above the contract price is accepted) and how many days before the notice date the owner is reminded.
+4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party, e-signature, obligations and milestones, renewal and notice alerts, **contract watch** (decisions waiting on signed contracts — see Contract watch) with an optional **AI summary** from general facts only (needs the AI feature), order and invoice price checks (needs purchase orders) sending contracts to the ERP (needs ERP integration) and **reading uploaded contracts** (needs the AI feature; names, numbers, amounts and dates are masked before the AI sees the text — without it, VendorGate's own rules read the file and nothing leaves VendorGate). Rules also set the **price tolerance** (how far above the contract price is accepted) and how many days before the notice date the owner is reminded.
 5. **Rule defaults**: notice period, renewal term, how many days before the end a contract counts as *expiring*, and whether a value is required. **Lock** a rule so it can't be changed on a contract.
 
 6. **Our company on contracts**: your legal name, registration and tax numbers, address, city (used for courts, the arbitration seat and the place of signing) and signatory — printed in documents. Empty boxes use your billing details.
@@ -1575,7 +1575,29 @@ Figures refresh every minute. **Download Excel** gives the same figures as a wor
 
 Each one says why. Click what you did (for example **Renew or extend** — then start the amendment on the contract — or **Taken up with the supplier**), **Dismiss** it with a reason, or **Snooze** it until a date. Decisions show in the contract's history; anything decided isn't raised again for the same date or period, and anything whose reason has gone disappears by itself.
 
-Contracts → **Watch** lists everything (only mine, by kind, snoozed, decided); each contract shows its own in **For your review**. Owners are emailed straight away about urgent ones and get a weekly digest. Nothing is sent to the other party. Administration → Contracts switches watch on or off and sets the decision window, spend warning, "unused after" and digest day.`,
+Contracts → **Watch** lists everything (only mine, by kind, snoozed, decided); each contract shows its own in **For your review**. Owners are emailed straight away about urgent ones and get a weekly digest. Nothing is sent to the other party. Administration → Contracts switches watch on or off and sets the decision window, spend warning, "unused after" and digest day.
+
+**Decision pack.** Click **Decision pack** on any item for what you need to decide: the term and notice date, orders against the value, prices above the contract and the excess, obligations kept on time, the supplier's risk, hold and scorecard, amendments and earlier decisions — with VendorGate's recommendation (**Renew**, **Renegotiate** or **Let it end**) and the reasons. A short summary is written by VendorGate's rules or, with *AI summary in contract watch* on, by the AI from general facts only (ranges, counts, yes/no, with the contract and party as [CONTRACT] and [PARTY]) — **What the AI saw** shows exactly what was sent.
+
+**Drafts.** Where it helps, the pack offers a draft to the other party — chase overdue obligations, query prices above the contract, ask to renegotiate, or give notice of non-renewal — with the real names, dates and lines filled in. VendorGate doesn't send it: edit it, then **Copy** it or **Open in my email** and send it yourself. Check the contract's notice clause for how notice must be given.
+
+Contracts → **Reports** shows what watch achieved over 12 months: decisions made, renewal decisions made before the notice date, contracts let end, and price excess taken up with suppliers.`,
+  },
+  {
+    id: 'contract-migration', title: 'Bringing existing contracts in', audience: ['staff'], perms: ['contracts.manage'], feature: 'contracts',
+    summary: 'Parties, contracts and obligations from Excel, signed copies in bulk, the terms read from the files, and a checklist of what is still missing.',
+    screens: ['^/staff/contract-migration'], contexts: ['contract-migration'],
+    keywords: 'migration migrate import existing legacy contracts excel bulk upload zip signed copies scans inbox match file name contract number reference read files master agreement statement of work obligations checklist missing',
+    related: ['contracts', 'contract-parties', 'contract-reading', 'contract-obligations'],
+    body: `Contracts → **Bring contracts in** walks through moving a company's existing contracts into VendorGate (a Contracts-only workspace needs no supplier onboarding — suppliers and customers are parties).
+
+1. **Parties and contracts from Excel.** Import parties, then contracts (or tick *Create missing parties*). A statement of work can name its **Master agreement** — the master agreement's contract number, or its reference if it is on an earlier row of the same sheet.
+2. **Signed copies in bulk.** Choose up to 25 files or .zip files at a time (Word, PDF or images). Each file goes to the contract whose **number** (SVC-2026-0001) or **reference** is in its name. **Check** shows where each will go; nothing is saved until you **Upload**. Files already on the contract are skipped; a .zip may hold up to 500 files.
+3. **Inbox.** Files that matched no contract — or several — wait here. Attach each to its contract, or make a **New contract** from it: it starts as a draft with the file as its signed copy, and VendorGate reads the terms; check them, then mark it as signed.
+4. **Read the uploaded contracts.** Reads every Word or PDF contract that hasn't been read, the same way as *Read the contract* (names, numbers and amounts masked before any AI). Scans can't be read.
+5. **Review the values found.** What reading found that the contract doesn't have yet. **Use these** fills them in. On an active contract only empty details (end date, value) and the renewal terms can be filled in this way — once set, dates and value change through an amendment.
+6. **Obligations from Excel**, for many contracts at once (each row names its contract by number or reference).
+7. **What is still missing**: active contracts with no signed copy, no owner, no end date or no notice period, and drafts waiting to be marked as signed — each opens the contract.`,
   },
 ];
 

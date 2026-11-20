@@ -49,6 +49,22 @@ const quarterKey = (d: string) => `${d.slice(0, 4)}-Q${Math.floor((Number(d.slic
 const monthsAgo = (d: string, m: number) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCMonth(x.getUTCMonth() - m); return x.toISOString().slice(0, 10); };
 const rows = async <T>(q: ReturnType<typeof sql>) => ((await db.execute(q)) as unknown as { rows: T[] }).rows;
 
+/* ---------------- orders under a contract ---------------- */
+
+export interface ContractOrders { id: string; spend: number; last: string | null; recent: number; count: number; spend12: number }
+/** Purchase orders from a contract's linked supplier, in its currency, since it started: total, last order, orders in the last 90 days, and the last 12 months. (Watch signals and decision packs.) */
+export async function contractOrders(t: Tenant, ids: string[], now = today()): Promise<Map<string, ContractOrders>> {
+  if (!ids.length || !hasFeature(t, 'collab')) return new Map();
+  const idList = sql.join(ids.map((i) => sql`${i}`), sql`, `);
+  const d = sql`coalesce(po.po_date, po.created_at::date)`;
+  const r = await rows<{ id: string; spend: string; last: string | null; recent: number; count: number; spend12: string }>(sql`select c.id, coalesce(sum(po.total), 0)::text spend, max(${d})::text last,
+      count(*) filter (where ${d} >= ${addDays(now, -90)}::date)::int recent, count(*)::int count, coalesce(sum(po.total) filter (where ${d} >= ${addDays(now, -365)}::date), 0)::text spend12
+    from contracts c join parties p on p.id = c.party_id join purchase_orders po on po.vendor_id = p.vendor_id and po.tenant_id = c.tenant_id and po.currency = c.currency
+      and po.status <> 'CANCELLED' and ${d} >= coalesce(c.start_date, c.created_at::date)
+    where c.id in (${idList}) group by c.id`);
+  return new Map(r.map((o) => [o.id, { ...o, spend: Number(o.spend), spend12: Number(o.spend12) }]));
+}
+
 /* ---------------- signals ---------------- */
 
 /** Everything that needs a decision on a workspace's active contracts (optionally only some contracts). */
@@ -62,13 +78,7 @@ export async function watchSignals(t: Tenant, now = today(), only?: string[]): P
   const ids = list.map((x) => x.c.id);
   const idList = sql.join(ids.map((i) => sql`${i}`), sql`, `);
 
-  // Spend and the last order per contract: purchase orders from the linked supplier, in the contract's currency, since it started.
-  const orders = hasFeature(t, 'collab') ? await rows<{ id: string; spend: string; last: string | null; recent: number }>(sql`select c.id, coalesce(sum(po.total), 0)::text spend,
-      max(coalesce(po.po_date, po.created_at::date))::text last, count(*) filter (where coalesce(po.po_date, po.created_at::date) >= ${addDays(now, -90)}::date)::int recent
-    from contracts c join parties p on p.id = c.party_id join purchase_orders po on po.vendor_id = p.vendor_id and po.tenant_id = c.tenant_id and po.currency = c.currency
-      and po.status <> 'CANCELLED' and coalesce(po.po_date, po.created_at::date) >= coalesce(c.start_date, c.created_at::date)
-    where c.id in (${idList}) group by c.id`) : [];
-  const spendOf = new Map(orders.map((o) => [o.id, o]));
+  const spendOf = await contractOrders(t, ids, now);
   const usesOrders = hasFeature(t, 'collab') && (await rows<{ n: number }>(sql`select count(*)::int n from purchase_orders where tenant_id = ${t.id} limit 1`))[0]?.n > 0;
 
   const overdue = await rows<{ id: string; n: number; oldest: string }>(sql`select contract_id id, count(*)::int n, min(due_date)::text oldest from contract_obligations
@@ -90,7 +100,7 @@ export async function watchSignals(t: Tenant, now = today(), only?: string[]): P
     const base = { number: c.number, title: c.title, party: partyName };
     const value = c.value === null ? null : Number(c.value);
     const s = spendOf.get(c.id);
-    const spend = s ? Number(s.spend) : 0;
+    const spend = s ? s.spend : 0;
     const add = (kind: WatchKind, key: string, severity: Signal['severity'], title: string, reasons: string[], facts: Signal['facts']) =>
       out.push({ contractId: c.id, kind, key, severity, title, reasons, facts: { ...base, ...facts } });
 
@@ -267,7 +277,8 @@ export async function watchSuppliers(t: Tenant, vendorIds: string[]) {
 
 const view = (x: ContractSuggestion) => ({ id: x.id, contractId: x.contractId, kind: x.kind, kindLabel: WATCH_KINDS[x.kind as WatchKind]?.label ?? x.kind, severity: x.severity, title: x.title, reasons: x.reasons,
   facts: x.facts, status: x.status, action: x.action, actionLabel: x.action ? (WATCH_KINDS[x.kind as WatchKind]?.actions as Record<string, string> | undefined)?.[x.action] ?? x.action : null, note: x.note,
-  snoozeUntil: x.snoozeUntil, decidedByName: x.decidedByName, decidedAt: x.decidedAt, createdAt: x.createdAt, updatedAt: x.updatedAt });
+  snoozeUntil: x.snoozeUntil, decidedByName: x.decidedByName, decidedAt: x.decidedAt, createdAt: x.createdAt, updatedAt: x.updatedAt,
+  summary: x.summary, summaryBy: x.summaryBy, packAt: x.packAt });
 export type SuggestionView = ReturnType<typeof view>;
 const actionsOf = () => Object.fromEntries(WATCH_KIND_KEYS.map((k) => [k, WATCH_KINDS[k].actions]));
 

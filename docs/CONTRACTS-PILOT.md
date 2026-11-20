@@ -26,8 +26,15 @@ Use this to take one business unit live on Contracts. Tick each line in a test w
 
 ## 3. Bringing existing contracts in
 
+Use Contracts → **Bring contracts in** — it walks through these and shows what is still missing.
+
+
 - [ ] Parties imported from Excel (or linked to onboarded suppliers); look-alikes checked.
-- [ ] Contracts imported from Excel with dates, value, notice and renewal terms; the signed copy uploaded to each.
+- [ ] Contracts imported from Excel with dates, value, notice and renewal terms (statements of work naming their master agreement).
+- [ ] Signed copies uploaded in bulk (file names carry the contract number or reference); the inbox is empty.
+- [ ] Uploaded files read in bulk and the values found reviewed.
+- [ ] Obligations imported from Excel.
+- [ ] The checklist shows nothing left: no active contract without a signed copy, owner, end date or notice period.
 - [ ] For contracts on the other party's paper: **Read the contract** on the uploaded Word / PDF file, check each suggestion against
       the evidence sentence, then **Use the ticked values**. Scans are not read — key the terms in.
 - [ ] Obligations added for the contracts that have payments, reports or service levels; owners set.
@@ -45,6 +52,8 @@ Use this to take one business unit live on Contracts. Tick each line in a test w
 - [ ] At least one contract goes through review by the other party with comments and a new version.
 - [ ] At least one amendment is made and signed, and its changes reach the contract.
 - [ ] Contract watch is on: owners decide what it lists (Contracts → Watch) and get the weekly digest; obligation reminders arrive before the due date.
+- [ ] Owners use the **Decision pack** for renewals; with the AI summary on, open **What the AI saw** once to confirm only general facts were sent.
+- [ ] Drafts to the other party (chase, price query, renegotiate, non-renewal notice) are checked against the contract's notice clause before sending.
 - [ ] Purchase orders and invoices from suppliers with agreed prices show **Contract prices**; lines above the price are followed up.
 - [ ] Signed supplier contracts reach the ERP (check **ERP** on the contract; **Send again** if needed).
 - [ ] Contracts → **Reports** reviewed weekly with the unit head: value under contract, ending in 90 days, overdue obligations,

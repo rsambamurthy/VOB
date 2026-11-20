@@ -309,6 +309,20 @@
       "when": 1795175607989,
       "tag": "0043_contracts_watch",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795177592193,
+      "tag": "0044_contracts_watch_packs",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795179574113,
+      "tag": "0045_contracts_migration",
+      "breakpoints": true
     }
   ]
 }

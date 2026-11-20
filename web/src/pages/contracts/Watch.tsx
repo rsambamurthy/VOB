@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { fmtDate, fmtDateTime } from '../../lib/format';
+import { fmtDate, fmtDateTime, money } from '../../lib/format';
 import { useSession } from '../../lib/session';
 import { useHelpContext } from '../../help/HelpPanel';
-import { Alert, Empty } from '../../components/ui';
+import { Alert, Empty, Modal } from '../../components/ui';
 import { TabStrip } from '../../components/TabStrip';
 import { Pager } from '../../components/Pager';
 
@@ -13,6 +13,7 @@ export interface Suggestion {
   id: string; contractId: string; kind: string; kindLabel: string; severity: 'URGENT' | 'NORMAL'; title: string; reasons: string[]; facts: Record<string, string | number | boolean | null>;
   status: 'OPEN' | 'USED' | 'DISMISSED' | 'SNOOZED' | 'RESOLVED'; action: string | null; actionLabel: string | null; note: string | null; snoozeUntil: string | null;
   decidedByName: string | null; decidedAt: string | null; createdAt: string; owner?: string | null;
+  summary: string | null; summaryBy: string | null; packAt: string | null;
 }
 export type WatchActions = Record<string, Record<string, string>>;
 export interface ContractWatch { on: boolean; open: Suggestion[]; decided: Suggestion[]; actions: WatchActions }
@@ -36,6 +37,7 @@ export function SuggestionItem({ s, actions, manage, showContract, onDecided }: 
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
   const open = s.status === 'OPEN';
+  const [pack, setPack] = useState(false);
   return (
     <div className="watch-item" style={{ borderTop: '1px solid var(--border, #e6e9f0)', padding: '12px 0' }} data-testid={`watch-${s.kind}`}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -45,6 +47,9 @@ export function SuggestionItem({ s, actions, manage, showContract, onDecided }: 
       </div>
       {showContract && <div className="muted small">{String(s.facts.title ?? '')} · {String(s.facts.party ?? '')}{s.owner !== undefined && ` · owner ${s.owner ?? 'none'}`}</div>}
       <ul className="small" style={{ margin: '6px 0', paddingInlineStart: 18 }}>{s.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+      {s.summary && !pack && <p className="small" style={{ margin: '4px 0' }}><b>Summary:</b> {s.summary.split('\n')[0]}</p>}
+      {s.status !== 'RESOLVED' && <button className="link-btn small" onClick={() => setPack(!pack)}>{pack ? 'Hide the decision pack' : 'Decision pack'}</button>}
+      {pack && <DecisionPack id={s.id} manage={manage} />}
       {s.status === 'SNOOZED' && <p className="small muted">Snoozed until {fmtDate(s.snoozeUntil)}{s.note ? ` — ${s.note}` : ''}.</p>}
       {(s.status === 'USED' || s.status === 'DISMISSED') && <p className="small muted">{s.status === 'USED' ? <>Done: <b>{s.actionLabel}</b></> : 'Dismissed'}{s.note ? ` — ${s.note}` : ''} · {s.decidedByName}, {fmtDateTime(s.decidedAt)}</p>}
       {err && <Alert kind="error">{err}</Alert>}
@@ -116,5 +121,81 @@ export function ContractWatchList() {
         {d && <Pager page={d.page} pageSize={d.pageSize} total={d.total} onPage={setPage} />}
       </div>
     </div>
+  );
+}
+
+/* ---------------- decision pack (step 2) ---------------- */
+
+interface PackView {
+  pack: {
+    contract: { number: string; title: string; type: string; party: string; startDate: string | null; endDate: string | null; noticeBy: string | null; autoRenew: boolean; renewalTermMonths: number | null; value: number | null; currency: string; daysToNotice: number | null };
+    orders: { spend: number; spend12: number; count: number; last: string | null; pctOfValue: number | null } | null;
+    prices: { linesAbove: number; linesChecked: number; excess: number } | null;
+    obligations: { done12: number; onTime12: number; onTimePct: number | null; overdueTheirs: number; overdueOurs: number };
+    supplier: { linked: boolean; riskBand: string | null; riskScore: number | null; onHold: boolean; holdReason: string | null; scorecard: number | null; grade: string | null } | null;
+    amendments: number; earlier: { kind: string; title: string; did: string | null; note: string | null; when: string | null }[];
+    recommendation: 'RENEW' | 'RENEGOTIATE' | 'END' | 'ACT'; reasons: string[];
+  };
+  summary: string; points: string[]; summaryBy: 'rules' | 'anthropic'; sentToAi: string | null; drafts: { key: string; label: string }[];
+}
+const RECO: Record<PackView['pack']['recommendation'], [string, string]> = { RENEW: ['Renew', 'badge-approved'], RENEGOTIATE: ['Renegotiate', 'badge-attention'], END: ['Let it end', 'badge-rejected'], ACT: ['Act on it', 'badge-attention'] };
+
+/** What an owner needs to decide: the facts, VendorGate's recommendation and reasons, a summary, and drafts. */
+export function DecisionPack({ id, manage }: { id: string; manage: boolean }) {
+  const [v, setV] = useState<PackView>();
+  const [err, setErr] = useState<string>();
+  const [seen, setSeen] = useState(false);
+  const [draft, setDraft] = useState<string>();
+  const load = useCallback(() => { setV(undefined); api<PackView>(`/staff/contracts/suggestions/${id}/pack`, { method: 'POST' }).then(setV).catch((e) => setErr(e.message)); }, [id]);
+  useEffect(() => { load(); }, [load]);
+  if (err) return <Alert kind="error">{err}</Alert>;
+  if (!v) return <div className="spinner" />;
+  const p = v.pack, c = p.contract, cur = c.currency;
+  const rows: [string, string][] = [
+    ['Term', `${fmtDate(c.startDate)} – ${c.endDate ? fmtDate(c.endDate) : 'no fixed end'}${c.autoRenew ? ` · renews for ${c.renewalTermMonths ?? 12} months` : ''}`],
+    ...(c.noticeBy ? [['Notice by', `${fmtDate(c.noticeBy)} (${c.daysToNotice! < 0 ? 'passed' : `${c.daysToNotice} days left`})`] as [string, string]] : []),
+    ['Value', c.value === null ? '—' : money(c.value, cur)],
+    ...(p.orders ? [['Orders', `${p.orders.count} so far, ${money(p.orders.spend, cur)}${p.orders.pctOfValue !== null ? ` (${p.orders.pctOfValue}% of the value)` : ''} · ${money(p.orders.spend12, cur)} in 12 months${p.orders.last ? ` · last ${fmtDate(p.orders.last)}` : ''}`] as [string, string]] : []),
+    ...(p.prices ? [['Prices', `${p.prices.linesAbove} of ${p.prices.linesChecked} lines above the contract price · ${money(p.prices.excess, cur)} over`] as [string, string]] : []),
+    ['Obligations', `${p.obligations.onTimePct === null ? 'none done in 12 months' : `${p.obligations.onTimePct}% on time (${p.obligations.onTime12} of ${p.obligations.done12})`}${p.obligations.overdueTheirs ? ` · ${p.obligations.overdueTheirs} of theirs overdue` : ''}${p.obligations.overdueOurs ? ` · ${p.obligations.overdueOurs} of ours overdue` : ''}`],
+    ...(p.supplier ? [['Supplier', [p.supplier.riskBand ? `risk ${p.supplier.riskBand.toLowerCase()}` : 'risk not rated', p.supplier.onHold ? `on hold (${p.supplier.holdReason})` : null, p.supplier.scorecard !== null ? `scorecard ${Math.round(p.supplier.scorecard)} (${p.supplier.grade})` : null, p.supplier.linked ? null : 'not an onboarded supplier'].filter(Boolean).join(' · ')] as [string, string]] : []),
+    ['Amendments', String(p.amendments)],
+  ];
+  return (
+    <div className="decision-pack" style={{ background: 'var(--surface-2, #f7f8fb)', borderRadius: 8, padding: 12, margin: '8px 0' }} data-testid="decision-pack">
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><span className={`badge ${RECO[p.recommendation][1]}`}>{RECO[p.recommendation][0]}</span><b>{v.summary}</b></div>
+      {v.points.length > 0 && <ul className="small" style={{ margin: '6px 0', paddingInlineStart: 18 }}>{v.points.map((x, i) => <li key={i}>{x}</li>)}</ul>}
+      <p className="muted small" style={{ margin: '4px 0' }}>{v.summaryBy === 'anthropic' ? 'Summary written by AI from general facts only — no names, numbers or amounts.' : 'Summary written by VendorGate’s rules.'} {v.sentToAi && <button className="link-btn small" onClick={() => setSeen(!seen)}>{seen ? 'Hide' : 'What the AI saw'}</button>} <button className="link-btn small" onClick={load}>Refresh</button></p>
+      {seen && v.sentToAi && <pre className="small" style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflow: 'auto' }}>{JSON.stringify(JSON.parse(v.sentToAi), null, 2)}</pre>}
+      <h4 style={{ margin: '10px 0 4px' }}>Why</h4>
+      <ul className="small" style={{ margin: 0, paddingInlineStart: 18 }}>{p.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+      <table className="table static compact" style={{ marginTop: 8 }}><tbody>{rows.map(([k, val]) => <tr key={k}><td className="muted small" style={{ width: 120 }}>{k}</td><td className="small">{val}</td></tr>)}</tbody></table>
+      {p.earlier.length > 0 && <p className="small muted">Earlier: {p.earlier.map((e) => `${e.did ?? ''} (${fmtDate(e.when)})`).join(' · ')}</p>}
+      {manage && v.drafts.length > 0 && <div className="btn-row" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>{v.drafts.map((d) => <button key={d.key} className="btn btn-ghost btn-sm" onClick={() => setDraft(d.key)}>Draft: {d.label}</button>)}</div>}
+      {draft && <DraftModal id={id} draftKey={draft} onClose={() => setDraft(undefined)} />}
+    </div>
+  );
+}
+
+/** A letter to the other party, written by VendorGate with the real names — edited and sent by a person from their own email. */
+function DraftModal({ id, draftKey, onClose }: { id: string; draftKey: string; onClose: () => void }) {
+  const [d, setD] = useState<{ to: string; toName: string; subject: string; body: string; label: string }>();
+  const [err, setErr] = useState<string>();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { api<NonNullable<typeof d>>(`/staff/contracts/suggestions/${id}/drafts/${draftKey}`, { method: 'POST' }).then(setD).catch((e) => setErr(e.message)); }, [id, draftKey]);
+  const mailto = d ? `mailto:${encodeURIComponent(d.to)}?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}` : '#';
+  return (
+    <Modal title={d?.label ?? 'Draft'} onClose={onClose} wide footer={<>
+      <button className="btn btn-ghost" onClick={onClose}>Close</button>
+      {d && <button className="btn btn-secondary" onClick={() => navigator.clipboard?.writeText(`${d.subject}\n\n${d.body}`).then(() => setCopied(true)).catch(() => {})}>{copied ? 'Copied' : 'Copy'}</button>}
+      {d && <a className="btn btn-primary" href={mailto}>Open in my email</a>}</>}>
+      {err && <Alert kind="error">{err}</Alert>}
+      {!d ? <div className="spinner" /> : <>
+        <p className="muted small">VendorGate doesn’t send this. Check it, change what you need, and send it from your own email.</p>
+        <div className="field"><label htmlFor="dr-to">To</label><input id="dr-to" value={d.to} onChange={(e) => setD({ ...d, to: e.target.value })} placeholder="Their email address" /></div>
+        <div className="field"><label htmlFor="dr-sub">Subject</label><input id="dr-sub" value={d.subject} onChange={(e) => setD({ ...d, subject: e.target.value })} /></div>
+        <div className="field"><label htmlFor="dr-body">Message</label><textarea id="dr-body" rows={14} value={d.body} onChange={(e) => setD({ ...d, body: e.target.value })} /></div>
+      </>}
+    </Modal>
   );
 }

@@ -1655,6 +1655,28 @@ export const contractFiles = pgTable('contract_files', {
 }, (t) => [index('contract_files_contract_idx').on(t.contractId)]);
 export type ContractFile = typeof contractFiles.$inferSelect;
 
+/**
+ * Contracts migration inbox: files uploaded in bulk that could not be matched to one contract (no contract number or
+ * reference in the name, or several match). Someone attaches each to a contract, makes a new contract from it, or removes it.
+ */
+export const contractInbox = pgTable('contract_inbox', {
+  id: id(), tenantId: tenantId(),
+  fileName: text('file_name').notNull(),
+  mimeType: text('mime_type').notNull(),
+  size: integer('size').notNull(),
+  storagePath: text('storage_path').notNull(),
+  storageDriver: text('storage_driver').notNull().default('local'),
+  sha256: text('sha256'),
+  scanStatus: text('scan_status').notNull().default('SKIPPED'),
+  /** Why it wasn't matched (no match / several contracts match). */
+  reason: text('reason').notNull(),
+  /** Contracts it might belong to (several matched). */
+  candidates: jsonb('candidates').$type<{ id: string; number: string; title: string }[]>().notNull().default([]),
+  uploadedByName: text('uploaded_by_name').notNull(),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('contract_inbox_tenant_idx').on(t.tenantId, t.uploadedAt)]);
+export type ContractInboxFile = typeof contractInbox.$inferSelect;
+
 /** One clause of a drafted contract. `variant`: 'standard', a fallback key, or 'custom' (edited wording). */
 export interface DraftClause { clauseId: string; group: string; title: string; variant: string; body: string; required: boolean }
 export interface AmendmentChanges { endDate?: string | null; value?: number | null; noticeDays?: number | null; autoRenew?: boolean; renewalTermMonths?: number | null; description?: string | null; appliedAt?: string }
@@ -1886,6 +1908,14 @@ export const contractSuggestions = pgTable('contract_suggestions', {
   /** When the owner was emailed about it (urgent ones straight away). */
   notifiedAt: timestamp('notified_at', { withTimezone: true }),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  /** The decision pack last built for it (services/contracts/decisionPack.ts) and its written summary. */
+  pack: jsonb('pack').$type<Record<string, unknown>>(),
+  summary: text('summary'),
+  /** rules · anthropic */
+  summaryBy: text('summary_by'),
+  /** Exactly what was sent to the AI for the summary ("What the AI saw"); null when written by VendorGate's rules. */
+  sentToAi: text('sent_to_ai'),
+  packAt: timestamp('pack_at', { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('contract_suggestions_uq').on(t.contractId, t.kind, t.key), index('contract_suggestions_open_idx').on(t.tenantId, t.status, t.severity)]);

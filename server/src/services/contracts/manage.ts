@@ -288,6 +288,53 @@ export async function savePrices(t: Tenant, contractId: string, raw: unknown, by
   });
   await cAudit(t, c, by.name, 'CONTRACT_PRICES_SAVED', { items: rows.length }, by.ip);
 }
+/* ---------------- obligations from Excel (migration) ---------------- */
+
+const OBLIGATION_COLUMNS: SheetColumn[] = [
+  { header: 'Contract', width: 22, required: true }, { header: 'What', width: 40, required: true }, { header: 'Kind', width: 22, required: true },
+  { header: 'Who does it', width: 14, required: true }, { header: 'Due date', width: 12, required: true, type: 'date' }, { header: 'Repeats', width: 14 },
+  { header: 'Amount', width: 12 }, { header: 'Remind days before', width: 12 }, { header: 'Owner email', width: 26 }, { header: 'Note', width: 36 },
+];
+export const obligationsTemplate = () => sheetTemplate({
+  sheet: 'Obligations', columns: OBLIGATION_COLUMNS, examplesOnOwnSheet: true,
+  lists: { Kind: Object.values(OBLIGATION_KINDS), 'Who does it': ['Us', 'Them'], Repeats: Object.values(RECURRENCE) },
+  examples: [['SVC-2026-0001', 'Monthly guard attendance report', OBLIGATION_KINDS.REPORT, 'Them', '2026-12-05', RECURRENCE.MONTHLY, '', 5, '', ''], ['PV/RC/26/014', 'Quarterly payment', OBLIGATION_KINDS.PAYMENT, 'Us', '2026-12-31', RECURRENCE.QUARTERLY, 450000, 10, '', 'Against the quarterly invoice']],
+  help: [['Contract', 'The contract number (e.g. SVC-2026-0001) or the contract’s reference.'], ['Kind / Who / Repeats', 'Pick from the lists. “Them” is the other party.'], ['Owner email', 'Who is reminded; empty = the contract’s owner.'], ['Import', 'Obligations are added; existing ones are kept.']],
+});
+/** Obligations for many contracts from one sheet (check first, then import). */
+export async function importObligations(t: Tenant, buffer: Buffer, by: By, commit: boolean) {
+  assertObligations(t);
+  const rows = await readSheet(buffer, { sheet: 'Obligations', columns: OBLIGATION_COLUMNS, maxRows: 5000 });
+  const contracts = await db.select({ id: C.id, number: C.number, reference: C.reference, status: C.status }).from(C).where(eq(C.tenantId, t.id));
+  const owners = new Map((await db.select({ id: U.id, email: U.email }).from(U).where(eq(U.tenantId, t.id))).map((u) => [u.email.toLowerCase(), u.id]));
+  const byLabel = <T extends Record<string, string>>(m: T, v: string) => (Object.entries(m).find(([k, l]) => k.toLowerCase() === v.toLowerCase() || l.toLowerCase() === v.toLowerCase())?.[0]);
+  const ready: { row: number; contractId: string; number: string; input: Record<string, unknown> }[] = []; const errors: RowError[] = [];
+  for (const r of rows) {
+    const ref = r.get('Contract').toLowerCase();
+    const hits = contracts.filter((c) => c.number.toLowerCase() === ref || c.reference?.toLowerCase() === ref);
+    if (hits.length !== 1) { errors.push({ row: r.row, message: hits.length ? `More than one contract has the reference “${r.get('Contract')}” — use its contract number` : `Contract “${r.get('Contract')}” not found` }); continue; }
+    if (['TERMINATED', 'EXPIRED'].includes(hits[0].status)) { errors.push({ row: r.row, message: `${hits[0].number} has ended` }); continue; }
+    const kind = byLabel(OBLIGATION_KINDS, r.get('Kind'));
+    if (!kind) { errors.push({ row: r.row, message: `Unknown kind “${r.get('Kind')}”` }); continue; }
+    const who = r.get('Who does it').toLowerCase();
+    const side = /^(us|we|our)/.test(who) ? 'US' : /^(them|they|other|party|supplier|customer)/.test(who) ? 'PARTY' : null;
+    if (!side) { errors.push({ row: r.row, message: 'Who does it must be Us or Them' }); continue; }
+    const recurrence = r.get('Repeats') ? byLabel(RECURRENCE, r.get('Repeats')) : 'NONE';
+    if (!recurrence) { errors.push({ row: r.row, message: `Unknown repeat “${r.get('Repeats')}”` }); continue; }
+    const email = r.get('Owner email').toLowerCase();
+    if (email && !owners.has(email)) { errors.push({ row: r.row, message: `No user with the email ${email}` }); continue; }
+    const amount = r.get('Amount').replace(/,/g, ''), remind = r.get('Remind days before');
+    const input = { title: r.get('What'), kind, side, dueDate: r.get('Due date'), recurrence, amount: amount ? Number(amount) : null, remindDays: remind ? Number(remind) : 7, ownerId: email ? owners.get(email) : null, note: r.get('Note') || null };
+    const parsed = obligationInput.safeParse(input);
+    if (!parsed.success) { errors.push({ row: r.row, message: parsed.error.issues.map((i) => i.message).join('; ') }); continue; }
+    ready.push({ row: r.row, contractId: hits[0].id, number: hits[0].number, input });
+  }
+  if (!rows.length) errors.push({ row: 0, message: 'No obligations found in the sheet.' });
+  const created: { row: number; number: string; title: string }[] = [];
+  if (commit && !errors.length) for (const x of ready) { await addObligation(t, x.contractId, x.input, by); created.push({ row: x.row, number: x.number, title: String(x.input.title) }); }
+  return { ready: ready.map((x) => ({ row: x.row, contract: x.number, title: x.input.title })), errors, created };
+}
+
 const PRICE_COLUMNS: SheetColumn[] = [{ header: 'Item code', width: 16 }, { header: 'Description', width: 40, required: true }, { header: 'Unit', width: 10 }, { header: 'Price', width: 14, required: true }];
 export const pricesTemplate = () => sheetTemplate({ sheet: 'Prices', columns: PRICE_COLUMNS, examples: [['VLV-050', 'Ball valve 50 mm, SS316', 'NOS', 1450], ['', 'Annual maintenance visit', 'VISIT', 6500]], examplesOnOwnSheet: true,
   help: [['Prices', 'One row per item or service, at the price agreed in the contract (before tax).'], ['Item code', 'The ERP item code — purchase orders and invoices are matched on it. Leave empty for services without a code.'], ['Import', 'Importing replaces the contract’s whole price list.']] });

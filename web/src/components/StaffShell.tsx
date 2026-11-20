@@ -61,6 +61,7 @@ export function StaffShell() {
       { to: '/staff/contract-reports', label: 'Reports', icon: 'reports', show: contracts },
       { to: '/staff/contract-templates', label: 'Templates', icon: 'agreement', show: contracts },
       { to: '/staff/contract-clauses', label: 'Clause library', icon: 'questionnaire', show: contracts },
+      { to: '/staff/contract-migration', label: 'Bring contracts in', icon: 'apply', show: contracts && can('contracts.manage') },
     ]),
     group('sourcing', 'Sourcing', 'sourcing', [
       { to: '/staff/sourcing', label: 'Events', icon: 'sourcing', end: true, show: onb && !!me.sourcing?.on && can('sourcing.view') },

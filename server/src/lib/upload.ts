@@ -20,3 +20,10 @@ export const contractUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => ([...ALLOWED_MIME, DOCX_MIME].includes(file.mimetype) || /\.docx$/i.test(file.originalname) ? cb(null, true) : cb(new HttpError(400, 'Only Word (.docx), PDF, PNG or JPG files are allowed'))),
 });
+
+/** Bulk contract files (Contracts → Migration): up to 25 files a request, each up to 50 MB (a .zip of signed copies); the migration service unpacks zips with limits and storeUpload checks every file. */
+export const bulkContractUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024, files: 25 },
+  fileFilter: (_req, file, cb) => ([...ALLOWED_MIME, DOCX_MIME, 'application/zip', 'application/x-zip-compressed'].includes(file.mimetype) || /\.(docx|pdf|png|jpe?g|zip)$/i.test(file.originalname) ? cb(null, true) : cb(new HttpError(400, 'Only Word (.docx), PDF, PNG, JPG or .zip files are allowed'))),
+});

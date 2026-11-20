@@ -149,6 +149,8 @@ function ObligationModal({ contractId, o, m, owners, partyName, onClose, onDetai
 /** Contracts → Obligations: open obligations across all contracts. */
 export function ObligationsList() {
   useHelpContext('contract-obligations');
+  const { can } = useSession();
+  const [importing, setImporting] = useState(false);
   const [params, setParams] = useSearchParams();
   const filter = params.get('filter') ?? 'open';
   const mine = params.get('mine') === '1';
@@ -162,7 +164,10 @@ export function ObligationsList() {
   return (
     <div className="page">
       <header className="page-head"><div><h1>Obligations</h1><p className="muted">What has to be done under your contracts, and when.</p></div>
-        <div className="head-actions"><label className="check-item"><input type="checkbox" checked={mine} onChange={(e) => setParams({ filter, ...(e.target.checked ? { mine: '1' } : {}) })} /> <span>Only mine</span></label></div></header>
+        <div className="head-actions"><label className="check-item"><input type="checkbox" checked={mine} onChange={(e) => setParams({ filter, ...(e.target.checked ? { mine: '1' } : {}) })} /> <span>Only mine</span></label>{can('contracts.manage') && <button className="btn btn-secondary" onClick={() => setImporting(true)}>Import from Excel</button>}</div></header>
+      {importing && <ExcelImportModal<{ row: number; contract: string; title: string }> title="Import obligations" endpoint="/staff/contracts/obligations/import" templateUrl="/staff/contracts/obligations/import-template.xlsx"
+        intro="Obligations for many contracts at once — each row names its contract by number or reference. Existing obligations are kept." columns={[{ label: 'Contract', cell: (r) => r.contract }, { label: 'What', cell: (r) => r.title }]}
+        onClose={() => setImporting(false)} onDone={() => { setImporting(false); load(); }} />}
       {error && <Alert kind="error">{error}</Alert>}
       <TabStrip>{tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={filter === k} className={filter === k ? 'active' : ''} onClick={() => setParams({ filter: k, ...(mine ? { mine: '1' } : {}) })}>{l}</button>)}</TabStrip>
       <div className="card">

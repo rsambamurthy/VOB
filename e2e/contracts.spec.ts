@@ -66,10 +66,36 @@ test('contracts: the administrator switches it on; a party and a contract are cr
   await expect(admin.locator('.alert-success')).toContainText('Checked now');
   const decide = admin.getByTestId('watch-DECIDE').filter({ hasText: 'Annual maintenance' });
   await expect(decide).toContainText(/Decide before it ends: SVC-/);
-  await decide.getByRole('button', { name: 'Renegotiate' }).click();
+  // The decision pack: VendorGate's recommendation with reasons, and a draft to the other party.
+  await decide.getByRole('button', { name: 'Decision pack' }).click();
+  const pack = decide.getByTestId('decision-pack');
+  await expect(pack).toContainText('Summary written by VendorGate’s rules');
+  await expect(pack).toContainText(/Notice by/);
+  await pack.getByRole('button', { name: 'Draft: Notice that we will not renew' }).click();
+  await expect(admin.getByRole('dialog').getByLabel('Subject')).toHaveValue(/^Notice of non-renewal — SVC-/);
+  await expect(admin.getByRole('dialog').getByLabel('To')).toHaveValue('ravi@coolair.test');
+  await admin.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).last().click();
+  await decide.getByRole('button', { name: 'Renegotiate', exact: true }).click();
   await expect(admin.locator('.alert-success')).toContainText('Recorded');
   await admin.getByRole('tab', { name: 'Decided' }).click();
   await expect(admin.getByTestId('watch-DECIDE').first()).toContainText('Done: Renegotiate');
+
+  // Bring contracts in: a signed copy named by the contract number is matched; an unknown file goes to the inbox.
+  const number = (await admin.request.get('/api/staff/contracts?q=Annual').then((r) => r.json())).contracts[0].number as string;
+  await admin.goto('/staff/contract-migration');
+  await expect(admin.getByRole('heading', { name: 'Bring existing contracts in' })).toBeVisible();
+  await admin.getByLabel('Files', { exact: true }).setInputFiles([{ ...PDF, buffer: Buffer.concat([PDF.buffer, Buffer.from('\n% annexure')]), name: `${number} annexure scan.pdf` }, { ...PDF, buffer: Buffer.concat([PDF.buffer, Buffer.from('\n% letter')]), name: 'old letter.pdf' }]);
+  await admin.getByLabel('They are').selectOption('ANNEXURE');
+  await admin.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(admin.getByText('1 to attach · 1 to the inbox', { exact: false })).toBeVisible();
+  await admin.getByRole('button', { name: 'Upload 2 files' }).click();
+  await expect(admin.locator('.alert-success')).toContainText('1 file attached, 1 to the inbox');
+  const inbox = admin.getByRole('region', { name: 'Inbox' });
+  await expect(inbox.getByRole('link', { name: 'old letter.pdf' })).toBeVisible();
+  admin.once('dialog', (d) => d.accept());
+  await inbox.getByRole('button', { name: 'Remove' }).click();
+  await expect(inbox.getByText('Empty.')).toBeVisible();
+  await expect(admin.getByRole('region', { name: 'Checklist' })).toContainText('Active contracts with no owner');
 
   // Contract reports show the active contract's value.
   await admin.goto('/staff/contract-reports');

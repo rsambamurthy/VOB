@@ -71,6 +71,14 @@ const fieldNames = (d: unknown) => {
 
 /** Fields that can still be changed once a contract is active (anything else needs an amendment — Step 3). */
 const ACTIVE_EDITABLE = ['ownerId', 'description', 'category', 'noticeDays', 'autoRenew', 'renewalTermMonths', 'reference'] as const;
+/** Details that may be filled in on an active contract while they are still empty (completing a contract brought in from Excel or paper) — not changed once set. */
+const FILL_IF_EMPTY = ['endDate', 'value'] as const;
+/** What can change on a contract now: everything on a draft; on an approved / active one the editable fields plus any still-empty FILL_IF_EMPTY field. */
+export function editableFields(c: Contract): 'all' | string[] {
+  if (c.status === 'DRAFT') return 'all';
+  if (!['ACTIVE', 'APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status)) return [];
+  return [...ACTIVE_EDITABLE, ...(c.status === 'ACTIVE' ? FILL_IF_EMPTY.filter((k) => c[k] === null) : [])];
+}
 
 async function check(t: Tenant, input: z.infer<typeof contractInput>, self?: Contract) {
   const amendment = input.type === 'amendment';
@@ -154,7 +162,8 @@ export async function updateContract(t: Tenant, id: string, raw: unknown, by: By
   const input = contractInput.parse({ ...contractToInput(c), ...(raw as object) });
   if (['ACTIVE', 'APPROVED', 'WITH_PARTY', 'AGREED', 'SIGNING'].includes(c.status)) {
     const before = contractToInput(c) as Record<string, unknown>;
-    const changedLocked = Object.keys(raw as object).filter((k) => !(ACTIVE_EDITABLE as readonly string[]).includes(k) && JSON.stringify((input as Record<string, unknown>)[k] ?? null) !== JSON.stringify(before[k] ?? null));
+    const allowed = editableFields(c) as string[];
+    const changedLocked = Object.keys(raw as object).filter((k) => !allowed.includes(k) && JSON.stringify((input as Record<string, unknown>)[k] ?? null) !== JSON.stringify(before[k] ?? null));
     if (changedLocked.length) throw new HttpError(409, ['APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status) ? 'The contract is approved. Reopen it as a draft to change its parties, dates or value (it then needs approval again).' : 'An active contract’s parties, dates and value change through an amendment. You can change the owner, description, category, reference and renewal terms.', { fields: changedLocked });
   }
   await check(t, input, c);
@@ -216,8 +225,16 @@ export async function addFile(t: Tenant, id: string, kind: string, file: { buffe
   const c = await getContract(t.id, id);
   if (!UPLOAD_KINDS.includes(kind)) throw new HttpError(400, 'Choose what the file is');
   if (c.status === 'TERMINATED' || c.status === 'EXPIRED') throw new HttpError(409, 'Ended contracts can’t take new files.');
-  const stored = await storeUpload(t.id, `contracts/${c.id}`, file, { types: [DOCX, 'application/pdf', 'image/png', 'image/jpeg'] });
-  const [row] = await db.insert(F).values({ tenantId: t.id, contractId: c.id, kind, ...stored, uploadedByName: by.name }).returning();
+  const stored = await storeUpload(t.id, `contracts/${c.id}`, file, { types: CONTRACT_FILE_TYPES });
+  return attachStored(t, c, kind, stored, by);
+}
+/** File types a contract can hold (Word, PDF, images). */
+export const CONTRACT_FILE_TYPES = [DOCX, 'application/pdf', 'image/png', 'image/jpeg'];
+/** Attach an already stored file to a contract (uploads, and files from the migration inbox). */
+export async function attachStored(t: Tenant, c: Contract, kind: string, stored: { fileName: string; mimeType: string; size: number; storagePath: string; storageDriver: string; sha256: string | null; scanStatus: string }, by: By) {
+  if (!UPLOAD_KINDS.includes(kind)) throw new HttpError(400, 'Choose what the file is');
+  if (c.status === 'TERMINATED' || c.status === 'EXPIRED') throw new HttpError(409, 'Ended contracts can’t take new files.');
+  const [row] = await db.insert(F).values({ tenantId: t.id, contractId: c.id, kind, fileName: stored.fileName, mimeType: stored.mimeType, size: stored.size, storagePath: stored.storagePath, storageDriver: stored.storageDriver, sha256: stored.sha256, scanStatus: stored.scanStatus, uploadedByName: by.name }).returning();
   await contractAudit(t, c, by, 'CONTRACT_FILE_ADDED', { kind, fileName: row.fileName });
   return row;
 }
@@ -300,7 +317,7 @@ export async function contractDetail(t: Tenant, id: string, userId: string) {
     children: children.map(summary),
     files: files.map((f) => ({ id: f.id, kind: f.kind, fileName: f.fileName, size: f.size, uploadedByName: f.uploadedByName, uploadedAt: f.uploadedAt, generated: f.generated, version: f.version })),
     history: history.map((h) => ({ ...h, detail: fieldNames(h.detail) as typeof h.detail })),
-    editable: c.status === 'DRAFT' ? 'all' : ['ACTIVE', 'APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status) ? ACTIVE_EDITABLE : [],
+    editable: editableFields(c),
     drafting: await draftView(t, c, userId),
     negotiation: await negotiationView(t, c),
     manage: await (await import('./manage.js')).manageView(t, c),
@@ -330,21 +347,23 @@ const CONTRACT_COLUMNS: SheetColumn[] = [
   { header: 'Contract type', width: 26, required: true }, { header: 'Title', width: 36, required: true }, { header: 'Their reference', width: 18 },
   { header: 'Value', width: 14 }, { header: 'Currency', width: 9 }, { header: 'Start date', width: 12, required: true, type: 'date' }, { header: 'End date', width: 12, type: 'date' },
   { header: 'Signed date', width: 12, required: true, type: 'date' }, { header: 'Renews automatically', width: 12 }, { header: 'Renewal months', width: 10 }, { header: 'Notice days', width: 10 },
-  { header: 'Owner email', width: 26 }, { header: 'Category', width: 16 }, { header: 'Description', width: 40 },
+  { header: 'Owner email', width: 26 }, { header: 'Category', width: 16 }, { header: 'Description', width: 40 }, { header: 'Master agreement', width: 22 },
 ];
 export function contractsTemplate(t: Tenant) {
   const types = CONTRACT_TYPE_KEYS.filter((k) => typeState(t, k).on).map((k) => CONTRACT_TYPES[k].label);
   const cur = localeFor(t.country).currency;
   return sheetTemplate({
     sheet: 'Contracts', columns: CONTRACT_COLUMNS, examplesOnOwnSheet: true, lists: { 'Party type': ['Supplier', 'Customer'], 'Contract type': types, 'Renews automatically': ['Yes', 'No'] },
-    examples: [['Supplier', 'Precision Valves Pvt Ltd', t.country, CONTRACT_TYPES.supply.label, 'Valves rate contract 2026', 'PV/RC/26/014', 1800000, cur, '2026-04-01', '2027-03-31', '2026-03-20', 'Yes', 12, 60, '', 'Valves', ''],
-      ['Customer', 'Northwind Retail LLC', 'AE', CONTRACT_TYPES.nda.label, 'Mutual NDA — Northwind', '', '', '', '2026-01-10', '2028-01-09', '2026-01-10', 'No', '', 30, '', '', '']],
+    examples: [['Supplier', 'Precision Valves Pvt Ltd', t.country, CONTRACT_TYPES.supply.label, 'Valves rate contract 2026', 'PV/RC/26/014', 1800000, cur, '2026-04-01', '2027-03-31', '2026-03-20', 'Yes', 12, 60, '', 'Valves', '', ''],
+      ['Customer', 'Northwind Retail LLC', 'AE', CONTRACT_TYPES.nda.label, 'Mutual NDA — Northwind', '', '', '', '2026-01-10', '2028-01-09', '2026-01-10', 'No', '', 30, '', '', '', ''],
+      ['Supplier', 'Precision Valves Pvt Ltd', t.country, CONTRACT_TYPES.sow.label, 'SOW 1 — valve audit', 'PV/SOW/26/001', 250000, cur, '2026-05-01', '2026-09-30', '2026-04-25', 'No', '', '', '', 'Valves', '', 'PV/MSA/24/002']],
     help: [
       ['Contracts', 'One row per contract already signed outside VendorGate. They come in as Active (or Expired if the end date has passed).'],
       ['Party', 'The supplier or customer name, or its code (SUP-00001). If it doesn’t exist yet, tick “Create missing parties” when importing (Party country is then needed).'],
       ['Contract type', 'One of the types switched on in Administration → Contracts — pick from the list.'],
       ['Dates', 'Start date and Signed date are needed; End date is empty for contracts with no fixed end. Use YYYY-MM-DD or an Excel date.'],
-      ['Files', 'Upload the signed copies on each contract afterwards.'],
+      ['Master agreement', 'For a statement of work or order under a master agreement: the master agreement’s contract number (e.g. MSA-2026-0001) or its reference. It can be in this same sheet, on an earlier row.'],
+      ['Files', 'Then upload the signed copies in bulk (Contracts → Migration): each file is matched to its contract by the contract number or the reference in the file name.'],
       ['Example', 'The Example sheet shows two filled-in rows. Only the Contracts sheet is imported.'],
     ],
   });
@@ -358,7 +377,8 @@ export async function importContracts(t: Tenant, buffer: Buffer, by: By, opts: {
   const owners = new Map((await db.select({ id: U.id, email: U.email }).from(U).where(eq(U.tenantId, t.id))).map((u) => [u.email.toLowerCase(), u.id]));
   const allParties = await db.select({ id: P.id, code: P.code, name: P.name, kind: P.kind }).from(P).where(and(eq(P.tenantId, t.id), eq(P.status, 'ACTIVE')));
   const errors: RowError[] = [];
-  const ready: { row: number; input: ContractInput; newParty?: { kind: 'SUPPLIER' | 'CUSTOMER'; name: string; country: string } }[] = [];
+  const ready: { row: number; input: ContractInput; newParty?: { kind: 'SUPPLIER' | 'CUSTOMER'; name: string; country: string }; parentRow?: number }[] = [];
+  const existing = await db.select({ id: C.id, number: C.number, reference: C.reference, type: C.type, partyId: C.partyId, parentId: C.parentId }).from(C).where(eq(C.tenantId, t.id));
   for (const { row, get } of rows) {
     const pt = get('Party type').toLowerCase();
     const kind = pt.startsWith('sup') ? 'SUPPLIER' : pt.startsWith('cus') ? 'CUSTOMER' : null;
@@ -383,6 +403,20 @@ export async function importContracts(t: Tenant, buffer: Buffer, by: By, opts: {
       startDate: get('Start date'), endDate: get('End date') || null, signedDate: get('Signed date'), autoRenew: /^y/i.test(get('Renews automatically')),
       renewalTermMonths: num('Renewal months'), noticeDays: num('Notice days'), ownerId: ownerEmail ? owners.get(ownerEmail)! : by.id, category: get('Category') || null, description: get('Description') || null,
     };
+    // Master agreement: an existing contract (number or reference), or an earlier row of this sheet (its reference).
+    const master = get('Master agreement').trim().toLowerCase();
+    let parentRow: number | undefined;
+    if (master) {
+      const inDb = existing.filter((x) => x.number.toLowerCase() === master || x.reference?.toLowerCase() === master);
+      const inSheet = ready.filter((x) => x.input.reference?.toLowerCase() === master);
+      if (inDb.length === 1) input.parentId = inDb[0].id;
+      else if (!inDb.length && inSheet.length === 1) {
+        const m = inSheet[0];
+        if (m.input.type !== 'msa') { errors.push({ row, message: `Row ${m.row} (“${m.input.title}”) is not a master agreement` }); continue; }
+        if (m.input.partyId !== input.partyId || (m.newParty && m.newParty.name.toLowerCase() !== name.toLowerCase())) { errors.push({ row, message: `The master agreement on row ${m.row} is with another party` }); continue; }
+        parentRow = m.row;
+      } else { errors.push({ row, message: inDb.length > 1 || inSheet.length > 1 ? `More than one contract has the reference “${get('Master agreement')}” — use its contract number` : `Master agreement “${get('Master agreement')}” not found (use its contract number or reference; in this sheet it must be on an earlier row)` }); continue; }
+    }
     const parsed = contractInput.safeParse(input);
     if (!parsed.success) { errors.push({ row, message: parsed.error.issues.map((i) => `${String(i.path[0] ?? '')}: ${i.message}`).join('; ') }); continue; }
     if (!parsed.data.startDate || !parsed.data.signedDate) { errors.push({ row, message: 'Start date and Signed date are needed' }); continue; }
@@ -390,12 +424,13 @@ export async function importContracts(t: Tenant, buffer: Buffer, by: By, opts: {
       if (party) await check(t, parsed.data);
       else assertTypeOn(t, typeKey as ContractType);
     } catch (e) { errors.push({ row, message: (e as Error).message }); continue; }
-    ready.push({ row, input, newParty });
+    ready.push({ row, input, newParty, parentRow });
   }
   if (!rows.length) errors.push({ row: 0, message: 'No contracts found in the sheet.' });
   const created: { row: number; number: string; title: string }[] = [];
   if (opts.commit) {
     const made = new Map<string, string>();
+    const byRow = new Map<number, string>();
     for (const r of ready) {
       let partyId = r.input.partyId;
       if (r.newParty) {
@@ -403,7 +438,8 @@ export async function importContracts(t: Tenant, buffer: Buffer, by: By, opts: {
         if (!made.has(key)) made.set(key, (await createParty(t, { ...r.newParty, confirmDuplicate: true }, by, { source: 'contract import' })).id);
         partyId = made.get(key)!;
       }
-      const c = await createContract(t, { ...r.input, partyId }, by, { signed: true, source: 'IMPORT' });
+      const c = await createContract(t, { ...r.input, partyId, ...(r.parentRow ? { parentId: byRow.get(r.parentRow) } : {}) }, by, { signed: true, source: 'IMPORT' });
+      byRow.set(r.row, c.id);
       created.push({ row: r.row, number: c.number, title: c.title });
     }
   }

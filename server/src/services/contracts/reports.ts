@@ -45,7 +45,7 @@ export function contractReport(t: Tenant) {
       obligations: { ...ob, onTimeRate: ob.done90 ? Math.round((ob.onTime90 / ob.done90) * 100) : null },
       cycle: cycle.map((r) => ({ ...r, label: typeInfo(r.type).label })),
       prices: optionOn(t, 'priceCompliance') ? await priceLeakage(t) : null,
-      watch: optionOn(t, 'watch') ? await (await import('./watch.js')).openCount(t) : null,
+      watch: optionOn(t, 'watch') ? { ...(await (await import('./watch.js')).openCount(t)), outcomes: await (await import('./decisionPack.js')).watchOutcomes(t) } : null,
     };
   });
 }
@@ -109,6 +109,7 @@ export async function contractReportXlsx(t: Tenant) {
   sheet('Top parties', ['Party', 'Kind', 'Active contracts', 'Value', 'Currency'], r.topParties.map((x) => [x.name, x.kind, x.n, x.value, x.currency]));
   sheet('Ending in 90 days', ['Number', 'Title', 'Party', 'Ends', 'Renews automatically', 'Value'], r.expiring.map((x) => [x.number, x.title, x.party, x.endDate, x.autoRenew ? 'Yes' : 'No', x.value]));
   sheet('Time to sign', ['Type', 'Signed (12 months)', 'Average days', 'Median days'], r.cycle.map((x) => [x.label, x.n, x.avg, x.median]));
+  if (r.watch) sheet('Contract watch (12 months)', ['Measure', 'Value'], [['Waiting for a decision', r.watch.open], ['Decisions made', r.watch.outcomes.decided], ['Dismissed', r.watch.outcomes.dismissed], ['Renewal decisions', r.watch.outcomes.renewalDecisions], ['Made before the notice date', r.watch.outcomes.beforeNotice], ['Contracts let end', r.watch.outcomes.ended], ['Value of contracts let end', r.watch.outcomes.endedValue], ['Price excess taken up with suppliers', r.watch.outcomes.priceExcessRaised]]);
   if (r.prices) sheet('Prices vs contract', ['Contract', 'Lines above price', 'Excess paid'], r.prices.byContract.map((x) => [x.number, x.above, x.excess]));
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

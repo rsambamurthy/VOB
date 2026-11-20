@@ -13,7 +13,7 @@ import { requireStaff, staffCtx } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { env } from '../lib/env.js';
 import { effectiveLimits } from '../lib/plans.js';
-import { contractUpload, excelUpload } from '../lib/upload.js';
+import { bulkContractUpload, contractUpload, excelUpload } from '../lib/upload.js';
 import { z } from 'zod';
 import { localeFor, homeCountries } from '../countries/registry.js';
 import { onboardingOn } from '../lib/modules.js';
@@ -141,6 +141,31 @@ contractsRouter.post('/import', requireStaff('contracts.manage'), excelUpload.si
   if (!req.file) throw new HttpError(400, 'Choose the Excel file to upload');
   res.json(await importContracts(staffCtx(req).tenant, req.file.buffer, by(req), { commit: req.query.commit === '1', createParties: req.query.createParties === '1' }));
 }));
+/* Contracts → Migration: bringing existing contracts in (services/contracts/migration.ts). Everything here needs contracts.manage. */
+const mig = () => import('../services/contracts/migration.js');
+const manage = requireStaff('contracts.manage');
+contractsRouter.get('/migration', manage, ah(async (req, res) => { res.json(await (await mig()).migrationStatus(staffCtx(req).tenant)); }));
+/** Bulk signed copies (files or .zip): check what would happen, or with ?commit=1 attach them / put the rest in the inbox. */
+contractsRouter.post('/migration/files', manage, bulkContractUpload.array('files', 25), ah(async (req, res) => {
+  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+  res.json(await (await mig()).bulkFiles(staffCtx(req).tenant, files, by(req), { commit: req.query.commit === '1', kind: String(req.query.kind ?? 'SIGNED') }));
+}));
+contractsRouter.get('/migration/inbox', manage, ah(async (req, res) => { res.json({ files: await (await mig()).inboxList(staffCtx(req).tenant) }); }));
+contractsRouter.get('/migration/inbox/:fid/file', manage, ah(async (req, res) => { await sendStoredFile(res, await (await mig()).inboxDownload(staffCtx(req).tenant, req.params.fid)); }));
+contractsRouter.post('/migration/inbox/:fid/attach', manage, ah(async (req, res) => { res.json(await (await mig()).inboxAttach(staffCtx(req).tenant, req.params.fid, req.body ?? {}, by(req))); }));
+contractsRouter.post('/migration/inbox/:fid/contract', manage, ah(async (req, res) => { res.status(201).json(await (await mig()).inboxNewContract(staffCtx(req).tenant, req.params.fid, req.body ?? {}, by(req))); }));
+contractsRouter.delete('/migration/inbox/:fid', manage, ah(async (req, res) => { await (await mig()).inboxRemove(staffCtx(req).tenant, req.params.fid); res.json({ ok: true }); }));
+contractsRouter.post('/migration/read', manage, ah(async (req, res) => { res.json(await (await mig()).bulkRead(staffCtx(req).tenant, by(req))); }));
+contractsRouter.post('/migration/review/:cid', manage, ah(async (req, res) => {
+  const b = z.object({ readingId: z.string(), fields: z.array(z.string()).min(1) }).parse(req.body);
+  await (await mig()).useReading(staffCtx(req).tenant, req.params.cid, b.readingId, b.fields, by(req));
+  res.json({ ok: true });
+}));
+contractsRouter.get('/obligations/import-template.xlsx', manage, ah(async (_req, res) => { await sendXlsx(res, 'obligations-import.xlsx', await (await import('../services/contracts/manage.js')).obligationsTemplate()); }));
+contractsRouter.post('/obligations/import', manage, excelUpload.single('file'), ah(async (req, res) => {
+  if (!req.file) throw new HttpError(400, 'Choose the Excel file to upload');
+  res.json(await (await import('../services/contracts/manage.js')).importObligations(staffCtx(req).tenant, req.file.buffer, by(req), req.query.commit === '1'));
+}));
 /** Contracts → Obligations: across all contracts. */
 contractsRouter.get('/obligations', requireStaff('contracts.view'), ah(async (req, res) => {
   const s = staffCtx(req);
@@ -157,6 +182,8 @@ contractsRouter.post('/watch/run', requireStaff('contracts.manage'), ah(async (r
   if (!w.watchOn(t)) throw new HttpError(409, 'Contract watch is switched off in Administration → Contracts.');
   res.json(await w.runWatchFor(t));
 }));
+contractsRouter.post('/suggestions/:sid/pack', requireStaff('contracts.view'), ah(async (req, res) => { res.json(await (await import('../services/contracts/decisionPack.js')).packFor(staffCtx(req).tenant, req.params.sid)); }));
+contractsRouter.post('/suggestions/:sid/drafts/:key', requireStaff('contracts.manage'), ah(async (req, res) => { res.json(await (await import('../services/contracts/decisionPack.js')).draftFor(staffCtx(req).tenant, req.params.sid, req.params.key, by(req))); }));
 contractsRouter.post('/suggestions/:sid', requireStaff('contracts.manage'), ah(async (req, res) => { res.json({ suggestion: await (await watch()).decideSuggestion(staffCtx(req).tenant, req.params.sid, req.body, by(req)) }); }));
 contractsRouter.get('/prices-template.xlsx', requireStaff('contracts.manage'), ah(async (_req, res) => { await sendXlsx(res, 'contract-prices.xlsx', await pricesTemplate()); }));
 contractsRouter.get('/parents', requireStaff('contracts.view'), ah(async (req, res) => {

@@ -58,7 +58,7 @@ interface Report {
   expiring: { id: string; number: string; title: string; endDate: string; autoRenew: boolean; value: number | null; currency: string; party: string }[];
   obligations: { open: number; overdue: number; soon: number; done90: number; onTimeRate: number | null };
   cycle: { type: string; label: string; n: number; avg: number; median: number }[];
-  watch: { open: number; urgent: number } | null;
+  watch: { open: number; urgent: number; outcomes: { decided: number; dismissed: number; renewalDecisions: number; beforeNotice: number; beforeNoticePct: number | null; ended: number; endedValue: number; pricesRaised: number; priceExcessRaised: number; amendments: number } } | null;
   prices: { checked: number; above: number; excess: number; byContract: { id: string; number: string; above: number; excess: number }[] } | null;
 }
 const STAGES: [string, string][] = [['DRAFT', 'Draft'], ['IN_APPROVAL', 'In approval'], ['APPROVED', 'Approved'], ['WITH_PARTY', 'With the other party'], ['AGREED', 'Agreed'], ['SIGNING', 'Out for signature'], ['ACTIVE', 'Active'], ['EXPIRED', 'Expired'], ['TERMINATED', 'Terminated']];
@@ -92,6 +92,15 @@ export function ContractReports() {
           <table className="table static compact"><thead><tr><th>Type</th><th className="num">Signed</th><th className="num">Average days</th><th className="num">Median days</th></tr></thead><tbody>{r.cycle.map((x) => <tr key={x.type}><td>{x.label}</td><td className="num">{x.n}</td><td className="num">{x.avg}</td><td className="num">{x.median}</td></tr>)}</tbody></table>}</section>
         <section className="card pad section-card"><h3>Ending in the next 90 days</h3>{!r.expiring.length ? <p className="muted small">Nothing ends in the next 90 days.</p> :
           <table className="table static compact"><tbody>{r.expiring.map((x) => <tr key={x.id}><td className="mono small"><Link to={`/staff/contracts/${x.id}`}>{x.number}</Link></td><td>{x.title}<div className="muted small">{x.party}</div></td><td className="small">{fmtDate(x.endDate)}{x.autoRenew && <div className="muted">renews</div>}</td></tr>)}</tbody></table>}</section>
+        {r.watch && <section className="card pad section-card"><h3>Contract watch (last 12 months)</h3>
+          <table className="table static compact"><tbody>
+            <tr><td>Decisions made</td><td className="num">{r.watch.outcomes.decided}</td></tr>
+            <tr><td>Renewal decisions made before the notice date</td><td className="num">{r.watch.outcomes.renewalDecisions ? `${r.watch.outcomes.beforeNotice} of ${r.watch.outcomes.renewalDecisions} (${r.watch.outcomes.beforeNoticePct}%)` : '—'}</td></tr>
+            <tr><td>Contracts let end instead of renewing</td><td className="num">{r.watch.outcomes.ended}{r.watch.outcomes.endedValue ? ` · ${money(r.watch.outcomes.endedValue)}` : ''}</td></tr>
+            <tr><td>Price excess taken up with suppliers</td><td className="num">{r.watch.outcomes.pricesRaised ? `${money(r.watch.outcomes.priceExcessRaised)} (${r.watch.outcomes.pricesRaised})` : '—'}</td></tr>
+            <tr><td>Amendments started from watch</td><td className="num">{r.watch.outcomes.amendments}</td></tr>
+            <tr><td>Dismissed</td><td className="num">{r.watch.outcomes.dismissed}</td></tr>
+          </tbody></table></section>}
         {r.prices && <section className="card pad section-card"><h3>Order prices against contract prices (90 days)</h3>
           <p className="small">{r.prices.checked} order line{r.prices.checked === 1 ? '' : 's'} matched a contract price; <b>{r.prices.above}</b> above it, <b>{money(r.prices.excess)}</b> paid over the contract price.</p>
           {r.prices.byContract.length > 0 && <table className="table static compact"><tbody>{r.prices.byContract.map((x) => <tr key={x.id}><td className="mono small"><Link to={`/staff/contracts/${x.id}`}>{x.number}</Link></td><td className="num small">{x.above} lines</td><td className="num">{money(x.excess)}</td></tr>)}</tbody></table>}</section>}
