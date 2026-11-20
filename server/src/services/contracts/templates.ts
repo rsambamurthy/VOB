@@ -107,7 +107,7 @@ export async function clauseGroups(t: Tenant) {
 
 export const templateInput = z.object({
   name: z.string().trim().min(3, 'Give the template a name').max(120),
-  types: z.array(z.enum(CONTRACT_TYPE_KEYS as [string, ...string[]])).min(1, 'Choose at least one contract type'),
+  types: z.array(z.enum(['amendment', ...CONTRACT_TYPE_KEYS] as unknown as [string, ...string[]])).min(1, 'Choose at least one contract type'),
   direction: z.enum(['BUY', 'SELL', 'BOTH']).default('BOTH'),
   heading: z.string().trim().max(200).nullable().optional(),
   preamble: z.string().trim().max(5000).nullable().optional(),

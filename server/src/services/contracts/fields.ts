@@ -4,7 +4,7 @@
  * fields with no value print as [Field name] so the gap is visible in the draft.
  */
 import type { Contract, Party, Tenant } from '../../db/schema.js';
-import { companyDetails, CONTRACT_TYPES, JURISDICTIONS, type ContractType } from './config.js';
+import { companyDetails, CONTRACT_TYPES, JURISDICTIONS, type ContractType, typeInfo } from './config.js';
 
 export interface FieldDef { key: string; label: string; group: 'Contract' | 'Other party' | 'Our company' | 'Other' }
 export const MERGE_FIELDS: FieldDef[] = [
@@ -40,6 +40,10 @@ export const MERGE_FIELDS: FieldDef[] = [
   { key: 'us.signatoryRole', label: 'Our signatory’s role', group: 'Our company' },
   { key: 'us.city', label: 'Our city (place of signing)', group: 'Our company' },
   { key: 'us.role', label: 'Our role (Buyer / Seller)', group: 'Our company' },
+  { key: 'parent.number', label: 'Contract it amends — number', group: 'Contract' },
+  { key: 'parent.title', label: 'Contract it amends — title', group: 'Contract' },
+  { key: 'parent.signedDate', label: 'Contract it amends — signed on', group: 'Contract' },
+  { key: 'amendment.changes', label: 'What the amendment changes', group: 'Contract' },
   { key: 'today', label: 'Today’s date', group: 'Other' },
 ];
 const KNOWN = new Map(MERGE_FIELDS.map((f) => [f.key, f]));
@@ -77,12 +81,12 @@ const money = (v: number, cur: string) => `${cur} ${v.toLocaleString(cur === 'IN
 const addressOf = (a: Party['address']) => [a?.line1, a?.city, a?.region, a?.postalCode].filter(Boolean).join(', ');
 
 /** Every field's value for one contract (empty string = no value yet). */
-export function fieldValues(t: Tenant, c: Contract, party: Party): Record<string, string> {
+export function fieldValues(t: Tenant, c: Contract, party: Party, parent?: Contract | null, changes?: string[]): Record<string, string> {
   const us = companyDetails(t);
   const signer = (party.contacts ?? []).find((x) => x.signatory) ?? null;
   const value = c.value === null ? null : Number(c.value);
   return {
-    'contract.number': c.number, 'contract.title': c.title, 'contract.type': CONTRACT_TYPES[c.type as ContractType]?.label ?? c.type, 'contract.reference': c.reference ?? '',
+    'contract.number': c.number, 'contract.title': c.title, 'contract.type': typeInfo(c.type).label, 'contract.reference': c.reference ?? '',
     'contract.value': value === null ? '' : money(value, c.currency), 'contract.valueInWords': value === null ? '' : `${c.currency} ${amountInWords(value, c.currency)} only`,
     'contract.currency': c.currency, 'contract.startDate': longDate(c.startDate), 'contract.endDate': longDate(c.endDate),
     'contract.term': c.startDate ? (c.endDate ? `${longDate(c.startDate)} to ${longDate(c.endDate)}` : `from ${longDate(c.startDate)}, with no fixed end date`) : '',
@@ -93,6 +97,8 @@ export function fieldValues(t: Tenant, c: Contract, party: Party): Record<string
     'party.signatoryName': signer?.name ?? '', 'party.signatoryRole': signer?.role ?? '', 'party.role': c.direction === 'SELL' ? 'Customer' : 'Supplier',
     'us.legalName': us.legalName, 'us.address': us.address, 'us.registrationNo': us.registrationNo, 'us.taxNo': us.taxNo,
     'us.signatoryName': us.signatoryName, 'us.signatoryRole': us.signatoryRole, 'us.city': us.city, 'us.role': c.direction === 'SELL' ? 'Seller' : 'Buyer',
+    'parent.number': parent?.number ?? '', 'parent.title': parent?.title ?? '', 'parent.signedDate': longDate(parent?.signedDate ?? null),
+    'amendment.changes': (changes ?? []).map((x, i) => `(${String.fromCharCode(97 + i)}) ${x}`).join('\n'),
     today: longDate(new Date().toISOString().slice(0, 10)),
   };
 }
@@ -108,3 +114,13 @@ export function fill(text: string, values: Record<string, string>, missing?: Set
   });
 }
 export const fieldLabel = (key: string) => KNOWN.get(key)?.label ?? key;
+
+/** fieldValues with the contract an amendment changes loaded (drafting and the review portal use this). */
+export async function contractFieldValues(t: Tenant, c: Contract, party: Party) {
+  if (c.type !== 'amendment' || !c.parentId) return fieldValues(t, c, party);
+  const { db, schema } = await import('../../lib/db.js');
+  const { eq } = await import('drizzle-orm');
+  const parent = await db.query.contracts.findFirst({ where: eq(schema.contracts.id, c.parentId) });
+  const { amendmentLines } = await import('./manage.js');
+  return fieldValues(t, c, party, parent, parent && c.amends ? amendmentLines(parent, c.amends) : []);
+}

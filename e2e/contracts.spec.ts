@@ -8,7 +8,7 @@ test('contracts: the administrator switches it on; a party and a contract are cr
   await admin.goto('/staff/admin/contracts');
   await expect(admin.getByRole('heading', { name: 'Contracts', exact: true })).toBeVisible();
   // Later options are shown but can't be chosen.
-  await expect(admin.getByRole('checkbox', { name: /Obligations and milestones/ })).toBeDisabled();
+  await expect(admin.getByRole('checkbox', { name: /Read uploaded contracts/ })).toBeDisabled();
   await admin.getByRole('checkbox', { name: /Switch Contracts on/ }).check();
   await admin.getByRole('checkbox', { name: /Non-disclosure agreement/ }).check();
   await admin.getByRole('checkbox', { name: /Service \/ maintenance contract/ }).check();

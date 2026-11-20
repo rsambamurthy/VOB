@@ -52,6 +52,7 @@ export function StaffShell() {
     group('contracts', 'Contracts', 'contracts', [
       { to: '/staff/contracts', label: 'All contracts', icon: 'contracts', end: true, show: contracts },
       { to: '/staff/parties', label: 'Parties', icon: 'parties', show: contracts },
+      { to: '/staff/contract-obligations', label: 'Obligations', icon: 'actions', show: contracts },
       { to: '/staff/contract-templates', label: 'Templates', icon: 'agreement', show: contracts },
       { to: '/staff/contract-clauses', label: 'Clause library', icon: 'questionnaire', show: contracts },
     ]),

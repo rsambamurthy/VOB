@@ -1438,7 +1438,7 @@ Every night, contracts past their end date become **expired** — or, if they re
 1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration.
 2. **Switch Contracts on** for the workspace. When it is off the menus are hidden; your contracts are kept.
 3. **Contract types**: NDA, master agreement, SOW, rate contract, service, purchase, sales, distribution, lease, licence and other. Each has its own number prefix; some are only for suppliers or only for customers.
-4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party and e-signature. Obligations and renewal alerts are shown as *coming later*.
+4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates, internal approval, review by the other party, e-signature, obligations and milestones, renewal and notice alerts, order and invoice price checks (needs purchase orders) and sending contracts to the ERP (needs ERP integration). Rules also set the **price tolerance** (how far above the contract price is accepted) and how many days before the notice date the owner is reminded.
 5. **Rule defaults**: notice period, renewal term, how many days before the end a contract counts as *expiring*, and whether a value is required. **Lock** a rule so it can't be changed on a contract.
 
 6. **Our company on contracts**: your legal name, registration and tax numbers, address, city (used for courts, the arbitration seat and the place of signing) and signatory — printed in documents. Empty boxes use your billing details.
@@ -1509,6 +1509,22 @@ The built-in wording is a starting point — have your counsel review it before 
 - With UAE PASS (and Test signing), each signer presses **Sign** in VendorGate when it is their turn and signs with their own UAE PASS account.
 - When everyone has signed, the signed PDF is stored as the signed copy and the contract becomes **active**; the owner and the other party are emailed.
 - **Cancel the request** stops it at the provider. Paper signatures still work: upload the signed copy and **Mark as signed**.`,
+  },
+  {
+    id: 'contract-obligations', title: 'Managing signed contracts', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'Obligations and reminders, renewal and notice alerts, amendments, agreed prices and price checks, and the ERP.',
+    screens: ['^/staff/contract-obligations', '^/staff/contracts/'], contexts: ['contract-obligations', 'contracts'],
+    keywords: 'obligation milestone deliverable payment report reminder overdue recurring renewal notice alert amendment extend extension change value price list rate price check tolerance invoice purchase order erp blanket agreement',
+    related: ['contracts', 'contract-drafting', 'contract-signing'],
+    body: `**Obligations.** On a contract, **+ Add obligation**: what has to be done, by whom (us or them), the due date, whether it repeats (monthly, quarterly, yearly), an owner and how many days before to remind. The owner is emailed before the due date and again if it becomes overdue. **Done** on a repeating one adds the next. Contracts → **Obligations** lists them across all contracts — overdue, due in 30 days, only mine.
+
+**Renewal and notice alerts.** The contract's owner is emailed once when it enters the *expiring* window, and once before the last day to give notice (end date minus the notice period) — so an automatic renewal is never a surprise.
+
+**Amendments.** Dates, value, renewal or notice of a signed contract change through an amendment: **+ New amendment**, say what changes, and it is created as a draft under the contract (AMD-2026-0001). Draft it from the *Amendment agreement* template (the changes print as (a), (b), (c)…), get it approved, reviewed and signed like any contract. When it is signed the changes apply to the contract, and both show the history.
+
+**Agreed prices.** Add the contract's prices (or import them from Excel), matched on the ERP item code. Purchase orders and supplier invoices from that supplier show **Contract prices**: each line's price against the contract price, flagged when it is above the price plus your tolerance.
+
+**ERP.** When a supplier contract (with an onboarded supplier) is signed, it goes to the ERP as a blanket agreement with its prices, through your ERP connection; the contract shows whether it was sent, and **Send again** retries.`,
   },
 ];
 

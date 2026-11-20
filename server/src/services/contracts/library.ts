@@ -15,6 +15,11 @@ export interface BuiltInTemplate { key: string; name: string; types: string[]; d
 const PREAMBLE = 'This agreement (the “Agreement”) is made on {{today}} between {{us.legalName}}, {{us.address}} (the “{{us.role}}”), and {{party.legalName}}, {{party.address}} (the “{{party.role}}”). The {{us.role}} and the {{party.role}} are each a “Party” and together the “Parties”.';
 
 export const BUILT_IN_CLAUSES: BuiltInClause[] = [
+  /* ---------- amendments ---------- */
+  { group: 'amendment-changes', jurisdiction: 'ALL', title: 'Amendment', category: 'Amendments',
+    body: 'This Amendment changes {{parent.title}} ({{parent.number}}) signed on {{parent.signedDate}} (the “Agreement”). With effect from {{contract.startDate}}, the Agreement is changed as follows:\n{{amendment.changes}}' },
+  { group: 'amendment-rest', jurisdiction: 'ALL', title: 'Rest of the Agreement', category: 'Amendments',
+    body: 'Except as changed by this Amendment, the Agreement remains unchanged and in full force. Words defined in the Agreement have the same meaning in this Amendment. If this Amendment and the Agreement conflict, this Amendment prevails.' },
   /* ---------- commercial ---------- */
   { group: 'scope', jurisdiction: 'ALL', title: 'Scope', category: 'Commercial',
     body: 'The {{party.role}} shall provide the goods and / or services described below and in any schedule to this Agreement (the “Deliverables”), with due skill, care and diligence and in line with good industry practice:\n{{contract.description}}' },
@@ -118,17 +123,27 @@ export const BUILT_IN_TEMPLATES: BuiltInTemplate[] = [
   { key: 'msa', name: 'Master services agreement', types: ['msa'], direction: 'BOTH', heading: 'MASTER SERVICES AGREEMENT',
     preamble: `${PREAMBLE} Each piece of work is agreed in a statement of work that refers to this Agreement.`,
     sections: ['scope', 'term', 'price-payment', 'taxes', 'ip', 'confidentiality', 'data-protection', 'warranties', 'liability', 'indemnity', ...COMMERCIAL_END] },
+  { key: 'amendment', name: 'Amendment agreement', types: ['amendment'], direction: 'BOTH', heading: 'AMENDMENT AGREEMENT',
+    preamble: 'This Amendment is made on {{today}} between {{us.legalName}}, {{us.address}} (the “{{us.role}}”), and {{party.legalName}}, {{party.address}} (the “{{party.role}}”).',
+    sections: ['amendment-changes', 'amendment-rest', 'governing-law', 'stamp-duty'] },
   { key: 'sales', name: 'Sales agreement', types: ['sales', 'distribution'], direction: 'SELL', heading: 'SALES AGREEMENT', preamble: PREAMBLE,
     sections: ['scope', 'orders-delivery', 'term', 'price-payment', 'taxes', 'warranties', 'confidentiality', 'liability', ...COMMERCIAL_END] },
 ];
 
-/** Put the built-in library into a workspace if it isn't there yet (only missing clauses and templates are added). */
+/**
+ * Put the built-in library into a workspace: everything the first time, and later only what is new in a release
+ * (clauses by group + country, templates by key). Edited, archived or renamed items are never touched.
+ */
+const checked = new Set<string>();
 export async function ensureLibrary(t: Pick<Tenant, 'id'>) {
-  const have = await db.select({ group: schema.contractClauses.group, jurisdiction: schema.contractClauses.jurisdiction }).from(schema.contractClauses).where(eq(schema.contractClauses.tenantId, t.id));
-  if (have.length) return;
-  await db.insert(schema.contractClauses).values(BUILT_IN_CLAUSES.map((c) => ({ tenantId: t.id, group: c.group, jurisdiction: c.jurisdiction, title: c.title, category: c.category, body: c.body, fallbacks: c.fallbacks ?? [], guidance: c.guidance ?? null, builtIn: true }))).onConflictDoNothing();
-  const tpl = await db.select({ id: schema.contractTemplates.id }).from(schema.contractTemplates).where(and(eq(schema.contractTemplates.tenantId, t.id), eq(schema.contractTemplates.builtIn, true))).limit(1);
-  if (!tpl.length) await db.insert(schema.contractTemplates).values(BUILT_IN_TEMPLATES.map((b) => ({ tenantId: t.id, name: b.name, kind: 'CLAUSES', types: b.types, direction: b.direction, heading: b.heading, preamble: b.preamble,
-    sections: b.sections.map((g) => ({ group: g, required: !(b.optional ?? []).includes(g) })), builtIn: true })));
+  if (checked.has(t.id)) return;
+  const have = new Set((await db.select({ group: schema.contractClauses.group, jurisdiction: schema.contractClauses.jurisdiction }).from(schema.contractClauses).where(eq(schema.contractClauses.tenantId, t.id))).map((c) => `${c.group}|${c.jurisdiction}`));
+  const missing = BUILT_IN_CLAUSES.filter((c) => !have.has(`${c.group}|${c.jurisdiction}`));
+  if (missing.length) await db.insert(schema.contractClauses).values(missing.map((c) => ({ tenantId: t.id, group: c.group, jurisdiction: c.jurisdiction, title: c.title, category: c.category, body: c.body, fallbacks: c.fallbacks ?? [], guidance: c.guidance ?? null, builtIn: true }))).onConflictDoNothing();
+  const keys = new Set((await db.select({ k: schema.contractTemplates.builtInKey }).from(schema.contractTemplates).where(and(eq(schema.contractTemplates.tenantId, t.id), eq(schema.contractTemplates.builtIn, true)))).map((r) => r.k));
+  const newTemplates = BUILT_IN_TEMPLATES.filter((b) => !keys.has(b.key));
+  if (newTemplates.length) await db.insert(schema.contractTemplates).values(newTemplates.map((b) => ({ tenantId: t.id, name: b.name, kind: 'CLAUSES', types: b.types, direction: b.direction, heading: b.heading, preamble: b.preamble,
+    sections: b.sections.map((g) => ({ group: g, required: !(b.optional ?? []).includes(g) })), builtIn: true, builtInKey: b.key })));
+  checked.add(t.id);
 }
 export const builtInClause = (group: string, jurisdiction: string) => BUILT_IN_CLAUSES.find((c) => c.group === group && c.jurisdiction === jurisdiction) ?? null;

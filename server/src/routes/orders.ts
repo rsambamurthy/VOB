@@ -86,7 +86,8 @@ ordersRouter.get('/orders/:id', requireStaff('orders.view'), ah(async (req, res)
   const s = staffCtx(req);
   const d = await orderDetail(s.tenant.id, req.params.id);
   const [ships, invoices, asnRequired] = await Promise.all([shipmentsFor(d.po.id), listInvoices({ tenantId: s.tenant.id, poId: d.po.id }), asnRequiredFor(d.po)]);
-  res.json({ ...d, messages: (await messagesFor(d.po.id)).map(messageView), shipments: ships, invoices: invoices.rows, asnRequired });
+  const priceCheck = await (await import('../services/contracts/manage.js')).priceCheck(s.tenant, d.po.vendorId, d.po.currency, d.lines.map((l: { id: string; itemCode: string | null; unitPrice: string }) => ({ key: l.id, itemCode: l.itemCode, unitPrice: Number(l.unitPrice) })));
+  res.json({ ...d, messages: (await messagesFor(d.po.id)).map(messageView), shipments: ships, invoices: invoices.rows, asnRequired, priceCheck });
 }));
 
 /** A buyer records the supplier's acceptance (e.g. confirmed by phone or email). */

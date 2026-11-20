@@ -1,3 +1,4 @@
+import { PriceCheckCard, type PriceCheck } from '../../components/PriceCheck';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
@@ -16,7 +17,7 @@ export function OrderDetail() {
   const { id = '' } = useParams();
   const { can } = useSession();
   useHelpContext('order');
-  const [d, setD] = useState<OrderDetailData & { messages: Message[]; shipments: Shipment[]; invoices: InvoiceRow[]; asnRequired: boolean }>();
+  const [d, setD] = useState<OrderDetailData & { messages: Message[]; shipments: Shipment[]; invoices: InvoiceRow[]; asnRequired: boolean; priceCheck?: PriceCheck | null }>();
   const [cancel, setCancel] = useState<Shipment>();
   const [error, setError] = useState<string>();
   const [accepting, setAccepting] = useState(false);
@@ -43,6 +44,7 @@ export function OrderDetail() {
         <div className="toolbar"><h3>Lines</h3><span className="muted small">{d.lines.length} line{d.lines.length === 1 ? '' : 's'}</span></div>
         <LinesTable lines={d.lines} currency={po.currency} />
       </section>
+      <PriceCheckCard check={d.priceCheck} currency={po.currency} lines={d.lines.map((l) => ({ key: l.id, label: `${l.lineNo}. ${l.itemCode ?? ''} ${l.description}`.trim(), unitPrice: Number(l.unitPrice) }))} />
       {d.asnRequired && po.status === 'OPEN' && !d.shipments.length && d.lines.some((l) => l.lineType === 'GOODS') && <Alert kind="info">This buying group needs a shipment notice from the supplier for every delivery — none has been sent yet.</Alert>}
       <ShipmentsCard shipments={d.shipments} onCancel={can('orders.manage') ? setCancel : undefined} />
       {d.invoices.length > 0 && <section className="card section-card"><div className="toolbar"><h3>Supplier invoices</h3></div><InvoicesTable rows={d.invoices} base="/staff/invoices" showPo={false} /></section>}

@@ -288,6 +288,13 @@
       "when": 1795159254765,
       "tag": "0040_contracts_negotiation",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795162165899,
+      "tag": "0041_contracts_manage",
+      "breakpoints": true
     }
   ]
 }

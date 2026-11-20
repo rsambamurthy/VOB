@@ -11,6 +11,7 @@ import { ContractStatus, DIRECTION_LABEL, KIND_LABEL, typeLabel, useContractSetu
 import { contractBody, ContractForm, type ContractData } from './ContractForm';
 import { DraftingCard, ReopenButton, type Drafting } from './Drafting';
 import { NegotiationCard, SigningCard, type Negotiation, type Signing } from './Negotiation';
+import { AmendmentsCard, AmendsCard, ErpCard, ObligationsCard, PricesCard, type Manage } from './Manage';
 import { FlowPanel, type FlowDecision } from '../../components/ApprovalFlow';
 
 interface Summary { id: string; number: string; reference: string | null; title: string; direction: Direction; type: string; status: string; value: number | null; currency: string; startDate: string | null; endDate: string | null; signedDate: string | null; autoRenew: boolean }
@@ -22,6 +23,7 @@ interface Detail {
   drafting: Drafting;
   negotiation: Negotiation;
   signing: Signing;
+  manage: Manage;
   history: { actor: string; action: string; detail: Record<string, unknown> | null; createdAt: string }[];
   editable: 'all' | string[];
 }
@@ -29,6 +31,8 @@ const ACTIONS: Record<string, string> = {
   CONTRACT_CREATED: 'Created', CONTRACT_UPDATED: 'Details changed', CONTRACT_SIGNED: 'Marked as signed', CONTRACT_TERMINATED: 'Terminated', CONTRACT_EXPIRED: 'Expired',
   CONTRACT_RENEWED: 'Renewed automatically', CONTRACT_FILE_ADDED: 'File added', CONTRACT_FILE_REMOVED: 'File removed',
   CONTRACT_DRAFT_STARTED: 'Drafted from a template', CONTRACT_DRAFT_SAVED: 'Wording changed', CONTRACT_DOCUMENT_MADE: 'Document made', CONTRACT_SUBMITTED: 'Submitted for approval',
+  CONTRACT_AMENDED: 'Amended', CONTRACT_OBLIGATION_ADDED: 'Obligation added', CONTRACT_OBLIGATION_UPDATED: 'Obligation changed', CONTRACT_OBLIGATION_DONE: 'Obligation done', CONTRACT_OBLIGATION_WAIVED: 'Obligation waived',
+  CONTRACT_OBLIGATION_OPEN: 'Obligation reopened', CONTRACT_OBLIGATION_REMOVED: 'Obligation removed', CONTRACT_PRICES_SAVED: 'Prices saved', CONTRACT_SENT_TO_ERP: 'Sent to the ERP',
   CONTRACT_APPROVED: 'Approved', CONTRACT_SENT_FOR_REVIEW: 'Sent to the other party', CONTRACT_REVIEWER_SIGNED_IN: 'Opened by the other party', CONTRACT_PARTY_COMMENTED: 'Comment from the other party',
   CONTRACT_PARTY_UPLOADED: 'Marked-up copy from the other party', CONTRACT_PARTY_ACCEPTED: 'Accepted by the other party', CONTRACT_PARTY_CHANGES: 'Changes asked for', CONTRACT_COMMENT_SENT: 'Reply sent', CONTRACT_NOTE_ADDED: 'Internal note',
   CONTRACT_COMMENT_ACCEPTED: 'Their wording accepted', CONTRACT_COMMENT_DECLINED: 'Their wording declined', CONTRACT_COMMENT_RESOLVED: 'Comment resolved', CONTRACT_SENT_FOR_SIGNATURE: 'Sent for signature',
@@ -128,8 +132,13 @@ export function ContractDetail() {
             )}
           </section>
 
+          <AmendsCard m={d.manage} />
           <DraftingCard<Detail> contractId={c.id} status={c.status} drafting={d.drafting} manage={manage} onDetail={onDetail} />
           <NegotiationCard contractId={c.id} status={c.status} partyName={d.party.name} clauses={d.drafting.draft?.clauses ?? []} n={d.negotiation} manage={manage} canShare={canShare} onDetail={onDetail} />
+          <AmendmentsCard contract={{ ...c, noticeDays: d.contract.noticeDays, renewalTermMonths: d.contract.renewalTermMonths }} m={d.manage} manage={manage} />
+          <ObligationsCard contractId={c.id} m={d.manage} manage={manage} ended={c.status === 'EXPIRED' || c.status === 'TERMINATED'} owners={setup?.owners ?? []} partyName={d.party.name} onDetail={onDetail} />
+          {c.type !== 'amendment' && <PricesCard contractId={c.id} currency={c.currency} m={d.manage} manage={manage} editable={!['EXPIRED', 'TERMINATED', 'SIGNING'].includes(c.status)} onDetail={onDetail} reload={load} />}
+          {c.type !== 'amendment' && c.direction === 'BUY' && <ErpCard contractId={c.id} m={d.manage} manage={manage} active={c.status === 'ACTIVE'} onDetail={onDetail} />}
           <SigningCard contractId={c.id} status={c.status} partyName={d.party.name} s={d.signing} contacts={d.negotiation.contacts} me={{ name: me?.user.name ?? '', email: me?.user.email ?? '' }} manage={manage} canSend={canSign} onDetail={onDetail} />
 
           <section className="card pad section-card">

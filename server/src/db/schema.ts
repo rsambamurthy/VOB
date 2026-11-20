@@ -700,6 +700,8 @@ export const poMessages = pgTable('po_messages', {
   poId: text('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }),
   /** Award messages (kind AWARD): the sourcing event and the winning supplier, instead of a purchase order. */
   eventId: text('event_id'),
+  /** Contract messages (kind CONTRACT): the contract sent to the ERP. */
+  contractId: text('contract_id'),
   vendorId: text('vendor_id'),
   kind: text('kind').notNull(),
   connector: text('connector').notNull(),
@@ -1601,6 +1603,10 @@ export const contracts = pgTable('contracts', {
   jurisdiction: text('jurisdiction'),
   /** The drafted wording: each clause with the variant chosen (standard, a fallback or edited). See services/contracts/drafting.ts. */
   draft: jsonb('draft').$type<ContractDraft>(),
+  /** An amendment (type 'amendment', parentId = the contract it changes): what it changes when it is signed. */
+  amends: jsonb('amends').$type<AmendmentChanges>(),
+  /** Renewal and notice alerts already sent (the date each was about), so they go once. */
+  alerts: jsonb('alerts').$type<{ expiring?: string; notice?: string }>(),
   value: numeric('value', { precision: 18, scale: 2 }),
   currency: text('currency').notNull(),
   startDate: date('start_date', { mode: 'string' }),
@@ -1651,6 +1657,7 @@ export type ContractFile = typeof contractFiles.$inferSelect;
 
 /** One clause of a drafted contract. `variant`: 'standard', a fallback key, or 'custom' (edited wording). */
 export interface DraftClause { clauseId: string; group: string; title: string; variant: string; body: string; required: boolean }
+export interface AmendmentChanges { endDate?: string | null; value?: number | null; noticeDays?: number | null; autoRenew?: boolean; renewalTermMonths?: number | null; description?: string | null; appliedAt?: string }
 export interface ContractDraft { clauses: DraftClause[]; nonStandard: boolean; fallback: boolean; version: number; generatedVersion?: number; savedAt: string; savedBy: string }
 
 /**
@@ -1700,6 +1707,8 @@ export const contractTemplates = pgTable('contract_templates', {
   fileName: text('file_name'), mimeType: text('mime_type'), size: integer('size'), storagePath: text('storage_path'), storageDriver: text('storage_driver'), sha256: text('sha256'),
   fields: text('fields').array().notNull().default(sql`'{}'::text[]`),
   builtIn: boolean('built_in').notNull().default(false),
+  /** Built-in templates: their key in library.ts (new built-ins are added to existing workspaces by it). */
+  builtInKey: text('built_in_key'),
   /** ACTIVE · ARCHIVED */
   status: text('status').notNull().default('ACTIVE'),
   updatedByName: text('updated_by_name'),
@@ -1793,3 +1802,41 @@ export const contractSignatures = pgTable('contract_signatures', {
   lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
 }, (t) => [index('contract_signatures_contract_idx').on(t.contractId), index('contract_signatures_status_idx').on(t.status)]);
 export type ContractSignature = typeof contractSignatures.$inferSelect;
+
+/** What each side has to do under a contract: deliverables, payments, reports, renewals… with owner, due date and reminders. */
+export const contractObligations = pgTable('contract_obligations', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  /** DELIVERABLE · PAYMENT · SERVICE_LEVEL · REPORT · COMPLIANCE · OTHER */
+  kind: text('kind').notNull(),
+  /** Who has to do it: US or PARTY. */
+  side: text('side').notNull(),
+  ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
+  dueDate: date('due_date', { mode: 'string' }).notNull(),
+  /** NONE · MONTHLY · QUARTERLY · YEARLY — a done recurring obligation creates the next one. */
+  recurrence: text('recurrence').notNull().default('NONE'),
+  amount: numeric('amount', { precision: 18, scale: 2 }),
+  remindDays: integer('remind_days').notNull().default(7),
+  /** OPEN · DONE · MISSED · WAIVED */
+  status: text('status').notNull().default('OPEN'),
+  note: text('note'),
+  doneAt: timestamp('done_at', { withTimezone: true }), doneByName: text('done_by_name'),
+  /** Reminder already sent for this due date / overdue notice sent. */
+  remindedAt: timestamp('reminded_at', { withTimezone: true }), overdueAt: timestamp('overdue_at', { withTimezone: true }),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('contract_obligations_contract_idx').on(t.contractId), index('contract_obligations_due_idx').on(t.tenantId, t.status, t.dueDate)]);
+export type ContractObligation = typeof contractObligations.$inferSelect;
+
+/** Agreed prices on a contract (rate contracts, price lists): checked against purchase orders and supplier invoices. */
+export const contractPrices = pgTable('contract_prices', {
+  id: id(), tenantId: tenantId(),
+  contractId: text('contract_id').notNull().references(() => contracts.id, { onDelete: 'cascade' }),
+  itemCode: text('item_code'),
+  description: text('description').notNull(),
+  uom: text('uom'),
+  price: numeric('price', { precision: 18, scale: 4 }).notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('contract_prices_contract_idx').on(t.contractId), index('contract_prices_item_idx').on(t.tenantId, t.itemCode)]);
+export type ContractPrice = typeof contractPrices.$inferSelect;

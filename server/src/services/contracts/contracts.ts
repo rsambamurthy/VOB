@@ -7,7 +7,7 @@
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../../lib/db.js';
-import type { Contract, ContractFile, Tenant } from '../../db/schema.js';
+import type { AmendmentChanges, Contract, ContractFile, Tenant } from '../../db/schema.js';
 import { HttpError } from '../../lib/http.js';
 import { audit } from '../../lib/audit.js';
 import { nextYearlyNumber } from '../../lib/numbering.js';
@@ -16,7 +16,7 @@ import { localeFor } from '../../countries/registry.js';
 import { defineJob } from '../../jobs/queue.js';
 import { logger } from '../../lib/logger.js';
 import { DOCX, removeStored, storeUpload } from '../../integrations/storage/index.js';
-import { CONTRACT_TYPES, CONTRACT_TYPE_KEYS, assertTypeOn, contractRules, typeState, directionsOn, optionOn, ruleDefaults, type ContractType, type Direction } from './config.js';
+import { CONTRACT_TYPES, CONTRACT_TYPE_KEYS, typeInfo, assertTypeOn, contractRules, typeState, directionsOn, optionOn, ruleDefaults, type ContractType, type Direction } from './config.js';
 import { createParty, getParty, KIND_LABEL } from './parties.js';
 import { draftView, touchDraft } from './drafting.js';
 import { negotiationView } from './negotiation.js';
@@ -62,11 +62,14 @@ export type ContractInput = z.input<typeof contractInput>;
 const ACTIVE_EDITABLE = ['ownerId', 'description', 'category', 'noticeDays', 'autoRenew', 'renewalTermMonths', 'reference'] as const;
 
 async function check(t: Tenant, input: z.infer<typeof contractInput>, self?: Contract) {
-  if (!(CONTRACT_TYPE_KEYS as string[]).includes(input.type)) throw new HttpError(400, 'Choose a contract type');
+  const amendment = input.type === 'amendment';
+  if (!amendment && !(CONTRACT_TYPE_KEYS as string[]).includes(input.type)) throw new HttpError(400, 'Choose a contract type');
   const type = input.type as ContractType;
-  assertTypeOn(t, type);
-  if (!directionsOn(t).includes(input.direction)) throw new HttpError(400, 'Customer contracts are switched off in Administration → Contracts.');
-  if (!(CONTRACT_TYPES[type].directions as readonly string[]).includes(input.direction)) throw new HttpError(400, `${CONTRACT_TYPES[type].label} is only for ${input.direction === 'BUY' ? 'customer' : 'supplier'} contracts.`);
+  if (!amendment) {
+    assertTypeOn(t, type);
+    if (!directionsOn(t).includes(input.direction)) throw new HttpError(400, 'Customer contracts are switched off in Administration → Contracts.');
+    if (!(CONTRACT_TYPES[type].directions as readonly string[]).includes(input.direction)) throw new HttpError(400, `${CONTRACT_TYPES[type].label} is only for ${input.direction === 'BUY' ? 'customer' : 'supplier'} contracts.`);
+  } else if (!input.parentId) throw new HttpError(400, 'An amendment needs the contract it changes.');
   const party = await getParty(t.id, input.partyId);
   if (party.kind !== PARTY_KIND_FOR[input.direction]) throw new HttpError(400, `A ${DIRECTION_LABEL[input.direction].toLowerCase()} needs a ${KIND_LABEL[PARTY_KIND_FOR[input.direction]].toLowerCase()} as the other party.`);
   if (party.status !== 'ACTIVE' && party.id !== self?.partyId) throw new HttpError(400, `${party.name} is archived.`);
@@ -74,12 +77,15 @@ async function check(t: Tenant, input: z.infer<typeof contractInput>, self?: Con
   if (input.autoRenew && !input.endDate) throw new HttpError(400, 'An automatically renewing contract needs an end date.');
   // Locked rules (e.g. the notice period) and their ranges apply to the contract's own terms.
   const rules = contractRules(t, { noticeDays: input.noticeDays ?? undefined, renewalTermMonths: input.renewalTermMonths ?? undefined });
-  if (rules.valueRequired === 'required' && type !== 'nda' && input.value == null) throw new HttpError(400, 'Enter the contract value.');
+  if (rules.valueRequired === 'required' && type !== 'nda' && !amendment && input.value == null) throw new HttpError(400, 'Enter the contract value.');
   if (input.ownerId) {
     const owner = await db.query.users.findFirst({ where: and(eq(U.tenantId, t.id), eq(U.id, input.ownerId)) });
     if (!owner || owner.status === 'DISABLED') throw new HttpError(400, 'Choose an owner from your team.');
   }
-  if (input.parentId) {
+  if (input.parentId && amendment) {
+    const parent = await db.query.contracts.findFirst({ where: and(eq(C.tenantId, t.id), eq(C.id, input.parentId)) });
+    if (!parent || parent.partyId !== input.partyId || parent.type === 'amendment') throw new HttpError(400, 'An amendment changes a signed contract with the same party.');
+  } else if (input.parentId) {
     if (!optionOn(t, 'contractHierarchy')) throw new HttpError(400, 'Linked contracts are switched off.');
     const parent = await db.query.contracts.findFirst({ where: and(eq(C.tenantId, t.id), eq(C.id, input.parentId)) });
     if (!parent) throw new HttpError(400, 'The master agreement wasn’t found.');
@@ -114,15 +120,15 @@ const contractAudit = (t: Tenant, c: Pick<Contract, 'id' | 'number'>, by: By, ac
   audit({ tenantId: t.id, actor: by.name, action, detail: { subjectId: c.id, number: c.number, ...extra }, ip: by.ip });
 
 /** New contract: a draft, or — with `signed` — a contract already signed outside VendorGate (status by its dates). */
-export async function createContract(t: Tenant, raw: unknown, by: By, opts: { signed?: boolean; source?: 'MANUAL' | 'IMPORT' | 'AWARD'; sourcingEventId?: string } = {}) {
+export async function createContract(t: Tenant, raw: unknown, by: By, opts: { signed?: boolean; source?: 'MANUAL' | 'IMPORT' | 'AWARD'; sourcingEventId?: string; amends?: AmendmentChanges } = {}) {
   const input = contractInput.parse(raw);
   await check(t, input);
   if (opts.signed && !input.signedDate) throw new HttpError(400, 'Enter the date it was signed.');
   const data = withDefaults(t, input);
-  const prefix = CONTRACT_TYPES[input.type as ContractType].prefix;
+  const prefix = typeInfo(input.type).prefix;
   const c = await db.transaction(async (tx) => {
     const number = await nextYearlyNumber(tx, { table: C, tenantCol: C.tenantId, numberCol: C.number }, t.id, prefix);
-    const [row] = await tx.insert(C).values({ ...data, tenantId: t.id, number, status: opts.signed ? signedStatus(data.endDate ?? null) : 'DRAFT', source: opts.source ?? 'MANUAL', sourcingEventId: opts.sourcingEventId ?? null, createdById: by.id, createdByName: by.name }).returning();
+    const [row] = await tx.insert(C).values({ ...data, tenantId: t.id, number, status: opts.signed ? signedStatus(data.endDate ?? null) : 'DRAFT', source: opts.source ?? 'MANUAL', sourcingEventId: opts.sourcingEventId ?? null, amends: opts.amends ?? null, createdById: by.id, createdByName: by.name }).returning();
     return row;
   });
   await contractAudit(t, c, by, 'CONTRACT_CREATED', { title: c.title, status: c.status, source: c.source });
@@ -160,8 +166,9 @@ export async function markSigned(t: Tenant, id: string, raw: unknown, by: By) {
   if (!c.startDate) throw new HttpError(400, 'Enter the start date first.');
   const [signed] = await db.select({ n: count() }).from(F).where(and(eq(F.contractId, c.id), eq(F.kind, 'SIGNED')));
   if (!signed.n) throw new HttpError(400, 'Upload the signed copy first.');
-  const [row] = await db.update(C).set({ signedDate, status: signedStatus(c.endDate) }).where(eq(C.id, c.id)).returning();
+  const [row] = await db.update(C).set({ signedDate, status: c.type === 'amendment' ? 'ACTIVE' : signedStatus(c.endDate) }).where(eq(C.id, c.id)).returning();
   await contractAudit(t, c, by, 'CONTRACT_SIGNED', { signedDate, status: row.status });
+  await (await import('./manage.js')).onSigned(t, row, by.name);
   return row;
 }
 
@@ -208,6 +215,10 @@ export async function removeFile(t: Tenant, id: string, fileId: string, by: By) 
   const f = await db.query.contractFiles.findFirst({ where: and(eq(F.tenantId, t.id), eq(F.contractId, c.id), eq(F.id, fileId)) });
   if (!f) throw new HttpError(404, 'File not found');
   if (c.status !== 'DRAFT' && f.kind === 'SIGNED') throw new HttpError(409, 'The signed copy of a signed contract is kept.');
+  if (f.kind === 'SIGNING' || f.kind === 'REDLINE') throw new HttpError(409, 'This file is kept with the contract’s history.');
+  const sent = await db.select({ ids: schema.contractVersions.fileIds }).from(schema.contractVersions).where(eq(schema.contractVersions.contractId, c.id));
+  const signing = await db.select({ id: schema.contractSignatures.id }).from(schema.contractSignatures).where(and(eq(schema.contractSignatures.contractId, c.id), eq(schema.contractSignatures.documentFileId, f.id))).limit(1);
+  if (sent.some((v) => v.ids.includes(f.id)) || signing.length) throw new HttpError(409, 'This file was sent to the other party, so it is kept with the contract’s history.');
   await db.delete(F).where(eq(F.id, f.id));
   await removeStored(f);
   await contractAudit(t, c, by, 'CONTRACT_FILE_REMOVED', { kind: f.kind, fileName: f.fileName });
@@ -281,6 +292,7 @@ export async function contractDetail(t: Tenant, id: string, userId: string) {
     editable: c.status === 'DRAFT' ? 'all' : ['ACTIVE', 'APPROVED', 'WITH_PARTY', 'AGREED'].includes(c.status) ? ACTIVE_EDITABLE : [],
     drafting: await draftView(t, c, userId),
     negotiation: await negotiationView(t, c),
+    manage: await (await import('./manage.js')).manageView(t, c),
     signing: await signingView(t, c, (await db.query.users.findFirst({ where: eq(U.id, userId), columns: { email: true } }))?.email ?? ''),
   };
 }
@@ -409,4 +421,4 @@ export async function runContractEndDates() {
   if (expired || renewed) logger.info({ expired, renewed }, 'contract end dates');
   return { expired, renewed };
 }
-defineJob('contracts.daily', async () => { await runContractEndDates(); }, { retryLimit: 1, expireInSeconds: 1800 });
+defineJob('contracts.daily', async () => { await runContractEndDates(); await (await import('./manage.js')).runContractReminders(); }, { retryLimit: 1, expireInSeconds: 1800 });

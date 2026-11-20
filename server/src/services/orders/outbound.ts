@@ -26,14 +26,18 @@ import { oracleAcknowledgement } from './oracle.js';
 const { poMessages, purchaseOrders, poLines, tenants, legalEntities, shipments, shipmentLines, supplierInvoices, supplierInvoiceLines } = schema;
 const RETRIES = 4;
 
-export type MessageKind = 'ACCEPTANCE' | 'ASN' | 'ASN_CANCEL' | 'INVOICE' | 'AWARD';
+export type MessageKind = 'ACCEPTANCE' | 'ASN' | 'ASN_CANCEL' | 'INVOICE' | 'AWARD' | 'CONTRACT';
 export interface AckInfo { lineIds: string[]; by: string; auto: boolean; note?: string | null }
 type Payload = { info?: AckInfo; shipmentId?: string; invoiceId?: string; by?: string };
 /** A sourcing award for one supplier, ready to become a purchase order in the ERP (services/sourcing/awards.ts). */
 export interface AwardMessage { eventNumber: string; title: string; format: string; currency: string; supplierCode: string; supplierName: string; vendorId: string; awardedAt: string; paymentTerms: string | null; deliveryDays: number | null; total: number;
   lines: { lot: number; lotTitle: string; lineNo: number; itemCode: string | null; description: string; quantity: number; unit: string; unitPrice: number; amount: number; sharePct: number }[] }
 
-export const EVENT: Record<MessageKind, string> = { ACCEPTANCE: 'purchase_order.accepted', ASN: 'shipment.created', ASN_CANCEL: 'shipment.cancelled', INVOICE: 'invoice.approved', AWARD: 'sourcing.award.approved' };
+/** A signed supplier contract with its agreed prices, ready to become a blanket agreement in the ERP (services/contracts/manage.ts). */
+export interface ContractMessage { contractNumber: string; title: string; type: string; supplierCode: string; supplierName: string; vendorId: string; currency: string; value: number | null;
+  startDate: string | null; endDate: string | null; signedDate: string | null; reference: string | null; lines: { lineNo: number; itemCode: string | null; description: string; uom: string | null; price: number }[] }
+
+export const EVENT: Record<MessageKind, string> = { ACCEPTANCE: 'purchase_order.accepted', ASN: 'shipment.created', ASN_CANCEL: 'shipment.cancelled', INVOICE: 'invoice.approved', AWARD: 'sourcing.award.approved', CONTRACT: 'contract.activated' };
 
 export async function queueMessage(po: PurchaseOrder, kind: MessageKind, payload: Payload, requestedBy: string) {
   const [conn, tenant] = await Promise.all([getConnection(po.tenantId), db.query.tenants.findFirst({ where: eq(tenants.id, po.tenantId) })]);
@@ -46,33 +50,41 @@ export async function queueMessage(po: PurchaseOrder, kind: MessageKind, payload
   return m;
 }
 
-/** Send an approved sourcing award for one supplier to the ERP (same connector, retries and test mode as order messages). */
-export async function queueAwardMessage(tenantId: string, eventId: string, vendorId: string, award: AwardMessage, requestedBy: string) {
+/**
+ * Messages that aren't about one purchase order — a sourcing award, a signed contract — through the same connector,
+ * retries and test mode as order messages. `refs` link the row to what it is about.
+ */
+export async function queueStandaloneMessage(tenantId: string, kind: 'AWARD' | 'CONTRACT', refs: { eventId?: string; contractId?: string; vendorId: string }, payload: { award?: AwardMessage; contract?: ContractMessage }, requestedBy: string) {
   const [conn, tenant] = await Promise.all([getConnection(tenantId), db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) })]);
   const usable = conn.kind !== 'none' && !!tenant && hasFeature(tenant, 'erp');
   const [m] = await db.insert(poMessages).values({
-    tenantId, eventId, vendorId, kind: 'AWARD', connector: conn.kind, status: usable ? 'PENDING' : 'NO_CONNECTOR', payload: { award }, requestedBy,
+    tenantId, ...refs, kind, connector: conn.kind, status: usable ? 'PENDING' : 'NO_CONNECTOR', payload, requestedBy,
     ...(usable ? {} : { error: 'No ERP connection is set up; nothing was sent.' }),
   }).returning();
   if (usable) await enqueue('po.message', { id: m.id });
   return m;
 }
+/** Send an approved sourcing award for one supplier to the ERP. */
+export const queueAwardMessage = (tenantId: string, eventId: string, vendorId: string, award: AwardMessage, requestedBy: string) =>
+  queueStandaloneMessage(tenantId, 'AWARD', { eventId, vendorId }, { award }, requestedBy);
 
 export const queueAcknowledgement = (po: PurchaseOrder, info: AckInfo) => queueMessage(po, 'ACCEPTANCE', { info }, info.by);
 
 /** Everything a message needs, loaded fresh at send time. */
 interface Data {
-  kind: MessageKind; po?: PurchaseOrder; slug: string; entityCode: string | null; award?: AwardMessage;
+  kind: MessageKind; po?: PurchaseOrder; slug: string; entityCode: string | null; award?: AwardMessage; contract?: ContractMessage;
   info?: AckInfo; lines: PoLine[];
   shipment?: Shipment; shipLines?: { line: PoLine; quantity: string; batchNo: string | null }[];
   invoice?: SupplierInvoice; invLines?: { line: PoLine; quantity: string; unitPrice: string; amount: string; taxRate: string | null; taxAmount: string }[]; shipmentNumber?: string | null;
 }
 
 async function load(m: typeof poMessages.$inferSelect): Promise<Data | null> {
-  const p = (m.payload ?? {}) as Payload & { award?: AwardMessage };
-  if (m.kind === 'AWARD') {
+  const p = (m.payload ?? {}) as Payload & { award?: AwardMessage; contract?: ContractMessage };
+  if (m.kind === 'AWARD' || m.kind === 'CONTRACT') {
     const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, m.tenantId) });
-    return tenant && p.award ? { kind: 'AWARD', slug: tenant.slug, entityCode: null, award: p.award, lines: [] } : null;
+    if (!tenant) return null;
+    if (m.kind === 'AWARD') return p.award ? { kind: 'AWARD', slug: tenant.slug, entityCode: null, award: p.award, lines: [] } : null;
+    return p.contract ? { kind: 'CONTRACT', slug: tenant.slug, entityCode: null, contract: p.contract, lines: [] } : null;
   }
   if (!m.poId) return null;
   const [po, tenant] = await Promise.all([db.query.purchaseOrders.findFirst({ where: eq(purchaseOrders.id, m.poId) }), db.query.tenants.findFirst({ where: eq(tenants.id, m.tenantId) })]);
@@ -102,6 +114,7 @@ const num = (s: string | null | undefined) => (s === null || s === undefined ? n
 export function genericEvent(d: Data) {
   const head = { id: crypto.randomUUID(), event: EVENT[d.kind], occurredAt: new Date().toISOString(), workspace: d.slug };
   if (d.kind === 'AWARD') return { ...head, award: d.award! };
+  if (d.kind === 'CONTRACT') return { ...head, contract: d.contract! };
   const poRef = { poErpId: d.po!.erpId, poNumber: d.po!.poNumber, revision: d.po!.revision, supplierCode: d.po!.supplierCode, entity: d.entityCode };
   if (d.kind === 'ACCEPTANCE') {
     const i = d.info!;
@@ -130,6 +143,15 @@ export function oracleBody(d: Data) {
         ATTRIBUTE1: a.eventNumber, PAYMENT_TERMS: a.paymentTerms ?? undefined },
       LINES: a.lines.map((l, i) => ({ LINE_NUM: i + 1, ITEM: l.itemCode ?? undefined, ITEM_DESCRIPTION: l.description.slice(0, 240), QUANTITY: l.quantity, UOM_CODE: l.unit, UNIT_PRICE: l.unitPrice,
         PROMISED_DATE: a.deliveryDays !== null ? new Date(Date.now() + a.deliveryDays * 86_400_000).toISOString().slice(0, 10) : undefined, LINE_ATTRIBUTE1: `Lot ${l.lot}` })),
+    };
+  }
+  if (d.kind === 'CONTRACT') {
+    // Blanket purchase agreement through the purchasing documents open interface.
+    const k = d.contract!;
+    return {
+      HEADER: { ACTION: 'ORIGINAL', DOCUMENT_TYPE_CODE: 'BLANKET', INTERFACE_SOURCE_CODE: 'VENDORGATE', VENDOR_NUM: k.supplierCode, CURRENCY_CODE: k.currency, AMOUNT_AGREED: k.value ?? undefined,
+        EFFECTIVE_DATE: k.startDate ?? undefined, EXPIRATION_DATE: k.endDate ?? undefined, COMMENTS: `${k.contractNumber} ${k.title}`.slice(0, 240), ATTRIBUTE1: k.contractNumber, VENDOR_DOC_NUM: k.reference ?? undefined },
+      LINES: k.lines.map((l) => ({ LINE_NUM: l.lineNo, ITEM: l.itemCode ?? undefined, ITEM_DESCRIPTION: l.description.slice(0, 240), UOM_CODE: l.uom ?? undefined, UNIT_PRICE: l.price })),
     };
   }
   if (d.kind === 'ACCEPTANCE') return oracleAcknowledgement(d.po!, d.lines, { by: d.info!.by, auto: d.info!.auto, note: d.info!.note, entityCode: d.entityCode });
@@ -162,6 +184,12 @@ export function csvFor(d: Data) {
     return { fileName: `award_${a.eventNumber}_${a.supplierCode.replace(/[^A-Za-z0-9-]/g, '_')}_${stamp}.csv`, csv: toCsv([['EVENT_NUMBER', 'SUPPLIER_CODE', 'SUPPLIER_NAME', 'CURRENCY', 'LOT', 'LINE_NUM', 'ITEM', 'DESCRIPTION', 'QUANTITY', 'UOM', 'UNIT_PRICE', 'AMOUNT', 'SHARE_PCT', 'PAYMENT_TERMS', 'DELIVERY_DAYS', 'AWARDED_AT'],
       ...a.lines.map((l) => [a.eventNumber, a.supplierCode, a.supplierName, a.currency, String(l.lot), String(l.lineNo), l.itemCode ?? '', l.description, String(l.quantity), l.unit, String(l.unitPrice), String(l.amount), String(l.sharePct), a.paymentTerms ?? '', a.deliveryDays === null ? '' : String(a.deliveryDays), a.awardedAt])]) };
   }
+  if (d.kind === 'CONTRACT') {
+    const k = d.contract!;
+    const head = [k.contractNumber, k.title, k.type, k.supplierCode, k.supplierName, k.currency, k.value === null ? '' : String(k.value), k.startDate ?? '', k.endDate ?? '', k.signedDate ?? ''];
+    return { fileName: `contract_${k.contractNumber.replace(/[^A-Za-z0-9-]/g, '_')}_${stamp}.csv`, csv: toCsv([['CONTRACT_NUMBER', 'TITLE', 'TYPE', 'SUPPLIER_CODE', 'SUPPLIER_NAME', 'CURRENCY', 'VALUE', 'START_DATE', 'END_DATE', 'SIGNED_DATE', 'LINE_NUM', 'ITEM', 'DESCRIPTION', 'UOM', 'PRICE'],
+      ...(k.lines.length ? k.lines.map((l) => [...head, String(l.lineNo), l.itemCode ?? '', l.description, l.uom ?? '', String(l.price)]) : [[...head, '', '', '', '', '']])]) };
+  }
   if (d.kind === 'ACCEPTANCE') {
     const i = d.info!;
     return { fileName: `po_${d.po!.poNumber}_acceptance_${stamp}.csv`, csv: toCsv([['PO_NUMBER', 'REVISION', 'ERP_PO_ID', 'LINE_NUM', 'ERP_LINE_ID', 'ACCEPTANCE', 'ACCEPTED_BY', 'ACTION_DATE', 'NOTE'],
@@ -177,8 +205,8 @@ export function csvFor(d: Data) {
     ...d.invLines!.map((x) => [v.invoiceNumber, v.invoiceDate, d.po!.supplierCode, v.currency, v.total, v.taxAmount, d.po!.poNumber, d.po!.erpId, String(x.line.lineNo), x.line.erpId, x.quantity, x.unitPrice, x.amount, x.taxRate ?? '', x.taxAmount, d.shipmentNumber ?? '', v.einvoice?.irn ?? ''])]) };
 }
 
-const ORACLE_URL: Record<MessageKind, string> = { ACCEPTANCE: 'ackUrl', ASN: 'asnUrl', ASN_CANCEL: 'asnUrl', INVOICE: 'invoiceUrl', AWARD: 'awardUrl' };
-const URL_LABEL: Record<string, string> = { ackUrl: 'acknowledgement URL', asnUrl: 'shipment notice URL', invoiceUrl: 'invoice URL', awardUrl: 'award (purchase order) URL' };
+const ORACLE_URL: Record<MessageKind, string> = { ACCEPTANCE: 'ackUrl', ASN: 'asnUrl', ASN_CANCEL: 'asnUrl', INVOICE: 'invoiceUrl', AWARD: 'awardUrl', CONTRACT: 'contractUrl' };
+const URL_LABEL: Record<string, string> = { ackUrl: 'acknowledgement URL', asnUrl: 'shipment notice URL', invoiceUrl: 'invoice URL', awardUrl: 'award (purchase order) URL', contractUrl: 'contract (blanket agreement) URL' };
 
 async function deliver(id: string) {
   const m = await db.query.poMessages.findFirst({ where: eq(poMessages.id, id) });
@@ -193,7 +221,7 @@ async function deliver(id: string) {
   } catch (err: any) {
     const e = err instanceof ErpError ? err : new ErpError(String(err?.message ?? err));
     await db.update(poMessages).set({ status: 'FAILED', attempts, error: e.message.slice(0, 1000), httpStatus: e.httpStatus ?? null, response: e.response ?? null }).where(eq(poMessages.id, id));
-    if (!queueRunning() || attempts > RETRIES) await audit({ tenantId: m.tenantId, vendorId: d.po?.vendorId ?? d.award?.vendorId, actor: 'system', action: d.kind === 'ACCEPTANCE' ? 'PO_ACK_FAILED' : d.kind === 'AWARD' ? 'SOURCING_AWARD_TO_ERP_FAILED' : 'PO_MESSAGE_FAILED', detail: { po: d.po?.poNumber ?? d.award?.eventNumber, kind: d.kind, ...(m.eventId ? { eventId: m.eventId } : {}), error: e.message.slice(0, 200) } });
+    if (!queueRunning() || attempts > RETRIES) await audit({ tenantId: m.tenantId, vendorId: d.po?.vendorId ?? d.award?.vendorId ?? d.contract?.vendorId, actor: 'system', action: d.kind === 'ACCEPTANCE' ? 'PO_ACK_FAILED' : d.kind === 'AWARD' ? 'SOURCING_AWARD_TO_ERP_FAILED' : d.kind === 'CONTRACT' ? 'CONTRACT_TO_ERP_FAILED' : 'PO_MESSAGE_FAILED', detail: { po: d.po?.poNumber ?? d.award?.eventNumber ?? d.contract?.contractNumber, kind: d.kind, ...(m.eventId ? { eventId: m.eventId } : {}), ...(m.contractId ? { subjectId: m.contractId } : {}), error: e.message.slice(0, 200) } });
     throw e;
   }
 }

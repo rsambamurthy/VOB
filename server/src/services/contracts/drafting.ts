@@ -20,7 +20,7 @@ import { DOCX, removeStored, storeUpload } from '../../integrations/storage/inde
 import { toPdf } from '../../integrations/office/index.js';
 import { cancelFlow, flowView, registerFlowSubject, startFlow } from '../approvalFlow.js';
 import { contractApprovalLevels, contractRuleContext, defaultJurisdiction, JURISDICTIONS, optionOn } from './config.js';
-import { fieldLabel, fieldValues, fill, fieldsIn, unknownFields } from './fields.js';
+import { contractFieldValues, fieldLabel, fieldValues, fill, fieldsIn, unknownFields } from './fields.js';
 import { getTemplate, templateBytes, templatesFor } from './templates.js';
 import { getParty } from './parties.js';
 
@@ -166,7 +166,7 @@ export async function generateDocument(t: Tenant, id: string, by: By) {
   if (!c.draft || !c.templateId) throw new HttpError(409, 'Start the draft from a template first.');
   const tpl = await getTemplate(t, c.templateId);
   const party = await getParty(t.id, c.partyId);
-  const v = fieldValues(t, c, party);
+  const v = await contractFieldValues(t, c, party);
   const missing = new Set<string>();
   const docx = tpl.kind === 'WORD' ? await wordDocx(t, tpl, c.draft.clauses, v, missing) : await clausesDocx(tpl, c, c.draft.clauses, v, missing);
   const pdf = await toPdf(docx);

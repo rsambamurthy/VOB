@@ -212,9 +212,10 @@ async function complete(t: Tenant, sig: ContractSignature, signedPdf: Buffer) {
   if (sig.signedFileId && sig.signedFileId !== file.id) await db.delete(F).where(and(eq(F.id, sig.signedFileId), eq(F.kind, 'SIGNING')));
   const [done] = await db.update(S).set({ status: 'COMPLETED', signedFileId: file.id, completedAt: new Date() }).where(and(eq(S.id, sig.id), eq(S.status, 'SENT'))).returning();
   if (!done) return;
-  const status = c.endDate && c.endDate < today() ? 'EXPIRED' : 'ACTIVE';
-  await db.update(C).set({ status, signedDate: today() }).where(eq(C.id, c.id));
+  const status = c.type !== 'amendment' && c.endDate && c.endDate < today() ? 'EXPIRED' : 'ACTIVE';
+  const [signedRow] = await db.update(C).set({ status, signedDate: today() }).where(eq(C.id, c.id)).returning();
   await sigAudit(t, c, providerOf(sig.provider)?.label ?? sig.provider, 'CONTRACT_SIGNED', { signedDate: today(), status, provider: sig.provider });
+  await (await import('./manage.js')).onSigned(t, signedRow, providerOf(sig.provider)?.label ?? sig.provider);
   await tellOwner(c, `Signed: ${c.number} ${c.title}`, `${c.number} “${c.title}” is signed by everyone and is now ${status === 'ACTIVE' ? 'active' : 'recorded (its end date has passed)'}. The signed copy is on the contract.`);
   for (const s of sig.signers.filter((x) => x.side === 'PARTY')) {
     const link = await issueLink(t, { ...c, status }, s);

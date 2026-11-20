@@ -21,8 +21,8 @@ import { randomToken, sha256 } from '../../lib/crypto.js';
 import { mailSupplier } from '../../i18n/emails.js';
 import { defaultSupplierLanguage, vendorLanguage } from '../../i18n/index.js';
 import { storeUpload, DOCX } from '../../integrations/storage/index.js';
-import { companyDetails, CONTRACT_TYPES, optionOn, type ContractType } from './config.js';
-import { fieldValues, fill, fieldsIn, unknownFields } from './fields.js';
+import { companyDetails, CONTRACT_TYPES, optionOn, type ContractType, typeInfo } from './config.js';
+import { contractFieldValues, fill, fieldsIn, unknownFields } from './fields.js';
 import { getParty } from './parties.js';
 
 const { contracts: C, contractReviewers: R, contractVersions: V, contractComments: K, contractFiles: F } = schema;
@@ -120,7 +120,7 @@ export async function vendorContracts(t: Tenant, vendorId: string) {
   const rows = await db.select().from(C).where(and(eq(C.tenantId, t.id), inArray(C.partyId, parties.map((p) => p.id)), inArray(C.status, SHARED_STATUSES))).orderBy(desc(C.updatedAt));
   const shared = new Set((await db.select({ id: V.contractId }).from(V).where(inArray(V.contractId, rows.map((r) => r.id).concat('none')))).map((x) => x.id));
   const signing = new Set((await db.select({ id: schema.contractSignatures.contractId }).from(schema.contractSignatures).where(inArray(schema.contractSignatures.contractId, rows.map((r) => r.id).concat('none')))).map((x) => x.id));
-  return rows.filter((r) => shared.has(r.id) || signing.has(r.id)).map((c) => ({ id: c.id, number: c.number, title: c.title, type: CONTRACT_TYPES[c.type as ContractType]?.label ?? c.type, status: c.status, endDate: c.endDate, updatedAt: c.updatedAt }));
+  return rows.filter((r) => shared.has(r.id) || signing.has(r.id)).map((c) => ({ id: c.id, number: c.number, title: c.title, type: typeInfo(c.type).label, status: c.status, endDate: c.endDate, updatedAt: c.updatedAt }));
 }
 /** A supplier-portal user may open this contract (their supplier is the party, and it was shared). */
 export async function assertVendorContract(t: Tenant, vendorId: string, contractId: string) {
@@ -176,11 +176,11 @@ export async function reviewView(ctx: ReviewCtx) {
   const fileIds = [...new Set([...(current?.fileIds ?? []), ...versions.flatMap((v) => v.fileIds)])];
   const files = fileIds.length ? await db.select().from(F).where(inArray(F.id, fileIds)) : [];
   const signedFiles = await db.select().from(F).where(and(eq(F.contractId, c.id), eq(F.kind, 'SIGNED')));
-  const values = fieldValues(t, c, party);
+  const values = await contractFieldValues(t, c, party);
   const comments = await db.select().from(K).where(and(eq(K.contractId, c.id), eq(K.internal, false))).orderBy(asc(K.createdAt));
   const { signingForParty } = await import('./signing.js');
   return {
-    contract: { id: c.id, number: c.number, title: c.title, type: CONTRACT_TYPES[c.type as ContractType]?.label ?? c.type, status: c.status, value: c.value === null ? null : Number(c.value), currency: c.currency, startDate: c.startDate, endDate: c.endDate, signedDate: c.signedDate },
+    contract: { id: c.id, number: c.number, title: c.title, type: typeInfo(c.type).label, status: c.status, value: c.value === null ? null : Number(c.value), currency: c.currency, startDate: c.startDate, endDate: c.endDate, signedDate: c.signedDate },
     buyer: { name: companyDetails(t).legalName || t.name, branding: t.branding },
     party: { name: party.name },
     you: ctx.actor,

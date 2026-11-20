@@ -104,6 +104,8 @@ export function ErpSettings() {
                   <div className="field-help">Receives each supplier invoice once approved: INVOICE_NUM, INVOICE_DATE, VENDOR_NUM, INVOICE_AMOUNT and ITEM / TAX LINES matched to PO_LINE_ID — shaped for the payables open interface (AP_INVOICES_INTERFACE).</div></div>
                 <div className="field field-wide"><label htmlFor="erp-awardUrl">Award URL (sourcing)</label><input id="erp-awardUrl" value={cfg('awardUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_po/award/" onChange={(e) => setCfg('awardUrl', e.target.value)} />
                   <div className="field-help">Receives each approved sourcing award per supplier: VENDOR_NUM, CURRENCY_CODE and LINES with ITEM, QUANTITY, UOM_CODE and UNIT_PRICE — shaped for the purchasing documents open interface (PO_HEADERS_INTERFACE / PO_LINES_INTERFACE), so the ERP creates the purchase order.</div></div>
+                <div className="field field-wide"><label htmlFor="erp-contractUrl">Contract URL (contracts)</label><input id="erp-contractUrl" value={cfg('contractUrl')} placeholder="https://ebs.example.com/webservices/rest/vg_po/blanket/" onChange={(e) => setCfg('contractUrl', e.target.value)} />
+                  <div className="field-help">Receives each signed supplier contract with its agreed prices, shaped as a blanket purchase agreement (DOCUMENT_TYPE_CODE BLANKET, AMOUNT_AGREED, EFFECTIVE_DATE / EXPIRATION_DATE, LINES with ITEM and UNIT_PRICE).</div></div>
               </div>
             )}
             {f.kind === 'sap' && (

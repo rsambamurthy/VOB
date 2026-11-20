@@ -27,6 +27,15 @@ export const CONTRACT_TYPES = {
   other: { label: 'Other', help: 'Anything else.', prefix: 'CON', directions: ['BUY', 'SELL'], available: true },
 } as const satisfies Record<string, TypeDef>;
 export type ContractType = keyof typeof CONTRACT_TYPES;
+/**
+ * Amendments change a signed contract (dates, value, renewal, terms). They are contracts themselves (type
+ * 'amendment', parentId = the contract they change) so they go through the same drafting, approval, review and
+ * signature — but they aren't a type the administrator switches on: they are there whenever Contracts is on.
+ */
+export const AMENDMENT = { label: 'Amendment', help: 'Changes a signed contract.', prefix: 'AMD', directions: ['BUY', 'SELL'] as Direction[] } as const;
+/** Label, prefix and directions for any contract type, amendments included. */
+export const typeInfo = (key: string): { label: string; prefix: string; directions: readonly Direction[] } =>
+  key === 'amendment' ? AMENDMENT : (CONTRACT_TYPES[key as ContractType] ?? { label: key, prefix: 'CON', directions: ['BUY', 'SELL'] });
 export const CONTRACT_TYPE_KEYS = Object.keys(CONTRACT_TYPES) as ContractType[];
 
 export type OptionArea = 'parties' | 'repository' | 'authoring' | 'negotiation' | 'signature' | 'management' | 'integrations' | 'ai';
@@ -46,10 +55,10 @@ export const OPTIONS = {
   internalApproval: { area: 'authoring', label: 'Internal approval', help: 'Contracts go through approval levels (by value, type or non-standard clauses) before they are sent.', default: true, available: true },
   counterpartyPortal: { area: 'negotiation', label: 'Counterparty review in the portal', help: 'Suppliers and customers review, comment and propose changes online.', default: true, available: true },
   esign: { area: 'signature', label: 'E-signature', help: 'Send for signature through the connector set up in Integrations (DocuSign, Aadhaar eSign / DSC, Adobe Sign, UAE Pass, Zoho Sign).', default: false, available: true },
-  obligations: { area: 'management', label: 'Obligations and milestones', help: 'Deliverables, service levels and payment milestones with owners and reminders.', default: true, available: false },
-  renewalAlerts: { area: 'management', label: 'Renewal and notice alerts', help: 'Remind the owner before the notice date and the end date.', default: true, available: false },
-  priceCompliance: { area: 'management', label: 'Order and invoice price checks', help: 'Compare purchase order and invoice prices with the contract price.', default: true, available: false, requires: 'collab' },
-  contractToErp: { area: 'integrations', label: 'Send contracts to the ERP', help: 'Create the blanket agreement / contract in the connected ERP when it becomes active.', default: false, available: false, requires: 'erp' },
+  obligations: { area: 'management', label: 'Obligations and milestones', help: 'Deliverables, service levels and payment milestones with owners and reminders.', default: true, available: true },
+  renewalAlerts: { area: 'management', label: 'Renewal and notice alerts', help: 'Remind the owner before the notice date and the end date.', default: true, available: true },
+  priceCompliance: { area: 'management', label: 'Order and invoice price checks', help: 'Compare purchase order and invoice prices with the contract price.', default: true, available: true, requires: 'collab' },
+  contractToErp: { area: 'integrations', label: 'Send contracts to the ERP', help: 'Create the blanket agreement / contract in the connected ERP when it becomes active.', default: false, available: true, requires: 'erp' },
   aiExtraction: { area: 'ai', label: 'Read uploaded contracts', help: 'Suggest the dates, value, parties and renewal terms from an uploaded contract.', default: false, available: false, requires: 'ai' },
 } as const satisfies Record<string, ContractOptionDef>;
 export type ContractOption = keyof typeof OPTIONS;
@@ -59,6 +68,8 @@ export const RULES = {
   noticeDays: { kind: 'number', label: 'Notice period', help: 'Days of notice needed to end or not renew a contract.', min: 0, max: 730, step: 1, unit: 'days', default: 30 },
   renewalTermMonths: { kind: 'number', label: 'Renewal term', help: 'How long an automatically renewing contract runs again.', min: 1, max: 120, step: 1, unit: 'months', default: 12 },
   expiringDays: { kind: 'number', label: 'Show as expiring', help: 'Contracts ending within this many days are marked “Expiring”.', min: 7, max: 365, step: 1, unit: 'days', default: 90 },
+  priceTolerance: { kind: 'number', label: 'Price tolerance', help: 'Order and invoice prices up to this much above the contract price are accepted.', min: 0, max: 50, step: 0.5, unit: '%', default: 0 },
+  noticeReminderDays: { kind: 'number', label: 'Notice reminder', help: 'Remind the owner this many days before the last day to give notice.', min: 1, max: 120, step: 1, unit: 'days', default: 14 },
   valueRequired: { kind: 'choice', label: 'Contract value', help: 'Whether a value must be entered.', options: { optional: 'Optional', required: 'Required (except NDAs)' }, default: 'optional' },
 } as const satisfies Record<string, RuleDef>;
 export type ContractRule = keyof typeof RULES;
@@ -140,12 +151,12 @@ export const contractApprovalLevels = (t: Tenant): WorkflowLevel[] => (M.stored(
 const yesNo = { type: 'select', options: ['Yes', 'No'] };
 export const contractApprovalCatalog = () => [
   { id: 'contract.value', label: 'Contract value', type: 'number' },
-  { id: 'contract.type', label: 'Contract type', type: 'select', options: CONTRACT_TYPE_KEYS.map((k) => CONTRACT_TYPES[k].label) },
+  { id: 'contract.type', label: 'Contract type', type: 'select', options: [...CONTRACT_TYPE_KEYS.map((k) => CONTRACT_TYPES[k].label), AMENDMENT.label] },
   { id: 'contract.direction', label: 'Supplier or customer', type: 'select', options: ['Supplier', 'Customer'] },
   { id: 'contract.nonStandard', label: 'Wording changed from the library', ...yesNo },
   { id: 'contract.fallback', label: 'A fallback clause is used', ...yesNo },
   { id: 'contract.category', label: 'Category', type: 'text' },
 ];
 export const contractRuleContext = (c: { value: string | number | null; type: string; direction: string; category: string | null }, draft: { nonStandard: boolean; fallback: boolean }) =>
-  ({ profile: { contract: { value: c.value === null ? '' : Number(c.value), type: CONTRACT_TYPES[c.type as ContractType]?.label ?? c.type, direction: c.direction === 'SELL' ? 'Customer' : 'Supplier',
+  ({ profile: { contract: { value: c.value === null ? '' : Number(c.value), type: typeInfo(c.type).label, direction: c.direction === 'SELL' ? 'Customer' : 'Supplier',
     nonStandard: draft.nonStandard ? 'Yes' : 'No', fallback: draft.fallback ? 'Yes' : 'No', category: c.category ?? '' } } });

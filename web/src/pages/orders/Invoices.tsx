@@ -1,3 +1,4 @@
+import { PriceCheckCard, type PriceCheck } from '../../components/PriceCheck';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
@@ -67,6 +68,7 @@ export function StaffInvoiceDetail() {
     <div className="page">
       <Link to="/staff/invoices" className="back">← Supplier invoices</Link>
       <InvoiceView d={d} staff>
+        <PriceCheckCard check={(d as InvoiceDetailData & { priceCheck?: PriceCheck }).priceCheck} currency={d.invoice.currency} lines={d.lines.map((l) => ({ key: l.id, label: `${l.lineNo}. ${l.itemCode ?? ''} ${l.description}`.trim(), unitPrice: l.unitPrice }))} />
         {flash && <Alert kind="success">{flash}</Alert>}
         {error && <Alert kind="error">{error}</Alert>}
         {open && d.canDecide && (

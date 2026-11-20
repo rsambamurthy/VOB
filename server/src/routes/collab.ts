@@ -165,7 +165,10 @@ staffCollabRouter.get('/invoices', requireStaff('orders.view'), ah(async (req, r
 
 staffCollabRouter.get('/invoices/:id', requireStaff('orders.view'), ah(async (req, res) => {
   const s = staffCtx(req);
-  res.json({ ...(await invoiceDetail(s.tenant.id, req.params.id)), canDecide: s.permissions.has('invoices.manage') });
+  const d = await invoiceDetail(s.tenant.id, req.params.id);
+  const inv = d as unknown as { invoice: { currency: string }; vendor: { id: string } | null; lines: { id: string; itemCode: string | null; unitPrice: number }[] };
+  const priceCheck = await (await import('../services/contracts/manage.js')).priceCheck(s.tenant, inv.vendor?.id ?? null, inv.invoice.currency, inv.lines.map((l) => ({ key: l.id, itemCode: l.itemCode, unitPrice: l.unitPrice })));
+  res.json({ ...d, canDecide: s.permissions.has('invoices.manage'), priceCheck });
 }));
 
 staffCollabRouter.post('/invoices/:id/decide', requireStaff('invoices.manage'), ah(async (req, res) => {

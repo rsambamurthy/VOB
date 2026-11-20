@@ -27,6 +27,7 @@ import { cancelSignature, esignSettings, refreshFor, sendForSignature, startSign
 import { esignView, providerOf, sealCredentials, openCredentials, cfgOf } from '../integrations/esign/index.js';
 import { clauseGroups, getClause, listClauses, listTemplates, resetClause, saveClause, saveTemplate, saveWordTemplate, setClauseArchived, setTemplateArchived, templateDetail, templateFile } from '../services/contracts/templates.js';
 import { MERGE_FIELDS } from '../services/contracts/fields.js';
+import { addObligation, createAmendment, deleteObligation, importPrices, listObligations, pricesTemplate, resendToErp, savePrices, setObligationStatus, updateObligation } from '../services/contracts/manage.js';
 import { pdfAvailable } from '../integrations/office/index.js';
 import type { Permission } from '../lib/permissions.js';
 import { addFile, contractDetail, contractsTemplate, createContract, deleteDraft, DIRECTION_LABEL, FILE_KINDS, getFile, importContracts, listContracts, markSigned, ownerOptions, parentOptions, removeFile, STATUS_LABEL, terminateContract, updateContract } from '../services/contracts/contracts.js';
@@ -140,6 +141,12 @@ contractsRouter.post('/import', requireStaff('contracts.manage'), excelUpload.si
   if (!req.file) throw new HttpError(400, 'Choose the Excel file to upload');
   res.json(await importContracts(staffCtx(req).tenant, req.file.buffer, by(req), { commit: req.query.commit === '1', createParties: req.query.createParties === '1' }));
 }));
+/** Contracts → Obligations: across all contracts. */
+contractsRouter.get('/obligations', requireStaff('contracts.view'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  res.json(await listObligations(s.tenant, { ...(req.query as Record<string, string>), userId: s.user.id }));
+}));
+contractsRouter.get('/prices-template.xlsx', requireStaff('contracts.manage'), ah(async (_req, res) => { await sendXlsx(res, 'contract-prices.xlsx', await pricesTemplate()); }));
 contractsRouter.get('/parents', requireStaff('contracts.view'), ah(async (req, res) => {
   res.json({ contracts: await parentOptions(staffCtx(req).tenant, String(req.query.partyId ?? '')) });
 }));
@@ -211,6 +218,31 @@ contractsRouter.post('/:id/signature/start', ah(async (req, res) => {
   const s = staffCtx(req);
   res.json({ url: await startSigning(s.tenant, req.params.id, s.user.email, `/staff/contracts/${req.params.id}`) });
 }));
+
+/* ---------- managing signed contracts ---------- */
+
+/** A new amendment (a draft contract under this one); answers the amendment. */
+contractsRouter.post('/:id/amendments', requireStaff('contracts.manage'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const a = await createAmendment(s.tenant, req.params.id, req.body ?? {}, by(req));
+  res.status(201).json(await detail(req, a.id));
+}));
+contractsRouter.post('/:id/obligations', requireStaff('contracts.manage'), act(addObligation));
+contractsRouter.put('/:id/obligations/:oid', requireStaff('contracts.manage'), ah(async (req, res) => {
+  await updateObligation(staffCtx(req).tenant, req.params.id, req.params.oid, req.body ?? {}, by(req)); res.json(await detail(req, req.params.id));
+}));
+contractsRouter.post('/:id/obligations/:oid/status', requireStaff('contracts.manage'), ah(async (req, res) => {
+  await setObligationStatus(staffCtx(req).tenant, req.params.id, req.params.oid, req.body ?? {}, by(req)); res.json(await detail(req, req.params.id));
+}));
+contractsRouter.delete('/:id/obligations/:oid', requireStaff('contracts.manage'), ah(async (req, res) => {
+  await deleteObligation(staffCtx(req).tenant, req.params.id, req.params.oid, by(req)); res.json(await detail(req, req.params.id));
+}));
+contractsRouter.put('/:id/prices', requireStaff('contracts.manage'), act(savePrices));
+contractsRouter.post('/:id/prices/import', requireStaff('contracts.manage'), excelUpload.single('file'), ah(async (req, res) => {
+  if (!req.file) throw new HttpError(400, 'Choose the Excel file to upload');
+  res.json(await importPrices(staffCtx(req).tenant, req.params.id, req.file.buffer, by(req), req.query.commit === '1'));
+}));
+contractsRouter.post('/:id/erp', requireStaff('contracts.manage'), act((t, id, _b, who) => resendToErp(t, id, who)));
 
 /* ---------------- templates and the clause library ---------------- */
 

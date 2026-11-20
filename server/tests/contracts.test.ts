@@ -50,7 +50,7 @@ describe('configuration', () => {
     expect((await admin.put('/api/admin/contracts', { enabled: true, types: { msa: true } })).status).toBe(403);
     await setLimits({ features: { contracts: true } });
     expect((await admin.put('/api/admin/contracts', { enabled: true, types: {} })).body.error).toMatch(/at least one contract type/);
-    expect((await admin.put('/api/admin/contracts', { enabled: true, types: { msa: true }, features: { obligations: true } })).body.error).toMatch(/isn’t available yet/);
+    expect((await admin.put('/api/admin/contracts', { enabled: true, types: { msa: true }, features: { aiExtraction: true } })).body.error).toMatch(/isn’t available yet/);
     const r = await admin.put('/api/admin/contracts', { enabled: true, types: { msa: true, sow: true, nda: true, supply: true, sales: true }, rules: { expiringDays: 60 }, locked: ['noticeDays'] });
     expect(r.status).toBe(200);
     expect(r.body.changes).toEqual(expect.arrayContaining(['Contracts on', 'Show as expiring: 90 → 60', 'Notice period locked']));

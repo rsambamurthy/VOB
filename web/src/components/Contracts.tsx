@@ -29,7 +29,7 @@ export function useContractSetup() {
   useEffect(() => { api<Setup>('/staff/contracts/setup').then(setSetup).catch(() => {}); }, []);
   return setup;
 }
-export const typeLabel = (setup: Setup | undefined, key: string) => setup?.config.types.find((k) => k.key === key)?.label ?? key;
+export const typeLabel = (setup: Setup | undefined, key: string) => (key === 'amendment' ? 'Amendment' : setup?.config.types.find((k) => k.key === key)?.label ?? key);
 export const optionOn = (setup: Setup | undefined, key: string) => !!setup?.config.features.find((f) => f.key === key)?.on;
 
 /* ---------------- party form (new party and editing one) ---------------- */
