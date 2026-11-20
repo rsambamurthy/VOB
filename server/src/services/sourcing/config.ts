@@ -186,7 +186,3 @@ export const eventRuleContext = (e: { estimatedValue: string | number | null; fo
 export const awardRuleContext = (e: { format: string; categories: string[] }, value: number, notBest: boolean) =>
   ({ profile: { award: { value, notBest: notBest ? 'Yes' : 'No', format: SOURCING_FORMATS[e.format as SourcingFormat]?.label ?? e.format, category: e.categories[0] ?? '' } } });
 
-/** Check an approval flow before storing it. */
-export async function checkApproval(t: Tenant, kind: FlowKind, input: unknown, roleKeys: string[]) {
-  return checkLevels(input, (await approvalCatalog(t, kind)).map((c) => c.id), roleKeys);
-}

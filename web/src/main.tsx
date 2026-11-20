@@ -68,6 +68,7 @@ import { ContractsSettings } from './pages/admin/Contracts';
 import { ContractsList } from './pages/contracts/Contracts';
 import { ContractDetail } from './pages/contracts/ContractDetail';
 import { PartiesList, PartyDetail } from './pages/contracts/Parties';
+import { ClauseLibrary, TemplateEditor, TemplatesList } from './pages/contracts/Library';
 import { StaffHome } from './components/StaffHome';
 import { LangGate } from './i18n/LangGate';
 
@@ -104,6 +105,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="admin/contracts" element={<ContractsSettings />} />
               <Route path="contracts" element={<ContractsList />} />
               <Route path="contracts/:id" element={<ContractDetail />} />
+              <Route path="contract-templates" element={<TemplatesList />} />
+              <Route path="contract-templates/:id" element={<TemplateEditor />} />
+              <Route path="contract-clauses" element={<ClauseLibrary />} />
               <Route path="parties" element={<PartiesList />} />
               <Route path="parties/:id" element={<PartyDetail />} />
               <Route path="admin/help-topics" element={<HelpTopics />} />

@@ -94,6 +94,7 @@ export async function seed() {
   const mdm = await makeUser(acme, 'Vikram Shah', 'mdm@acme.test', [role('MDM_MANAGER')], hash);
   await makeUser(acme, 'Farah Khan', 'farah@acme.test', [role('VIEWER')], hash, 'INVITED');
   await makeUser(acme, 'Joseph Mathew', 'compliance@acme.test', [role('COMPLIANCE')], hash);
+  await makeUser(acme, 'Priya Iyengar', 'legal@acme.test', [role('LEGAL')], hash);
   // A second Master Data Manager, so a change one of them proposes can be approved by the other.
   await makeUser(acme, 'Kiran Patel', 'mdm2@acme.test', [role('MDM_MANAGER')], hash);
   await makeUser(acme, 'Rahul Verma', 'buyer@acme.test', [role('BUYER')], hash);

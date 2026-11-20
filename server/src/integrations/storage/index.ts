@@ -4,7 +4,8 @@ import { env } from '../../lib/env.js';
 import { HttpError } from '../../lib/http.js';
 import { logger } from '../../lib/logger.js';
 import { localDriver, type StorageDriver } from './drivers.js';
-import { clamScan, pdfLooksActive, sniffType } from './scan.js';
+import { clamScan, DOCX, pdfLooksActive, sniffType } from './scan.js';
+export { DOCX };
 
 const i = env.int;
 const local = localDriver(env.uploadDir);
@@ -27,12 +28,15 @@ export const storageStatus = () => ({ driver: primary.name, scan: i.SCAN_PROVIDE
 export const storageCheck = () => primary.check();
 export const primaryStorage = () => primary;
 
-const EXT: Record<string, string> = { 'application/pdf': '.pdf', 'image/png': '.png', 'image/jpeg': '.jpg' };
+const EXT: Record<string, string> = { 'application/pdf': '.pdf', 'image/png': '.png', 'image/jpeg': '.jpg', [DOCX]: '.docx' };
+/** What uploads accept unless a caller allows more (Word files only for contract templates and drafts). */
+const DEFAULT_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 
 /** Validates, scans and stores an upload under <tenant>/<folder>/ (the vendor id, or contracts/<id>). Returns what to save on the row. */
-export async function storeUpload(tenantId: string, folder: string, file: { buffer: Buffer; originalname: string }) {
-  const type = sniffType(file.buffer);
-  if (!type) throw new HttpError(400, 'Only real PDF, PNG or JPG files are accepted (the file’s contents don’t match)');
+export async function storeUpload(tenantId: string, folder: string, file: { buffer: Buffer; originalname: string }, opts: { types?: string[] } = {}) {
+  const sniffed = sniffType(file.buffer);
+  const type = sniffed && (opts.types ?? DEFAULT_TYPES).includes(sniffed) ? sniffed : null;
+  if (!type) throw new HttpError(400, (opts.types ?? DEFAULT_TYPES).includes(DOCX) ? 'Only real Word (.docx), PDF, PNG or JPG files are accepted (the file’s contents don’t match)' : 'Only real PDF, PNG or JPG files are accepted (the file’s contents don’t match)');
   if (type === 'application/pdf' && pdfLooksActive(file.buffer)) throw new HttpError(400, 'This PDF contains scripts or auto-run actions. Please print it to a plain PDF and upload again.');
   let scanStatus = 'SKIPPED';
   if (i.SCAN_PROVIDER === 'clamav') {

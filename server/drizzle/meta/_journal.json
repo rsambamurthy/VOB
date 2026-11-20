@@ -274,6 +274,13 @@
       "when": 1795153411809,
       "tag": "0038_contracts_foundations",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795156747118,
+      "tag": "0039_contracts_templates",
+      "breakpoints": true
     }
   ]
 }

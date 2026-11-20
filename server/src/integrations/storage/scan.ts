@@ -5,13 +5,22 @@
  */
 import net from 'node:net';
 
-export type Sniffed = 'application/pdf' | 'image/png' | 'image/jpeg' | null;
+export type Sniffed = 'application/pdf' | 'image/png' | 'image/jpeg' | typeof DOCX | null;
 
 export function sniffType(buf: Buffer): Sniffed {
   if (buf.length >= 5 && buf.subarray(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
   if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (looksLikeDocx(buf)) return DOCX;
   return null;
+}
+
+export const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+/** A Word .docx: a zip whose parts include word/document.xml. Macro-enabled files (vbaProject) are not .docx. */
+function looksLikeDocx(buf: Buffer) {
+  if (buf.length < 30 || buf.readUInt32LE(0) !== 0x04034b50) return false;
+  const s = buf.toString('latin1');
+  return s.includes('word/document.xml') && !/vbaProject|vbaData/i.test(s);
 }
 
 /** PDFs with JavaScript or auto-actions are a common malware carrier; we don't need either. */

@@ -40,7 +40,7 @@ import { agreementsRouter } from './routes/agreements.js';
 import { questionnairesRouter } from './routes/questionnaires.js';
 import { riskRouter } from './routes/risk.js';
 import { actionsRouter } from './routes/correctiveActions.js';
-import { contractsAdminRouter, contractsRouter, partiesRouter } from './routes/contracts.js';
+import { contractLibraryRouter, contractsAdminRouter, contractsRouter, partiesRouter } from './routes/contracts.js';
 import { sourcingAdminRouter, sourcingRouter } from './routes/sourcing.js';
 import { applicationsRouter, applyRouter, registrationLinksRouter } from './routes/applications.js';
 import { configRouter } from './routes/config.js';
@@ -121,6 +121,7 @@ export function createApp() {
   app.use('/api/staff/sourcing', sourcingRouter);
   app.use('/api/staff/contracts', contractsRouter);
   app.use('/api/staff/parties', partiesRouter);
+  app.use('/api/staff/contract-library', contractLibraryRouter);
   app.use('/api/staff/registration-links', registrationLinksRouter);
   app.use('/api/staff', staffRouter);
   app.use('/api/reports', reportsRouter);

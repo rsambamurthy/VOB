@@ -1594,8 +1594,13 @@ export const contracts = pgTable('contracts', {
   /** Key in CONTRACT_TYPES (services/contracts/config.ts). */
   type: text('type').notNull(),
   partyId: text('party_id').notNull().references(() => parties.id),
-  /** DRAFT · ACTIVE · EXPIRED · TERMINATED (later steps add approval, negotiation and signature states). */
+  /** DRAFT · IN_APPROVAL · APPROVED · ACTIVE · EXPIRED · TERMINATED (later steps add negotiation and signature states). */
   status: text('status').notNull().default('DRAFT'),
+  /** The template it was drafted from, and the jurisdiction its clauses follow (governing law, disputes, tax). */
+  templateId: text('template_id'),
+  jurisdiction: text('jurisdiction'),
+  /** The drafted wording: each clause with the variant chosen (standard, a fallback or edited). See services/contracts/drafting.ts. */
+  draft: jsonb('draft').$type<ContractDraft>(),
   value: numeric('value', { precision: 18, scale: 2 }),
   currency: text('currency').notNull(),
   startDate: date('start_date', { mode: 'string' }),
@@ -1638,5 +1643,67 @@ export const contractFiles = pgTable('contract_files', {
   scanStatus: text('scan_status').notNull().default('SKIPPED'),
   uploadedByName: text('uploaded_by_name').notNull(),
   uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Made by VendorGate from the drafted wording (Word and PDF of the same version). */
+  generated: boolean('generated').notNull().default(false),
+  version: integer('version'),
 }, (t) => [index('contract_files_contract_idx').on(t.contractId)]);
 export type ContractFile = typeof contractFiles.$inferSelect;
+
+/** One clause of a drafted contract. `variant`: 'standard', a fallback key, or 'custom' (edited wording). */
+export interface DraftClause { clauseId: string; group: string; title: string; variant: string; body: string; required: boolean }
+export interface ContractDraft { clauses: DraftClause[]; nonStandard: boolean; fallback: boolean; version: number; generatedVersion?: number; savedAt: string; savedBy: string }
+
+/**
+ * Clause library: built-in clauses (India + GCC, seeded per workspace, `builtIn`) and the workspace's own.
+ * Clauses with the same `group` are the same clause for different jurisdictions (e.g. governing-law for IN, AE, SA);
+ * templates list groups, and a contract picks the clause for its jurisdiction (or 'ALL').
+ */
+export const contractClauses = pgTable('contract_clauses', {
+  id: id(), tenantId: tenantId(),
+  group: text('group').notNull(),
+  /** IN · AE · SA · ALL */
+  jurisdiction: text('jurisdiction').notNull().default('ALL'),
+  title: text('title').notNull(),
+  /** Area, e.g. Commercial, Legal, Confidentiality. */
+  category: text('category').notNull(),
+  /** Standard wording with {{merge.fields}}. */
+  body: text('body').notNull(),
+  /** Pre-approved alternative wordings: [{ key, label, body }]. */
+  fallbacks: jsonb('fallbacks').$type<{ key: string; label: string; body: string }[]>().notNull().default([]),
+  /** Notes for the person drafting (when to use a fallback, stamp duty…). Not printed. */
+  guidance: text('guidance'),
+  builtIn: boolean('built_in').notNull().default(false),
+  /** ACTIVE · ARCHIVED */
+  status: text('status').notNull().default('ACTIVE'),
+  updatedByName: text('updated_by_name'),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (t) => [uniqueIndex('contract_clauses_group_uq').on(t.tenantId, t.group, t.jurisdiction)]);
+export type ContractClause = typeof contractClauses.$inferSelect;
+
+/** Contract templates: built from library clauses (CLAUSES) or the workspace's own Word file with merge fields (WORD). */
+export const contractTemplates = pgTable('contract_templates', {
+  id: id(), tenantId: tenantId(),
+  name: text('name').notNull(),
+  /** CLAUSES · WORD */
+  kind: text('kind').notNull(),
+  /** Contract types it is for (keys of CONTRACT_TYPES) and BUY / SELL / BOTH. */
+  types: text('types').array().notNull().default(sql`'{}'::text[]`),
+  direction: text('direction').notNull().default('BOTH'),
+  /** Document heading for CLAUSES templates (merge fields allowed). */
+  heading: text('heading'),
+  /** Opening paragraph (parties and recitals) for CLAUSES templates. */
+  preamble: text('preamble'),
+  /** Clause groups in order: [{ group, required }]. A Word template may also print them with {{#clauses}}…{{/clauses}}. */
+  sections: jsonb('sections').$type<{ group: string; required: boolean }[]>().notNull().default([]),
+  /** WORD: the uploaded file and the merge fields found in it. */
+  fileName: text('file_name'), mimeType: text('mime_type'), size: integer('size'), storagePath: text('storage_path'), storageDriver: text('storage_driver'), sha256: text('sha256'),
+  fields: text('fields').array().notNull().default(sql`'{}'::text[]`),
+  builtIn: boolean('built_in').notNull().default(false),
+  /** ACTIVE · ARCHIVED */
+  status: text('status').notNull().default('ACTIVE'),
+  updatedByName: text('updated_by_name'),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (t) => [index('contract_templates_tenant_idx').on(t.tenantId, t.status)]);
+export type ContractTemplate = typeof contractTemplates.$inferSelect;

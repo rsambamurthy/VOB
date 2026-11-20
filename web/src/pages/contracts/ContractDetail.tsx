@@ -9,19 +9,24 @@ import { Alert, Modal } from '../../components/ui';
 import { HistoryCard } from '../../components/HistoryCard';
 import { ContractStatus, DIRECTION_LABEL, KIND_LABEL, typeLabel, useContractSetup, type Direction } from '../../components/Contracts';
 import { contractBody, ContractForm, type ContractData } from './ContractForm';
+import { DraftingCard, ReopenButton, type Drafting } from './Drafting';
+import { FlowPanel, type FlowDecision } from '../../components/ApprovalFlow';
 
 interface Summary { id: string; number: string; reference: string | null; title: string; direction: Direction; type: string; status: string; value: number | null; currency: string; startDate: string | null; endDate: string | null; signedDate: string | null; autoRenew: boolean }
 interface Detail {
   contract: Summary & { partyId: string; renewalTermMonths: number | null; noticeDays: number | null; ownerId: string | null; parentId: string | null; description: string | null; category: string | null; source: string; terminatedAt: string | null; terminationReason: string | null; createdByName: string; createdAt: string; daysLeft: number | null; expiring: boolean; noticeBy: string | null };
   party: { id: string; code: string; name: string; kind: string; country: string; contacts: { name: string; email?: string; signatory?: boolean }[] };
   owner: { id: string; name: string } | null; parent: Summary | null; children: Summary[];
-  files: { id: string; kind: string; fileName: string; size: number; uploadedByName: string; uploadedAt: string }[];
+  files: { id: string; kind: string; fileName: string; size: number; uploadedByName: string; uploadedAt: string; generated: boolean; version: number | null }[];
+  drafting: Drafting;
   history: { actor: string; action: string; detail: Record<string, unknown> | null; createdAt: string }[];
   editable: 'all' | string[];
 }
 const ACTIONS: Record<string, string> = {
   CONTRACT_CREATED: 'Created', CONTRACT_UPDATED: 'Details changed', CONTRACT_SIGNED: 'Marked as signed', CONTRACT_TERMINATED: 'Terminated', CONTRACT_EXPIRED: 'Expired',
   CONTRACT_RENEWED: 'Renewed automatically', CONTRACT_FILE_ADDED: 'File added', CONTRACT_FILE_REMOVED: 'File removed',
+  CONTRACT_DRAFT_STARTED: 'Drafted from a template', CONTRACT_DRAFT_SAVED: 'Wording changed', CONTRACT_DOCUMENT_MADE: 'Document made', CONTRACT_SUBMITTED: 'Submitted for approval',
+  CONTRACT_APPROVED: 'Approved', CONTRACT_WITHDRAWN: 'Withdrawn from approval', CONTRACT_REOPENED: 'Reopened as draft', FLOW_STARTED: 'Approval started', FLOW_DECISION: 'Approval decision',
 };
 const toForm = (d: Detail): ContractData => ({
   title: d.contract.title, direction: d.contract.direction, type: d.contract.type, partyId: d.contract.partyId, reference: d.contract.reference ?? '', value: d.contract.value === null ? '' : String(d.contract.value),
@@ -39,7 +44,7 @@ export function ContractDetail() {
   const [d, setD] = useState<Detail>();
   const [form, setForm] = useState<ContractData>();
   const [editing, setEditing] = useState(false);
-  const [flash, setFlash] = useState<{ kind: 'success' | 'error'; text: string }>();
+  const [flash, setFlash] = useState<{ kind: 'success' | 'error' | 'warning'; text: string }>();
   const [modal, setModal] = useState<'sign' | 'terminate' | null>(null);
   const take = (r: Detail) => { setD(r); setForm(toForm(r)); };
   const load = useCallback(() => api<Detail>(`/staff/contracts/${id}`).then(take).catch((e) => setFlash({ kind: 'error', text: e.message })), [id]);
@@ -53,6 +58,13 @@ export function ContractDetail() {
   const manage = can('contracts.manage');
   const editable = d.editable === 'all' ? 'all' : d.editable;
   const signedCopy = d.files.some((f) => f.kind === 'SIGNED');
+  const needsApproval = c.status === 'DRAFT' && !!d.drafting.draft && d.drafting.approvalOn;
+  const onDetail = (r: Detail | undefined, text?: string, kind: 'success' | 'warning' | 'error' = 'success') => { if (r) take(r); setFlash(text ? { kind: text.includes('Still blank') ? 'warning' : kind, text } : undefined); };
+  async function decide(action: FlowDecision, remarks: string) {
+    const r = await api<Detail & { decided?: boolean }>(`/staff/contracts/${c.id}/decision`, { body: { action, remarks } });
+    if (r.decided) { setFlash({ kind: 'success', text: 'Thank you — your decision is recorded.' }); setD({ ...d!, drafting: { ...d!.drafting, approval: { ...d!.drafting.approval, canAct: false } } }); }
+    else take(r);
+  }
   async function save() {
     if (await run(() => api<Detail>(`/staff/contracts/${c.id}`, { method: 'PATCH', body: contractBody(form!, editable === 'all' ? undefined : editable) }), 'Saved.')) setEditing(false);
   }
@@ -68,13 +80,16 @@ export function ContractDetail() {
           <p className="muted"><span className="mono">{c.number}</span>{c.reference && <> · their ref. {c.reference}</>} · {typeLabel(setup, c.type)} · {DIRECTION_LABEL[c.direction]} · <ContractStatus status={c.status} expiring={c.expiring} /></p></div>
         {manage && <div className="head-actions">
           {editable.length > 0 && !editing && <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>}
-          {c.status === 'DRAFT' && <button className="btn btn-primary" onClick={() => setModal('sign')} disabled={!signedCopy} title={signedCopy ? undefined : 'Upload the signed copy first'}>Mark as signed</button>}
+          <ReopenButton contractId={c.id} status={c.status} onDetail={onDetail} />
+          {((c.status === 'DRAFT' && !needsApproval) || c.status === 'APPROVED') && <button className="btn btn-primary" onClick={() => setModal('sign')} disabled={!signedCopy} title={signedCopy ? undefined : 'Upload the signed copy first'}>Mark as signed</button>}
           {c.status === 'ACTIVE' && <button className="btn btn-danger" onClick={() => setModal('terminate')}>Terminate</button>}
           {c.status === 'DRAFT' && <button className="btn btn-secondary" onClick={async () => { if (confirm(`Delete draft ${c.number}? This can’t be undone.`) && await run(() => api(`/staff/contracts/${c.id}`, { method: 'DELETE' }).then(() => {}), 'Deleted.')) nav('/staff/contracts'); }}>Delete draft</button>}
         </div>}
       </header>
       {flash && <Alert kind={flash.kind}>{flash.text}</Alert>}
-      {c.status === 'DRAFT' && <Alert kind="info">Draft — once it is signed, upload the signed copy and mark it as signed. Contract drafting, approval and e-signature come in later releases.</Alert>}
+      {c.status === 'DRAFT' && !d.drafting.draft && <Alert kind="info">Draft — draft the wording from a template below, or upload your own draft. Once it is signed, upload the signed copy and mark it as signed.</Alert>}
+      {c.status === 'IN_APPROVAL' && <Alert kind="info">Waiting for approval{d.drafting.approval.current ? ` — ${d.drafting.approval.current.label}` : ''}. The contract can’t be changed while it is in approval.</Alert>}
+      {c.status === 'APPROVED' && <Alert kind="success">Approved. Send the document to {d.party.kind === 'CUSTOMER' ? 'the customer' : 'the supplier'} for signature, then upload the signed copy and mark it as signed. (Sending and e-signature from VendorGate come in the next release.)</Alert>}
       {c.status === 'TERMINATED' && <Alert kind="warning">Terminated{c.terminatedAt ? ` on ${fmtDate(c.terminatedAt)}` : ''}: {c.terminationReason}</Alert>}
       {c.expiring && <Alert kind="warning">Ends in {c.daysLeft} day{c.daysLeft === 1 ? '' : 's'}{c.autoRenew ? ' — it renews automatically' : ''}.{c.noticeBy && c.autoRenew ? (c.noticeBy < new Date().toISOString().slice(0, 10) ? ` The last day to give notice (${fmtDate(c.noticeBy)}) has passed, so it will renew.` : ` Notice to stop the renewal is due by ${fmtDate(c.noticeBy)}.`) : ''}</Alert>}
 
@@ -101,15 +116,17 @@ export function ContractDetail() {
             )}
           </section>
 
+          <DraftingCard<Detail> contractId={c.id} status={c.status} drafting={d.drafting} manage={manage} onDetail={onDetail} />
+
           <section className="card pad section-card">
             <h3>Files</h3>
             {d.files.length ? <table className="table static compact"><thead><tr><th>File</th><th>What it is</th><th>Added</th><th /></tr></thead>
               <tbody>{d.files.map((f) => (
                 <tr key={f.id}><td><a href={`/api/staff/contracts/files/${f.id}`} target="_blank" rel="noreferrer">{f.fileName}</a> <span className="muted small">{fmtSize(f.size)}</span></td>
-                  <td>{setup?.fileKinds[f.kind] ?? f.kind}</td><td className="small">{f.uploadedByName} · {fmtDateTime(f.uploadedAt)}</td>
+                  <td>{setup?.fileKinds[f.kind] ?? f.kind}{f.generated && <span className="badge sm" style={{ marginInlineStart: 6 }}>Made by VendorGate · v{f.version}</span>}</td><td className="small">{f.uploadedByName} · {fmtDateTime(f.uploadedAt)}</td>
                   <td className="actions">{manage && (c.status === 'DRAFT' || f.kind !== 'SIGNED') && <button className="link-btn small" onClick={() => confirm(`Remove ${f.fileName}?`) && run(() => api<Detail>(`/staff/contracts/${c.id}/files/${f.id}`, { method: 'DELETE' }), 'File removed.')}>Remove</button>}</td></tr>
               ))}</tbody></table> : <p className="muted small">No files yet.</p>}
-            {manage && (c.status === 'DRAFT' || c.status === 'ACTIVE') && setup && <FileUpload kinds={setup.fileKinds} onUpload={upload} defaultKind={c.status === 'DRAFT' && !signedCopy ? 'SIGNED' : 'ANNEXURE'} />}
+            {manage && ['DRAFT', 'APPROVED', 'ACTIVE'].includes(c.status) && setup && <FileUpload kinds={setup.fileKinds} onUpload={upload} defaultKind={(c.status === 'DRAFT' && !d.drafting.draft) || c.status === 'APPROVED' ? (signedCopy ? 'ANNEXURE' : 'SIGNED') : c.status === 'DRAFT' ? 'DRAFT' : 'ANNEXURE'} />}
           </section>
 
           {(d.parent || d.children.length > 0) && (
@@ -127,6 +144,8 @@ export function ContractDetail() {
             <p style={{ margin: 0 }}><Link to={`/staff/parties/${d.party.id}`}>{d.party.name}</Link></p>
             {d.party.contacts.filter((x) => x.signatory).length > 0 && <p className="small muted">Signs: {d.party.contacts.filter((x) => x.signatory).map((x) => x.name).join(', ')}</p>}
           </section>
+          {d.drafting.approvalOn || d.drafting.approval.steps.length > 0
+            ? <FlowPanel flow={d.drafting.approval} onDecide={decide} title="Approval" empty={c.status === 'DRAFT' ? 'Not submitted yet. Who approves depends on the value, the type and whether the wording was changed (Administration → Contracts).' : 'No approval was needed.'} /> : null}
           <HistoryCard rows={d.history} actions={ACTIONS} extra={(h) => (typeof h.detail?.fileName === 'string' ? h.detail.fileName : Array.isArray(h.detail?.fields) ? (h.detail!.fields as string[]).join(', ') : null)} />
         </div>
       </div>
@@ -143,7 +162,7 @@ function FileUpload({ kinds, defaultKind, onUpload }: { kinds: Record<string, st
   return (
     <div className="btn-row" style={{ alignItems: 'end', marginTop: 10 }}>
       <div className="field" style={{ margin: 0 }}><label htmlFor="cf-file-kind">Add a file</label><select id="cf-file-kind" value={kind} onChange={(e) => setKind(e.target.value)}>{Object.entries(kinds).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
-      <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>Choose PDF or image…<input type="file" accept=".pdf,.png,.jpg,.jpeg" hidden aria-label="Contract file" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(kind, f); e.target.value = ''; }} /></label>
+      <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>Choose Word, PDF or image…<input type="file" accept=".docx,.pdf,.png,.jpg,.jpeg" hidden aria-label="Contract file" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(kind, f); e.target.value = ''; }} /></label>
     </div>
   );
 }

@@ -27,7 +27,7 @@ export interface ConfigIssue { path: string; message: string }
 
 export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 'vendors.block' | 'vendors.edit' | 'users.manage' | 'tenant.settings' | 'config.manage' | 'approvals.manage' | 'reports.view' | 'audit.view' | 'orders.view' | 'orders.manage' | 'invoices.manage' | 'actions.manage'
   | 'sourcing.view' | 'sourcing.events' | 'sourcing.open' | 'sourcing.evaluate' | 'sourcing.live'
-  | 'contracts.view' | 'contracts.manage';
+  | 'contracts.view' | 'contracts.manage' | 'contracts.templates';
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };

@@ -12,7 +12,8 @@ import { audit } from '../lib/audit.js';
 import { effectiveLimits } from '../lib/plans.js';
 import { z } from 'zod';
 import type { Request } from 'express';
-import { approvalCatalog, approvalLevels, assertSourcingOn, checkApproval, checkSourcingSettings, eventConditionCatalog, sourcingConfig, type FlowKind } from '../services/sourcing/config.js';
+import { approvalSetupFor, saveFlowLevels } from './approvalAdmin.js';
+import { approvalCatalog, approvalLevels, assertSourcingOn, checkSourcingSettings, eventConditionCatalog, sourcingConfig, type FlowKind } from '../services/sourcing/config.js';
 import { cancelEvent, copyEvent, createEvent, deleteEvent, eventDetail, eventInput, itemsInput, itemsTemplate, listEvents, readItems, saveItems, sourcingTerms, submitEvent, updateEvent, withdrawEvent, type EventFilter } from '../services/sourcing/events.js';
 import { decideFlow, flowView, waitingFor } from '../services/approvalFlow.js';
 import { addBidders, addOutsideBidder, publishAnswer, removeBidder, sendInvitations, suggestBidders } from '../services/sourcing/bidders.js';
@@ -25,10 +26,8 @@ import { localeFor } from '../countries/registry.js';
 
 export const sourcingAdminRouter = Router();
 
-const approvalSetup = async (tenantId: string, tenant: Parameters<typeof approvalLevels>[0], kind: FlowKind = 'event') => ({
-  kind, levels: approvalLevels(tenant, kind), catalog: await approvalCatalog(tenant, kind),
-  roles: await db.select({ key: schema.roles.key, name: schema.roles.name }).from(schema.roles).where(eq(schema.roles.tenantId, tenantId)),
-});
+const approvalSetup = async (tenantId: string, tenant: Parameters<typeof approvalLevels>[0], kind: FlowKind = 'event') =>
+  approvalSetupFor(tenantId, approvalLevels(tenant, kind), await approvalCatalog(tenant, kind), kind);
 sourcingAdminRouter.get('/', requireStaff('tenant.settings'), ah(async (req, res) => {
   const { tenant } = staffCtx(req);
   res.json({ ...sourcingConfig(tenant), plan: effectiveLimits(tenant).label, approval: await approvalSetup(tenant.id, tenant), awardApproval: await approvalSetup(tenant.id, tenant, 'award') });
@@ -38,12 +37,7 @@ sourcingAdminRouter.get('/', requireStaff('tenant.settings'), ah(async (req, res
 sourcingAdminRouter.put('/approval', requireStaff('tenant.settings'), ah(async (req, res) => {
   const s = staffCtx(req);
   const kind: FlowKind = req.query.kind === 'award' ? 'award' : 'event';
-  const roleKeys = (await db.select({ key: schema.roles.key }).from(schema.roles).where(eq(schema.roles.tenantId, s.tenant.id))).map((r) => r.key);
-  const { levels, issues } = await checkApproval(s.tenant, kind, req.body?.levels, roleKeys);
-  if (issues.length) throw new HttpError(400, issues[0].message, issues);
-  const tenant = { ...s.tenant, settings: { ...s.tenant.settings, sourcing: { ...(s.tenant.settings.sourcing ?? {}), [kind === 'event' ? 'approval' : 'awardApproval']: { levels } } } };
-  await db.update(schema.tenants).set({ settings: tenant.settings }).where(eq(schema.tenants.id, s.tenant.id));
-  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'SOURCING_APPROVAL_FLOW_CHANGED', detail: { flow: kind, levels: levels.map((l) => l.label) }, ip: req.ip });
+  const { tenant } = await saveFlowLevels(s.tenant, req.body?.levels, { catalog: await approvalCatalog(s.tenant, kind), settingsKey: 'sourcing', field: kind === 'event' ? 'approval' : 'awardApproval', auditAction: 'SOURCING_APPROVAL_FLOW_CHANGED', flow: kind, actor: s.user.name, ip: req.ip });
   res.json({ approval: await approvalSetup(s.tenant.id, tenant, kind) });
 }));
 

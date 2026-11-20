@@ -133,7 +133,7 @@ describe('repository', () => {
     const exp = (await admin.get('/api/staff/contracts?filter=expiring')).body;
     expect(exp.contracts.map((c: any) => c.number)).toEqual([nda.body.contract.number]);
     expect(exp.expiring).toBe(1);
-    expect((await admin.get('/api/staff/contracts?direction=BUY&pageSize=1')).body).toMatchObject({ total: 2, pageSize: 1 });
+    expect((await admin.get(`/api/staff/contracts?direction=BUY&pageSize=1&partyId=${supplierId}`)).body).toMatchObject({ total: 2, pageSize: 1 });
     expect((await admin.get(`/api/staff/contracts?q=Northwind`)).body.total).toBe(1);
 
     // Terminate, delete a draft, history.

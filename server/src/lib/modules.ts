@@ -12,7 +12,7 @@ export const contractsLicensed = (t: Pick<Tenant, 'plan' | 'limits'>) => effecti
 
 /** API paths that belong to supplier onboarding (and what needs it: purchase orders, sourcing, supplier reports). */
 const ONBOARDING_PATHS = [
-  /^\/api\/staff\/(?!contracts(\/|$)|parties(\/|$))/, /^\/api\/reports(\/|$)/, /^\/api\/scorecards(\/|$)/, /^\/api\/ask(\/|$)/,
+  /^\/api\/staff\/(?!contracts(\/|$)|parties(\/|$)|contract-library(\/|$))/, /^\/api\/reports(\/|$)/, /^\/api\/scorecards(\/|$)/, /^\/api\/ask(\/|$)/,
   /^\/api\/questionnaires(\/|$)/, /^\/api\/agreements(\/|$)/, /^\/api\/admin\/config(\/|$)/, /^\/api\/admin\/purchasing(\/|$)/, /^\/api\/admin\/sourcing(\/|$)/,
   /^\/api\/(orders|invoices|payments|shipments|purchasing)(\/|$)/,
 ];

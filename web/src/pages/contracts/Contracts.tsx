@@ -14,7 +14,7 @@ import { blankContract, contractBody, ContractForm, type ContractData } from './
 
 interface Row { id: string; number: string; reference: string | null; title: string; direction: Direction; type: string; status: string; value: number | null; currency: string; startDate: string | null; endDate: string | null; party: { id: string; name: string; code: string }; owner: string | null; daysLeft: number | null; expiring: boolean }
 interface List { contracts: Row[]; total: number; page: number; pageSize: number; counts: Record<string, number>; expiring: number }
-const TABS = [['all', 'All'], ['BUY', 'Supplier contracts'], ['SELL', 'Customer contracts'], ['expiring', 'Expiring'], ['DRAFT', 'Drafts'], ['ended', 'Ended']] as const;
+const TABS = [['all', 'All'], ['BUY', 'Supplier contracts'], ['SELL', 'Customer contracts'], ['expiring', 'Expiring'], ['DRAFT', 'Drafts'], ['IN_APPROVAL', 'In approval'], ['ended', 'Ended']] as const;
 
 export function ContractsList() {
   useHelpContext('contracts');
@@ -36,7 +36,7 @@ export function ContractsList() {
     if (q) p.set('q', q);
     if (tab === 'BUY' || tab === 'SELL') p.set('direction', tab);
     if (tab === 'expiring') { p.set('filter', 'expiring'); p.set('sort', 'end'); }
-    if (tab === 'DRAFT') p.set('status', 'DRAFT');
+    if (tab === 'DRAFT' || tab === 'IN_APPROVAL') p.set('status', tab);
     if (tab === 'ended') p.set('status', 'ENDED');
     api<List>(`/staff/contracts?${p}`).then(setData).catch((e) => setError(e.message));
   }, [q, tab, page]);

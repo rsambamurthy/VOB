@@ -1399,15 +1399,17 @@ The hold is lifted as soon as the renewal is approved. You’ll get an email.`,
     summary: 'Your supplier and customer contracts in one place: dates, value, renewal, notice and the signed copies.',
     screens: ['^/staff/contracts'], contexts: ['contracts'],
     keywords: 'contract contracts agreement nda msa sow repository renewal expiry expiring notice period signed copy terminate import excel',
-    related: ['contract-parties', 'contracts-settings'],
+    related: ['contract-drafting', 'contract-parties', 'contracts-settings'],
     body: `Contracts → **All contracts** lists every contract with its number, party, type, status, value and end date. Tabs: supplier contracts, customer contracts, **expiring** (ending within your workspace's warning period, soonest first), drafts and ended.
 
 - **+ New contract**: choose supplier or customer, the type (the number comes from the type — NDA-2026-0001, MSA-2026-0001…), the party, value, dates, notice period and whether it renews automatically. A schedule or SOW can sit **under a master agreement** with the same party.
 - **Already signed?** Tick *Already signed* to record a contract signed outside VendorGate — it becomes active (or expired, if its end date has passed).
-- A **draft** becomes active with **Mark as signed**: upload the signed copy first, and the contract needs a start date.
+- A **draft** becomes active with **Mark as signed**: upload the signed copy first, and the contract needs a start date. To write the contract in VendorGate, see [Drafting and approval](#contract-drafting).
 - Once active, only the owner, description, category, notice period, renewal and reference can change. **Terminate** ends it early with a reason.
 - **Files**: the signed copy, drafts, annexures and other papers, each kept with who uploaded it and when.
 - **Import from Excel** brings in the contracts you already have — download the template, one row per contract; you see what was read and any errors before anything is saved. Tick *Create missing parties* to add suppliers or customers that aren't there yet.
+
+Statuses: **Draft** → **In approval** → **Approved** → **Active** → **Expired** or **Terminated**.
 
 Every night, contracts past their end date become **expired** — or, if they renew automatically, move on by the renewal term. Every change is in the contract's history.`,
   },
@@ -1436,10 +1438,57 @@ Every night, contracts past their end date become **expired** — or, if they re
 1. **Your plan or licence** includes Contracts. The **Contracts plan** has Contracts without supplier onboarding — then the menus show only Contracts, Parties and administration.
 2. **Switch Contracts on** for the workspace. When it is off the menus are hidden; your contracts are kept.
 3. **Contract types**: NDA, master agreement, SOW, rate contract, service, purchase, sales, distribution, lease, licence and other. Each has its own number prefix; some are only for suppliers or only for customers.
-4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import. Templates, approval, e-signature, obligations and renewal alerts are shown as *coming later*.
+4. **Options**: customer contracts, linking parties to onboarded suppliers, contracts under a master agreement, Excel import, templates from the clause library, your own Word templates and internal approval. E-signature, obligations and renewal alerts are shown as *coming later*.
 5. **Rule defaults**: notice period, renewal term, how many days before the end a contract counts as *expiring*, and whether a value is required. **Lock** a rule so it can't be changed on a contract.
 
-People also need permissions (Administration → Roles): *View contracts and contract parties* and *Create and edit contracts and parties*. The **Contract Manager** role has both.`,
+6. **Our company on contracts**: your legal name, registration and tax numbers, address, city (used for courts, the arbitration seat and the place of signing) and signatory — printed in documents. Empty boxes use your billing details.
+7. **Contract approval**: levels like the onboarding approval flow. Rules can use the value, type, supplier or customer, category, *wording changed from the library* and *a fallback clause is used*. By default: Legal Counsel when the wording was changed or a fallback is used, Finance above 10 lakh, and senior management above 1 crore. If no level applies, the contract is approved straight away.
+
+People also need permissions (Administration → Roles): *View contracts and contract parties*, *Create and edit contracts and parties* and *Manage contract templates and the clause library*. The **Contract Manager** role has all three; **Legal Counsel** can view contracts and manage templates.`,
+  },
+  {
+    id: 'contract-drafting', title: 'Drafting a contract and approval', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'Draft from a template, choose standard or fallback wording, make the Word and PDF, and send it for internal approval.',
+    screens: ['^/staff/contracts/'], contexts: ['contracts'],
+    keywords: 'draft template clause fallback wording non-standard word pdf document approval submit legal finance send back withdraw reopen jurisdiction governing law',
+    related: ['contracts', 'contract-templates', 'contract-library'],
+    body: `On a draft contract, **Draft from a template**: choose the template and the country (India, UAE or Saudi Arabia). Clauses follow the country — governing law, disputes, tax and data protection change with it.
+
+- Open a clause to read it. Choose **Standard**, one of its **fallbacks** (alternatives your legal team pre-approved) or **Edit the wording**. Edited wording makes the contract **non-standard**; a fallback is marked as **fallback used**. Both can bring in Legal approval.
+- Optional clauses can be left out; **+ Add a clause** brings in any other clause from the library (non-standard).
+- **Save wording**, then **Make the document**: VendorGate fills in the merge fields (party names, value in words, dates, notice period, signatories) and makes a Word file and a PDF, listed under Files. Anything still blank is shown, e.g. a missing tax number.
+- Changing the wording or the contract's details marks the document **out of date** — make it again before submitting.
+- **Submit for approval** sends it through the levels your administrator set; each approver is emailed. They approve, send back with remarks, or reject. The owner or the person who drafted it can't approve it. **Withdraw from approval** to change it; an approved contract can be **reopened as a draft** (approval starts again).
+- Once approved, send the PDF for signature, upload the signed copy and **Mark as signed**.`,
+  },
+  {
+    id: 'contract-templates', title: 'Contract templates', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'Templates built from the clause library, or your own Word documents with merge fields.',
+    screens: ['^/staff/contract-templates'], contexts: ['contract-templates'],
+    keywords: 'template word docx merge field clauses heading opening paragraph upload nda service supply msa sales',
+    related: ['contract-library', 'contract-drafting'],
+    body: `Contracts → **Templates**. Built-in templates: mutual NDA, service / maintenance agreement (AMC), supply / rate contract, master services agreement and sales agreement.
+
+**From the clause library**: a heading, an opening paragraph (who the parties are) and clauses in order. Untick *Required* to let drafters leave a clause out. Each template is for some contract types and for suppliers, customers or both.
+
+**Your own Word template**: upload a .docx with merge fields written like \`{{party.legalName}}\`, \`{{contract.value}}\` or \`{{us.signatoryName}}\` — the list of fields is in the *Insert a field* menus. To print the drafted clauses, put \`{{#clauses}}\`, then \`{{number}}. {{title}}\` and \`{{body}}\` on their own lines, then \`{{/clauses}}\`, and choose the clauses below. Unknown fields are refused when you upload. Macro-enabled files aren't accepted.
+
+Changing a template never changes contracts already drafted. Managing templates needs *Manage contract templates and the clause library*.`,
+  },
+  {
+    id: 'contract-library', title: 'Clause library', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
+    summary: 'Standard clause wording and pre-approved fallbacks, for India, the UAE and Saudi Arabia.',
+    screens: ['^/staff/contract-clauses'], contexts: ['contract-library'],
+    keywords: 'clause library wording fallback guidance governing law arbitration gst vat dpdp pdpl stamp duty jurisdiction reset',
+    related: ['contract-templates', 'contract-drafting'],
+    body: `Contracts → **Clause library** holds the wording templates are built from, by category. The built-in library covers commercial terms (scope, term, price and payment, orders and delivery, service levels), legal terms (warranties, IP, liability, indemnity, termination, force majeure), confidentiality, data protection (DPDP Act 2023 in India, PDPL in the UAE and Saudi Arabia), tax (GST, VAT), governing law and disputes (Indian arbitration, DIAC, SCCA), stamp duty (India) and language (UAE, Saudi Arabia).
+
+- A clause can have up to six **fallbacks** — alternative wording your legal team accepts (for example payment in 45 days, a higher liability cap).
+- **Guidance** is shown to drafters, never printed.
+- Built-in clauses can be edited; **Reset to standard** puts back the original. Archived clauses aren't offered for new drafts.
+- Merge fields are inserted with *Insert a field*; unknown fields are refused.
+
+The built-in wording is a starting point — have your counsel review it before first use.`,
   },
 ];
 

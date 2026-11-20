@@ -21,7 +21,7 @@ import { logger } from '../lib/logger.js';
 
 const { flowSteps, roles, users, tenants } = schema;
 
-export type FlowSubject = 'sourcing_event' | 'sourcing_award';
+export type FlowSubject = 'sourcing_event' | 'sourcing_award' | 'contract';
 export type FlowDecision = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 export interface SubjectInfo { title: string; ref: string; link: string; kind: string }
 export interface FlowHandler {

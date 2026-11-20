@@ -1,14 +1,8 @@
 /** Administration → Sourcing: switch the module on, choose formats and sub-features, set rule defaults and lock them. */
-import { useState } from 'react';
-import { api } from '../../lib/api';
-import { Alert } from '../../components/ui';
 import { useHelpContext } from '../../help/HelpPanel';
 import { ModuleSettings, type KindRow, type ModuleConfig } from '../../components/ModuleSettings';
-import { FlowTester, LevelsEditor } from './config/LevelsEditor';
-import type { CatalogEntry } from './config/shared';
-import type { WorkflowLevel } from '../../lib/types';
+import { ApprovalLevelsCard, type ApprovalSetup } from '../../components/ApprovalLevelsCard';
 
-interface ApprovalSetup { levels: WorkflowLevel[]; catalog: CatalogEntry[]; roles: { key: string; name: string }[] }
 export interface SourcingConfig extends ModuleConfig { formats: KindRow[]; approval?: ApprovalSetup; awardApproval?: ApprovalSetup }
 
 export function SourcingSettings() {
@@ -35,26 +29,5 @@ const FLOW_TEXT = {
 } as const;
 
 function ApprovalCard({ kind, setup }: { kind: 'event' | 'award'; setup: ApprovalSetup }) {
-  const txt = FLOW_TEXT[kind];
-  const [levels, setLevels] = useState<WorkflowLevel[]>(setup.levels);
-  const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string }>();
-  const [busy, setBusy] = useState(false);
-  const edit = (fn: (ls: WorkflowLevel[]) => void) => setLevels((prev) => { const n = structuredClone(prev); fn(n); return n; });
-  async function save() {
-    setBusy(true); setMsg(undefined);
-    try { const r = await api<{ approval: ApprovalSetup }>(`/admin/sourcing/approval${kind === 'award' ? '?kind=award' : ''}`, { method: 'PUT', body: { levels } }); setLevels(r.approval.levels); setMsg({ kind: 'success', text: txt.saved }); }
-    catch (e: any) { setMsg({ kind: 'error', text: e.message }); } finally { setBusy(false); }
-  }
-  return (
-    <section className="card pad section-card" style={{ marginTop: 24 }} aria-label={txt.title}>
-      <h3>{txt.title}</h3>
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-      <div className="workflow-editor">
-        <LevelsEditor levels={levels} edit={edit} roles={setup.roles} catalog={setup.catalog} subject={txt.subject} minLevels={0} issuePath="levels"
-          newCondition={{ field: txt.field, op: 'gt', value: 1000000 }} intro={txt.intro} />
-        <FlowTester levels={levels} catalog={setup.catalog} subject={txt.subject} always={[txt.field]} allowNone />
-      </div>
-      <div className="btn-row"><button className="btn btn-primary" disabled={busy} onClick={save}>Save {txt.title.toLowerCase()} flow</button></div>
-    </section>
-  );
+  return <ApprovalLevelsCard endpoint={`/admin/sourcing/approval${kind === 'award' ? '?kind=award' : ''}`} setup={setup} text={FLOW_TEXT[kind]} />;
 }

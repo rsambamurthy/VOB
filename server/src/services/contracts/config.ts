@@ -4,7 +4,9 @@
  * Use contractsOn / typeOn / optionOn / contractRules; never read settings.contracts by hand.
  */
 import type { Tenant } from '../../db/schema.js';
+import { z } from 'zod';
 import { defineModule, type KindDef, type OptionDef, type RuleDef } from '../../lib/moduleConfig.js';
+import type { WorkflowLevel } from '../../config/types.js';
 
 /* ---------------- catalogue ---------------- */
 
@@ -39,9 +41,9 @@ export const OPTIONS = {
   linkSuppliers: { area: 'parties', label: 'Link supplier parties to onboarded suppliers', help: 'A supplier party can be linked to its supplier record, showing its status and risk; new supplier parties can be sent for onboarding.', default: true, available: true, requires: 'onboarding' },
   contractHierarchy: { area: 'repository', label: 'Linked contracts', help: 'Statements of work and orders sit under a master agreement.', default: true, available: true },
   excelImport: { area: 'repository', label: 'Import existing contracts from Excel', help: 'Bring in contracts signed before VendorGate, with their dates and values.', default: true, available: true },
-  templates: { area: 'authoring', label: 'Templates and clause library', help: 'Draft contracts from templates with standard and fallback clauses.', default: true, available: false },
-  wordTemplates: { area: 'authoring', label: 'Your own Word templates', help: 'Upload Word templates with merge fields; contracts come out as Word and PDF.', default: true, available: false },
-  internalApproval: { area: 'authoring', label: 'Internal approval', help: 'Contracts go through approval levels (by value, type or non-standard clauses) before they are sent.', default: true, available: false },
+  templates: { area: 'authoring', label: 'Templates and clause library', help: 'Draft contracts from templates with standard and fallback clauses.', default: true, available: true },
+  wordTemplates: { area: 'authoring', label: 'Your own Word templates', help: 'Upload Word templates with merge fields; contracts come out as Word and PDF.', default: true, available: true },
+  internalApproval: { area: 'authoring', label: 'Internal approval', help: 'Contracts go through approval levels (by value, type or non-standard clauses) before they are sent.', default: true, available: true },
   counterpartyPortal: { area: 'negotiation', label: 'Counterparty review in the portal', help: 'Suppliers and customers review, comment and propose changes online.', default: true, available: false },
   esign: { area: 'signature', label: 'E-signature', help: 'Send for signature through the connector set up in Integrations (DocuSign, Aadhaar eSign / DSC, Adobe Sign, UAE Pass, Zoho Sign).', default: false, available: false },
   obligations: { area: 'management', label: 'Obligations and milestones', help: 'Deliverables, service levels and payment milestones with owners and reminders.', default: true, available: false },
@@ -66,7 +68,7 @@ export type ContractRule = keyof typeof RULES;
 const M = defineModule({
   name: 'Contracts', feature: 'contracts', settingsKey: 'contracts', kindsKey: 'types', kindNoun: 'contract type',
   kinds: CONTRACT_TYPES, options: OPTIONS, areas: AREA_LABELS, rules: RULES as Record<ContractRule, RuleDef>,
-  keep: ['approval'],
+  keep: ['approval', 'company'],
 });
 
 export const contractsSettingsSchema = M.settingsSchema;
@@ -96,3 +98,54 @@ export function contractsSummary(t: Tenant) {
   const s = M.summary(t);
   return { on: s.on, types: s.kinds.map((k) => ({ key: k, label: CONTRACT_TYPES[k].label, directions: CONTRACT_TYPES[k].directions })), directions: directionsOn(t), linkSuppliers: optionOn(t, 'linkSuppliers') };
 }
+
+/* ---------------- our company on documents ---------------- */
+
+/** Our details for contract documents (us.* merge fields). Defaults come from the workspace's billing details. */
+export const companySchema = z.object({
+  legalName: z.string().trim().max(200).optional(), address: z.string().trim().max(500).optional(), country: z.string().trim().max(2).optional(),
+  registrationNo: z.string().trim().max(60).optional(), taxNo: z.string().trim().max(60).optional(),
+  signatoryName: z.string().trim().max(120).optional(), signatoryRole: z.string().trim().max(120).optional(), city: z.string().trim().max(80).optional(),
+}).strict();
+export type CompanyDetails = z.infer<typeof companySchema>;
+export function companyDetails(t: Tenant): Required<CompanyDetails> {
+  const c = (M.stored(t).company ?? {}) as CompanyDetails;
+  const b = t.billing ?? {};
+  const pick = (a: string | undefined, d: string | undefined) => (a && a.trim() ? a : d ?? '');
+  return {
+    legalName: pick(c.legalName, b.legalName ?? t.name), address: pick(c.address, [b.address, b.city, b.postalCode].filter(Boolean).join(', ')), country: pick(c.country, b.country ?? t.country),
+    registrationNo: pick(c.registrationNo, ''), taxNo: pick(c.taxNo, b.gstin), signatoryName: pick(c.signatoryName, ''), signatoryRole: pick(c.signatoryRole, ''), city: pick(c.city, b.city),
+  };
+}
+
+/* ---------------- internal approval ---------------- */
+
+/** Jurisdictions the built-in clause library covers (governing law, disputes, tax wording). */
+export const JURISDICTIONS = { IN: 'India', AE: 'United Arab Emirates', SA: 'Saudi Arabia' } as const;
+export type Jurisdiction = keyof typeof JURISDICTIONS;
+export const defaultJurisdiction = (t: Tenant): Jurisdiction => (companyDetails(t).country in JURISDICTIONS ? companyDetails(t).country : t.country in JURISDICTIONS ? t.country : 'IN') as Jurisdiction;
+
+/**
+ * Before a drafted contract goes to the other party it goes through these levels (same shape and editor as the
+ * onboarding approval flow). Rules can test the value, type, direction, category, and whether the wording differs
+ * from the library: `contract.nonStandard` (edited wording) and `contract.fallback` (a pre-approved fallback used).
+ */
+const gt = (field: string, value: number) => ({ match: 'all' as const, conditions: [{ field, op: 'gt' as const, value }] });
+export const DEFAULT_CONTRACT_APPROVAL: WorkflowLevel[] = [
+  { id: 'legal', label: 'Legal review', roleKey: 'LEGAL', rule: { match: 'any', conditions: [{ field: 'contract.nonStandard', op: 'eq', value: 'Yes' }, { field: 'contract.fallback', op: 'eq', value: 'Yes' }] }, slaHours: 48 },
+  { id: 'finance', label: 'Finance approval', roleKey: 'FINANCE_MANAGER', rule: gt('contract.value', 1_000_000), slaHours: 48 },
+  { id: 'senior', label: 'Senior management approval', roleKey: 'ADMIN', rule: gt('contract.value', 10_000_000), slaHours: 48 },
+];
+export const contractApprovalLevels = (t: Tenant): WorkflowLevel[] => (M.stored(t).approval as { levels?: WorkflowLevel[] } | undefined)?.levels ?? DEFAULT_CONTRACT_APPROVAL;
+const yesNo = { type: 'select', options: ['Yes', 'No'] };
+export const contractApprovalCatalog = () => [
+  { id: 'contract.value', label: 'Contract value', type: 'number' },
+  { id: 'contract.type', label: 'Contract type', type: 'select', options: CONTRACT_TYPE_KEYS.map((k) => CONTRACT_TYPES[k].label) },
+  { id: 'contract.direction', label: 'Supplier or customer', type: 'select', options: ['Supplier', 'Customer'] },
+  { id: 'contract.nonStandard', label: 'Wording changed from the library', ...yesNo },
+  { id: 'contract.fallback', label: 'A fallback clause is used', ...yesNo },
+  { id: 'contract.category', label: 'Category', type: 'text' },
+];
+export const contractRuleContext = (c: { value: string | number | null; type: string; direction: string; category: string | null }, draft: { nonStandard: boolean; fallback: boolean }) =>
+  ({ profile: { contract: { value: c.value === null ? '' : Number(c.value), type: CONTRACT_TYPES[c.type as ContractType]?.label ?? c.type, direction: c.direction === 'SELL' ? 'Customer' : 'Supplier',
+    nonStandard: draft.nonStandard ? 'Yes' : 'No', fallback: draft.fallback ? 'Yes' : 'No', category: c.category ?? '' } } });
