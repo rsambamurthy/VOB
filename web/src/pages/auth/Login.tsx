@@ -76,7 +76,7 @@ export function Login() {
           <button className={`btn ${sso.enabled ? 'btn-secondary' : 'btn-primary'} btn-block`} disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
           <Link to={`/forgot-password?workspace=${encodeURIComponent(workspace)}`} className="small center">Forgot password?</Link>
           </>)}
-          <p className="small muted center">Supplier? Use the invitation link from your email instead.</p>
+          <p className="small muted center">Got a link by email to fill in a form or review a contract? Use that link instead.</p>
           {signupOpen && <p className="small center">New to VendorGate? <Link to="/signup">Create a workspace</Link></p>}
         </form>
       ) : (

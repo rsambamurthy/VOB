@@ -21,10 +21,11 @@ import type { Feature } from './features.js';
 export interface KindDef { label: string; help: string; available: boolean }
 /** `requires`: plan features the option needs (one or several, e.g. ERP and supplier onboarding). */
 export interface OptionDef { area: string; label: string; help: string; default: boolean; available: boolean; requires?: Feature | readonly Feature[] }
-/** `workspace` = a setting for the whole workspace rather than a default each record starts with (no lock). */
+/** `workspace` = a setting for the whole workspace rather than a default each record starts with (no lock).
+ *  `feature` = a plan feature the rule only makes sense with (e.g. purchase orders); without it the rule is not shown or applied. */
 export type RuleDef =
-  | { kind: 'choice'; label: string; help: string; options: Record<string, string>; default: string; requires?: string; workspace?: boolean }
-  | { kind: 'number'; label: string; help: string; min: number; max: number; step?: number; unit?: string; default: number | null; nullable?: boolean; requires?: string; workspace?: boolean };
+  | { kind: 'choice'; label: string; help: string; options: Record<string, string>; default: string; requires?: string; workspace?: boolean; feature?: Feature }
+  | { kind: 'number'; label: string; help: string; min: number; max: number; step?: number; unit?: string; default: number | null; nullable?: boolean; requires?: string; workspace?: boolean; feature?: Feature };
 export type RuleValue = string | number | null;
 
 /** What a module stores in tenant.settings[module]. Extra keys (approval flows…) are kept as they are. */
@@ -104,6 +105,8 @@ export function defineModule<K extends string, O extends string, R extends strin
   }
   const lockedRules = (t: Tenant) => new Set<R>((stored(t).locked ?? []) as R[]);
 
+  const ruleInPlan = (t: Tenant, k: R) => { const f = spec.rules[k].feature; return !f || effectiveLimits(t).features[f] === true; };
+
   /** The rules for one record: defaults plus the user's choices for unlocked rules; rules whose option is off are dropped. */
   function resolveRules(t: Tenant, choices: Partial<Record<R, unknown>> = {}, noun = 'record'): Partial<Record<R, RuleValue>> {
     const base = ruleDefaults(t);
@@ -115,7 +118,7 @@ export function defineModule<K extends string, O extends string, R extends strin
     const parsed = ruleValuesSchema.safeParse(Object.fromEntries(Object.entries(choices).filter(([, v]) => v !== undefined)));
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
     const out: Partial<Record<R, RuleValue>> = { ...base, ...(parsed.data as Partial<Record<R, RuleValue>>) };
-    for (const k of RULE_KEYS) { const req = spec.rules[k].requires as O | undefined; if (req && !optionOn(t, req)) delete out[k]; }
+    for (const k of RULE_KEYS) { const req = spec.rules[k].requires as O | undefined; if ((req && !optionOn(t, req)) || !ruleInPlan(t, k)) delete out[k]; }
     return out;
   }
 
@@ -127,7 +130,7 @@ export function defineModule<K extends string, O extends string, R extends strin
       kinds: KIND_KEYS.map((k) => ({ key: k, label: spec.kinds[k].label, help: spec.kinds[k].help, ...kindState(t, k) })),
       features: OPTION_KEYS.map((k) => { const d = spec.options[k]; return { key: k, area: d.area, label: d.label, help: d.help, default: d.default, ...optionState(t, k) }; }),
       areas: spec.areas,
-      rules: RULE_KEYS.map((k) => ({ key: k, ...spec.rules[k], value: ruleDefaults(t)[k], locked: lockedRules(t).has(k) })),
+      rules: RULE_KEYS.filter((k) => ruleInPlan(t, k)).map((k) => ({ key: k, ...spec.rules[k], value: ruleDefaults(t)[k], locked: lockedRules(t).has(k) })),
     };
   }
   const summary = (t: Tenant) => ({ on: on(t), kinds: KIND_KEYS.filter((k) => kindState(t, k).on) });

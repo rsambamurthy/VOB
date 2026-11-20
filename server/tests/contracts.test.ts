@@ -69,6 +69,16 @@ describe('modules', () => {
       expect((await admin.get('/api/admin/erp')).status).toBe(404);
       const cfg = (await admin.get('/api/admin/contracts')).body;
       expect(cfg.features.find((o: any) => o.key === 'contractToErp')).toMatchObject({ on: false, needs: 'onboarding' });
+      // The default approval flow uses the Contract Approver role (there is no Finance Manager on this plan).
+      const tenantNow = (await db.query.tenants.findFirst({ where: eq(schema.tenants.id, acme.id) }))!;
+      const { contractApprovalLevels } = await import('../src/services/contracts/config.js');
+      const noFlow = { ...tenantNow, settings: { ...tenantNow.settings, contracts: { ...(tenantNow.settings as any).contracts, approval: undefined } } } as Tenant;
+      expect(contractApprovalLevels(noFlow).map((l) => l.roleKey)).toEqual(['LEGAL', 'CONTRACT_APPROVER', 'ADMIN']);
+      expect(contractApprovalLevels({ ...noFlow, plan: 'standard', limits: { features: { contracts: true } } } as Tenant).map((l) => l.roleKey)).toEqual(['LEGAL', 'FINANCE_MANAGER', 'ADMIN']);
+      // Settings that only work with purchase orders aren't offered.
+      const ruleKeys = cfg.rules.map((r: any) => r.key);
+      expect(ruleKeys).toEqual(expect.arrayContaining(['noticeDays', 'decisionDays', 'digestDay']));
+      for (const k of ['priceTolerance', 'spendWarnPct', 'idleMonths']) expect(ruleKeys).not.toContain(k);
     } finally { await setLimits(original.limits as object, original.plan); }
     // Back on the full plan everything returns.
     const me = (await admin.get('/api/auth/me')).body;

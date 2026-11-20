@@ -1516,7 +1516,7 @@ The built-in wording is a starting point — have your counsel review it before 
   },
   {
     id: 'contract-obligations', title: 'Managing signed contracts', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
-    summary: 'Obligations and reminders, renewal and notice alerts, amendments, agreed prices and price checks, and the ERP.',
+    summary: 'Obligations and reminders, renewal and notice alerts, amendments and ending a contract.',
     screens: ['^/staff/contract-obligations', '^/staff/contracts/'], contexts: ['contract-obligations', 'contracts'],
     keywords: 'obligation milestone deliverable payment report reminder overdue recurring renewal notice alert amendment extend extension change value price list rate price check tolerance invoice purchase order erp blanket agreement',
     related: ['contracts', 'contract-drafting', 'contract-signing'],
@@ -1563,7 +1563,7 @@ Figures refresh every minute. **Download Excel** gives the same figures as a wor
   },
   {
     id: 'contract-watch', title: 'Contract watch', audience: ['staff'], perms: ['contracts.view'], feature: 'contracts',
-    summary: 'Contracts that need a decision — renewals, notice dates, prices above the contract, spend near the value, late obligations, supplier holds, missing owners and unused contracts.',
+    summary: 'Contracts that need a decision — renewals and notice dates, the other party’s late obligations, missing owners — with a decision pack and drafts.',
     screens: ['^/staff/contract-watch', '^/staff/contracts/'], contexts: ['contract-watch', 'contracts'],
     keywords: 'watch agent decision renew renegotiate end notice auto renewal spend value price above leakage overdue late obligation supplier hold risk owner unused idle snooze dismiss digest weekly email',
     related: ['contract-obligations', 'contract-reports', 'contracts-settings'],

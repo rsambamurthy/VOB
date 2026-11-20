@@ -14,7 +14,9 @@ interface OptionRow { key: string; area: string; label: string; help: string; de
 export interface ModuleConfig { licensed: boolean; enabled: boolean; on: boolean; features: OptionRow[]; areas: Record<string, string>; rules: RuleRow[]; plan?: string; changes?: string[]; [kinds: string]: unknown }
 
 /** Plan features an option may need (labels come from the server's feature list on the platform side). */
-const NEEDS: Record<string, string> = { erp: 'ERP integration', ai: 'AI features', onboarding: 'Supplier onboarding', collab: 'Purchase orders' };
+const NEEDS: Record<string, string> = { erp: 'ERP integration', ai: 'AI features' };
+/** Options that need another product (supplier onboarding, purchase orders) aren't shown without it — the plan doesn't have that product at all. */
+const OTHER_PRODUCTS = new Set(['onboarding', 'collab']);
 
 export function ModuleSettings<C extends ModuleConfig>({ name, endpoint, kindsKey, kinds, intro, switchHelp, ruleNoun, kindExtra, children }: {
   name: string; endpoint: string;
@@ -46,7 +48,7 @@ export function ModuleSettings<C extends ModuleConfig>({ name, endpoint, kindsKe
     setLocked(new Set(c.rules.filter((r) => r.locked).map((r) => r.key)));
   }, [kindsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api<C>(endpoint).then(take).catch((e) => setMsg({ kind: 'error', text: e.message })); }, [endpoint, take]);
-  const areas = useMemo(() => cfg ? Object.entries(cfg.areas).map(([k, label]) => ({ key: k, label, items: cfg.features.filter((f) => f.area === k) })).filter((a) => a.items.length) : [], [cfg]);
+  const areas = useMemo(() => cfg ? Object.entries(cfg.areas).map(([k, label]) => ({ key: k, label, items: cfg.features.filter((f) => f.area === k && !(f.needs && OTHER_PRODUCTS.has(f.needs))) })).filter((a) => a.items.length) : [], [cfg]);
 
   async function save() {
     if (!cfg) return;

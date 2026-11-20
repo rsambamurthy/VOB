@@ -76,7 +76,7 @@ function ScimSection({ roles }: { roles: { id: string; name: string }[] }) {
   return (
     <section className="card pad" style={{ marginTop: 18 }}>
       <h3 className="card-title">Automatic user set-up and removal (SCIM)</h3>
-      <p className="muted small">Your identity provider (Entra ID, Okta, OneLogin, JumpCloud…) creates VendorGate users when IT assigns them the app, updates their name and email, and <strong>disables them and signs them out</strong> when they leave. Groups give VendorGate roles of the same name (e.g. a “Finance Manager” group).</p>
+      <p className="muted small">Your identity provider (Entra ID, Okta, OneLogin, JumpCloud…) creates VendorGate users when IT assigns them the app, updates their name and email, and <strong>disables them and signs them out</strong> when they leave. Groups give VendorGate roles of the same name (e.g. a “{roles.find((r) => r.name !== 'Administrator')?.name ?? 'Viewer'}” group).</p>
       {err && <Alert kind="error">{err}</Alert>}
       <label className="check-item" style={{ margin: '10px 0' }}><input type="checkbox" checked={s.enabled} onChange={(e) => put({ enabled: e.target.checked })} />
         <span><strong>Accept users from my identity provider</strong></span></label>
@@ -137,7 +137,7 @@ export function SignIn() {
   if (!v) return <div className="page">{msg ? <Alert kind="error">{msg.text}</Alert> : <div className="spinner" />}</div>;
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Sign-in &amp; single sign-on</h1><p className="muted">How your staff sign in to VendorGate. Suppliers are not affected — they sign in with codes sent by email.</p></div></header>
+      <header className="page-head"><div><h1>Sign-in &amp; single sign-on</h1><p className="muted">How your staff sign in to VendorGate. {me?.plan?.features.onboarding === false ? 'People outside the company who review contracts are not affected — they use the link and code they are emailed.' : 'Suppliers are not affected — they sign in with codes sent by email.'}</p></div></header>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
 
       <section className="card pad">

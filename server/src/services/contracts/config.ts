@@ -7,6 +7,7 @@ import type { Tenant } from '../../db/schema.js';
 import { z } from 'zod';
 import { defineModule, type KindDef, type OptionDef, type RuleDef } from '../../lib/moduleConfig.js';
 import type { WorkflowLevel } from '../../config/types.js';
+import { effectiveLimits } from '../../lib/plans.js';
 
 /* ---------------- catalogue ---------------- */
 
@@ -57,7 +58,7 @@ export const OPTIONS = {
   esign: { area: 'signature', label: 'E-signature', help: 'Send for signature through the connector set up in Integrations (DocuSign, Aadhaar eSign / DSC, Adobe Sign, UAE Pass, Zoho Sign).', default: false, available: true },
   obligations: { area: 'management', label: 'Obligations and milestones', help: 'Deliverables, service levels and payment milestones with owners and reminders.', default: true, available: true },
   renewalAlerts: { area: 'management', label: 'Renewal and notice alerts', help: 'Remind the owner before the notice date and the end date. With Contract watch on, these become decisions in the watch list instead of separate emails.', default: true, available: true },
-  watch: { area: 'management', label: 'Contract watch', help: 'Every night VendorGate looks for contracts that need a decision — notice dates, automatic renewals, prices above the contract, spend near the value, the other party’s overdue obligations, supplier holds, missing owners, unused contracts — and lists them for the owner, with urgent ones emailed and a weekly digest.', default: true, available: true },
+  watch: { area: 'management', label: 'Contract watch', help: 'Every night VendorGate looks for contracts that need a decision — notice dates and automatic renewals, the other party’s overdue obligations and missing owners, plus prices, spend and unused contracts when purchase orders come into VendorGate — and lists them for the owner, with urgent ones emailed and a weekly digest.', default: true, available: true },
   priceCompliance: { area: 'management', label: 'Order and invoice price checks', help: 'Compare purchase order and invoice prices with the contract price.', default: true, available: true, requires: 'collab' },
   contractToErp: { area: 'integrations', label: 'Send contracts to the ERP', help: 'Create the blanket agreement / contract in the connected ERP when it becomes active.', default: false, available: true, requires: ['erp', 'onboarding'] },
   watchSummary: { area: 'ai', label: 'AI summary in contract watch', help: 'A short written summary in each decision pack. The AI sees only general facts — ranges, counts, yes/no — with the contract and party as [CONTRACT] and [PARTY]; never the contract text, names or amounts. Without it, VendorGate writes the summary from its own rules.', default: true, available: true, requires: 'ai' },
@@ -70,11 +71,11 @@ export const RULES = {
   noticeDays: { kind: 'number', label: 'Notice period', help: 'Days of notice needed to end or not renew a contract.', min: 0, max: 730, step: 1, unit: 'days', default: 30 },
   renewalTermMonths: { kind: 'number', label: 'Renewal term', help: 'How long an automatically renewing contract runs again.', min: 1, max: 120, step: 1, unit: 'months', default: 12 },
   expiringDays: { kind: 'number', label: 'Show as expiring', help: 'Contracts ending within this many days are marked “Expiring”.', min: 7, max: 365, step: 1, unit: 'days', default: 90 },
-  priceTolerance: { kind: 'number', label: 'Price tolerance', help: 'Order and invoice prices up to this much above the contract price are accepted.', min: 0, max: 50, step: 0.5, unit: '%', default: 0 },
+  priceTolerance: { kind: 'number', feature: 'collab', label: 'Price tolerance', help: 'Order and invoice prices up to this much above the contract price are accepted.', min: 0, max: 50, step: 0.5, unit: '%', default: 0 },
   noticeReminderDays: { kind: 'number', label: 'Notice reminder', help: 'Remind the owner this many days before the last day to give notice.', min: 1, max: 120, step: 1, unit: 'days', default: 14 },
   decisionDays: { kind: 'number', requires: 'watch', workspace: true, label: 'Decision window', help: 'Contract watch asks for a renew / renegotiate / end decision this many days before the last day to give notice.', min: 14, max: 365, step: 1, unit: 'days', default: 90 },
-  spendWarnPct: { kind: 'number', requires: 'watch', workspace: true, label: 'Spend warning', help: 'Contract watch warns when orders reach this share of the contract value (and again at 100%).', min: 10, max: 100, step: 5, unit: '%', default: 80 },
-  idleMonths: { kind: 'number', requires: 'watch', workspace: true, label: 'Unused after', help: 'Contract watch flags an active supplier contract with no purchase orders for this many months.', min: 1, max: 36, step: 1, unit: 'months', default: 6 },
+  spendWarnPct: { kind: 'number', requires: 'watch', feature: 'collab', workspace: true, label: 'Spend warning', help: 'Contract watch warns when orders reach this share of the contract value (and again at 100%).', min: 10, max: 100, step: 5, unit: '%', default: 80 },
+  idleMonths: { kind: 'number', requires: 'watch', feature: 'collab', workspace: true, label: 'Unused after', help: 'Contract watch flags an active supplier contract with no purchase orders for this many months.', min: 1, max: 36, step: 1, unit: 'months', default: 6 },
   digestDay: { kind: 'choice', requires: 'watch', workspace: true, label: 'Weekly digest', help: 'The day contract owners get a summary of what is waiting for them.', options: { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', off: 'No digest' }, default: 'mon' },
   valueRequired: { kind: 'choice', label: 'Contract value', help: 'Whether a value must be entered.', options: { optional: 'Optional', required: 'Required (except NDAs)' }, default: 'optional' },
 } as const satisfies Record<string, RuleDef>;
@@ -153,7 +154,10 @@ export const DEFAULT_CONTRACT_APPROVAL: WorkflowLevel[] = [
   { id: 'finance', label: 'Finance approval', roleKey: 'FINANCE_MANAGER', rule: gt('contract.value', 1_000_000), slaHours: 48 },
   { id: 'senior', label: 'Senior management approval', roleKey: 'ADMIN', rule: gt('contract.value', 10_000_000), slaHours: 48 },
 ];
-export const contractApprovalLevels = (t: Tenant): WorkflowLevel[] => (M.stored(t).approval as { levels?: WorkflowLevel[] } | undefined)?.levels ?? DEFAULT_CONTRACT_APPROVAL;
+/** Without supplier onboarding there is no Finance Manager role: the finance level goes to Contract Approver. */
+const defaultApprovalFor = (t: Tenant): WorkflowLevel[] => (effectiveLimits(t).features.onboarding
+  ? DEFAULT_CONTRACT_APPROVAL : DEFAULT_CONTRACT_APPROVAL.map((l) => (l.roleKey === 'FINANCE_MANAGER' ? { ...l, roleKey: 'CONTRACT_APPROVER' } : l)));
+export const contractApprovalLevels = (t: Tenant): WorkflowLevel[] => (M.stored(t).approval as { levels?: WorkflowLevel[] } | undefined)?.levels ?? defaultApprovalFor(t);
 const yesNo = { type: 'select', options: ['Yes', 'No'] };
 export const contractApprovalCatalog = () => [
   { id: 'contract.value', label: 'Contract value', type: 'number' },

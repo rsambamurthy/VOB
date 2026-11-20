@@ -57,7 +57,8 @@ export async function buildPack(t: Tenant, sg: ContractSuggestion): Promise<Pack
       count(*) filter (where status = 'OPEN' and due_date < ${now}::date and side = 'US')::int ours
     from contract_obligations where contract_id = ${c.id}`);
   let supplier: Pack['supplier'] = null;
-  if (party.kind === 'SUPPLIER') {
+  // Supplier risk, hold and scorecard come from supplier onboarding; without it there is nothing to show.
+  if (party.kind === 'SUPPLIER' && hasFeature(t, 'onboarding')) {
     const v = party.vendorId ? await db.query.vendors.findFirst({ where: eq(V.id, party.vendorId) }) : undefined;
     let card: { score: number | null; grade: string | null } | null = null;
     if (v && hasFeature(t, 'collab')) {

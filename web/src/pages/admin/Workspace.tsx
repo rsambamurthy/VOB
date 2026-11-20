@@ -82,7 +82,7 @@ export function Workspace() {
         </section>
         <div><button className="btn btn-primary">Save settings</button></div>
       </form>
-      <EmailSettings />
+      <EmailSettings onb={onb} />
       {onb && <PrivacySettings />}
     </div>
   );
@@ -126,7 +126,7 @@ interface EmailData {
 }
 
 /** Sender name, reply-to address, own sending domain and addresses that bounced. */
-function EmailSettings() {
+function EmailSettings({ onb }: { onb: boolean }) {
   const [d, setD] = useState<EmailData>();
   const [f, setF] = useState({ fromName: '', replyTo: '' });
   const [dom, setDom] = useState({ name: '', fromLocal: 'no-reply' });
@@ -139,7 +139,7 @@ function EmailSettings() {
   return (
     <section className="card pad section-card" style={{ marginTop: 16 }}>
       <h3>Email</h3>
-      <p className="muted small">Emails to suppliers and staff currently go out as <strong className="mono">{d.sender.from}</strong>{d.sender.replyTo && <> with replies to <strong>{d.sender.replyTo}</strong></>}.</p>
+      <p className="muted small">Emails to {onb ? 'suppliers' : 'the other parties'} and staff currently go out as <strong className="mono">{d.sender.from}</strong>{d.sender.replyTo && <> with replies to <strong>{d.sender.replyTo}</strong></>}.</p>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <div className="field-grid">
         <div className="field"><label htmlFor="em-name">Sender name</label><input id="em-name" value={f.fromName} maxLength={80} placeholder="e.g. Your Company — Procurement" onChange={(e) => setF({ ...f, fromName: e.target.value })} /></div>
@@ -171,6 +171,7 @@ function EmailSettings() {
           </div>
         )}
 
+      {onb && <>
       <h4 style={{ marginTop: 20 }}>Addresses that bounced</h4>
       {!d.status.bounceTracking && <p className="muted small">Bounce tracking is switched on by VendorGate together with the email provider.</p>}
       {d.bounced.length ? (
@@ -179,6 +180,7 @@ function EmailSettings() {
             <tr key={b.id}><td><Link to={`/staff/vendors/${b.id}`}>{b.name}</Link><div className="muted small mono">{b.code}</div></td><td className="small">{b.email}</td><td className="small">{b.reason}<div className="muted">{new Date(b.at).toLocaleDateString(loc())}</div></td>
               <td className="actions"><button className="link-btn small" disabled={busy} onClick={() => act(() => api('/admin/email/unsuppress', { body: { address: b.email } }), `${b.email} can receive email again.`)}>Send to it again</button></td></tr>))}</tbody></table>
       ) : <p className="muted small">None. When a supplier’s contact address bounces or reports our email as spam, we stop sending to it and list it here. Change the contact on the supplier’s page.</p>}
+      </>}
     </section>
   );
 }
