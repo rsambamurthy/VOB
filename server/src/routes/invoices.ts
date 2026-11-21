@@ -28,6 +28,8 @@ import { debitNotePdf, debitNoteRecipient, emailDebitNote } from '../services/in
 import { attachFile, bulkUpload, importInvoices, invoicesTemplate, workspaceCurrency } from '../services/invoices/capture.js';
 import { addCode, codeOptions, codesTemplate, importCodes, listCodes, pullErpResults, refreshFromErp, updateCode } from '../services/invoices/codes.js';
 import { invoiceReport, invoiceReportXlsx } from '../services/invoices/reports.js';
+import { getMail, inboxView, listMails, pollMailbox, saveInbox } from '../services/invoices/inbox.js';
+import { clearDuplicates, forwardInvoice } from '../services/invoices/record.js';
 import { listPayments } from '../services/collab/invoices.js';
 
 const { supplierInvoices, purchaseOrders, contracts, parties, users } = schema;
@@ -64,6 +66,18 @@ invoicesAdminRouter.put('/approval', requireStaff('tenant.settings'), ah(async (
   const { tenant } = await saveFlowLevels(s.tenant, req.body?.levels, { catalog: invoiceApprovalCatalog(), settingsKey: 'invoices', field: 'approval', auditAction: 'INVOICES_APPROVAL_MATRIX_CHANGED', actor: s.user.name, ip: req.ip, assignees: INVOICE_ASSIGNEES });
   res.json({ approval: await approvalSetupFor(tenant.id, invoiceApprovalLevels(tenant), invoiceApprovalCatalog(), undefined, INVOICE_ASSIGNEES) });
 }));
+/** Email inbox: the workspace's invoices address and / or a mailbox VendorGate reads. */
+invoicesAdminRouter.get('/inbox', requireStaff('tenant.settings'), ah(async (req, res) => { res.json(inboxView(staffCtx(req).tenant)); }));
+invoicesAdminRouter.put('/inbox', requireStaff('tenant.settings'), ah(async (req, res) => {
+  const s = staffCtx(req);
+  const { settings, changes } = saveInbox(s.tenant, req.body);
+  await db.update(schema.tenants).set({ settings }).where(eq(schema.tenants.id, s.tenant.id));
+  if (changes.length) await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'INVOICES_INBOX_CHANGED', detail: { changes: changes.join('; ') }, ip: req.ip });
+  res.json(inboxView({ ...s.tenant, settings }));
+}));
+invoicesAdminRouter.post('/inbox/test', requireStaff('tenant.settings'), ah(async (req, res) => { res.json(await pollMailbox(staffCtx(req).tenant, { test: true })); }));
+invoicesAdminRouter.post('/inbox/read', requireStaff('tenant.settings'), ah(async (req, res) => { res.json(await pollMailbox(staffCtx(req).tenant)); }));
+
 /** How a line's coding becomes Oracle's concatenated account. */
 invoicesAdminRouter.put('/erp', requireStaff('tenant.settings'), ah(async (req, res) => {
   const s = staffCtx(req);
@@ -91,8 +105,8 @@ invoicesRouter.get('/', VIEW, ah(async (req, res) => {
     can: { capture: has(req, 'invoices.capture'), manage: has(req, 'invoices.manage') }, settings: invoicesSummary(s.tenant) });
 }));
 
-/** What the entry screens need: code lists, settings, currency, the people who can own cost centres. */
-invoicesRouter.get('/setup', VIEW, ah(async (req, res) => {
+/** What the entry screens need: code lists, settings, currency. Any staff member — people asked to approve one invoice open it without invoice permissions. */
+invoicesRouter.get('/setup', ah(async (req, res) => {
   const t = staffCtx(req).tenant;
   res.json({ codes: await codeOptions(t), settings: invoicesSummary(t), currency: workspaceCurrency(t), costCentreRequired: invoiceRules(t).costCentre !== 'optional', kinds: KIND_LABEL });
 }));
@@ -168,6 +182,23 @@ invoicesRouter.post('/push', requireAnyStaff('invoices.capture', 'invoices.manag
   const rows = await pushToErp(staffCtx(req).tenant, ids, by(req));
   res.json({ sent: rows.filter((r) => r.erpStatus === 'SENT').length, waiting: rows.filter((r) => r.erpStatus === 'READY').map((r) => ({ id: r.id, invoiceNumber: r.invoiceNumber, error: r.erpError })) });
 }));
+/* ---- email inbox ---- */
+invoicesRouter.get('/inbox', requireAnyStaff('invoices.capture', 'invoices.manage'), ah(async (req, res) => {
+  const q = z.object({ status: z.enum(['PROCESSED', 'NO_ATTACHMENT', 'IGNORED', 'DUPLICATE', 'FAILED']).optional(), page: z.coerce.number().int().min(1).optional() }).parse(req.query);
+  res.json(await listMails(staffCtx(req).tenant, q));
+}));
+invoicesRouter.get('/inbox/:mailId', requireAnyStaff('invoices.capture', 'invoices.manage'), ah(async (req, res) => { res.json(await getMail(staffCtx(req).tenant, req.params.mailId)); }));
+
+/** Who an invoice can be forwarded to: active people and roles. */
+invoicesRouter.get('/forward-options', requireAnyStaff('invoices.capture', 'invoices.manage'), ah(async (req, res) => {
+  const t = staffCtx(req).tenant;
+  const [people, roleRows] = await Promise.all([
+    db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(and(eq(users.tenantId, t.id), eq(users.status, 'ACTIVE'))).orderBy(asc(users.name)),
+    db.select({ id: schema.roles.id, name: schema.roles.name, key: schema.roles.key }).from(schema.roles).where(eq(schema.roles.tenantId, t.id)).orderBy(asc(schema.roles.name)),
+  ]);
+  res.json({ users: people.filter((u) => u.id !== staffCtx(req).user.id), roles: roleRows });
+}));
+
 invoicesRouter.post('/erp-results', MANAGE, ah(async (req, res) => { res.json(await pullErpResults(staffCtx(req).tenant)); }));
 
 /* ---- one invoice ---- */
@@ -235,6 +266,17 @@ invoicesRouter.post('/:id/cancel', CAPTURE, ah(async (req, res) => {
   await cancelInvoice(t, await getInvoice(t, req.params.id), by(req), reason || 'Cancelled by AP');
   res.json(await detailFor(req, req.params.id));
 }));
+/** “Not a duplicate” (possible duplicates found by the duplicate check). */
+invoicesRouter.post('/:id/not-duplicate', requireAnyStaff('invoices.capture', 'invoices.manage'), ah(async (req, res) => {
+  const { note } = z.object({ note: z.string().trim().max(1000).default('') }).parse(req.body ?? {});
+  await clearDuplicates(staffCtx(req).tenant, req.params.id, note, by(req));
+  res.json(await detailFor(req, req.params.id));
+}));
+/** Forward for approval to a person or a role (Procurement, the requesting department…). */
+invoicesRouter.post('/:id/forward', requireAnyStaff('invoices.capture', 'invoices.manage'), ah(async (req, res) => {
+  await forwardInvoice(staffCtx(req).tenant, req.params.id, req.body ?? {}, { ...by(req), canDecide: has(req, 'invoices.manage') });
+  res.json(await detailFor(req, req.params.id));
+}));
 /** Email an approved debit note to the supplier (when the workspace's setting lets AP choose). */
 invoicesRouter.post('/:id/email', MANAGE, ah(async (req, res) => {
   const t = staffCtx(req).tenant;
@@ -249,9 +291,11 @@ async function detailFor(req: Request, id: string) {
   const inv = d.invoice;
   const capture = has(req, 'invoices.capture'), manage = has(req, 'invoices.manage');
   const rules = invoiceRules(s.tenant);
+  const full = await getInvoice(s.tenant, id);
   const priceCheck = d.vendor?.id ? await (await import('../services/contracts/manage.js')).priceCheck(s.tenant, d.vendor.id, inv.currency, d.lines.map((l) => ({ key: l.id, itemCode: l.itemCode, unitPrice: l.unitPrice }))).catch(() => null) : null;
   return {
-    ...d, flow, messages, priceCheck, file: (await db.query.supplierInvoices.findFirst({ where: eq(supplierInvoices.id, id), columns: { file: true } }))?.file?.fileName ?? null,
+    ...d, flow, messages, priceCheck, duplicateCleared: full.duplicateCleared,
+    mail: full.mailId ? await db.query.invoiceMails.findFirst({ where: eq(schema.invoiceMails.id, full.mailId), columns: { id: true, fromAddress: true, fromName: true, subject: true, receivedAt: true } }) ?? null : null, file: (await db.query.supplierInvoices.findFirst({ where: eq(supplierInvoices.id, id), columns: { file: true } }))?.file?.fileName ?? null,
     debitNoteTo: inv.kind === 'DEBIT' ? await debitNoteRecipient(s.tenant, await getInvoice(s.tenant, id)) : null,
     can: {
       edit: capture && inv.status === 'DRAFT' && inv.source !== 'PORTAL',
@@ -261,6 +305,8 @@ async function detailFor(req: Request, id: string) {
       push: (capture || manage) && ['APPROVED', 'PARTLY_PAID', 'PAID'].includes(inv.status) && (inv.erpStatus === 'READY' || inv.erpStatus === 'FAILED'),
       email: manage && inv.kind === 'DEBIT' && rules.debitNoteEmail !== 'never' && ['APPROVED', 'PARTLY_PAID', 'PAID'].includes(inv.status),
       creditNote: capture && inv.kind === 'INVOICE' && inv.status !== 'DRAFT',
+      forward: (capture || manage) && ['SUBMITTED', 'EXCEPTION', 'IN_APPROVAL'].includes(inv.status),
+      clearDuplicate: (capture || manage) && ['DRAFT', 'SUBMITTED', 'EXCEPTION', 'IN_APPROVAL'].includes(inv.status) && inv.checks.some((c) => c.level === 'warning' && !!c.refs?.length),
       debitNote: capture && inv.kind === 'INVOICE' && ['APPROVED', 'PARTLY_PAID', 'PAID'].includes(inv.status),
     },
   };

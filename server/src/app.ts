@@ -43,6 +43,8 @@ import { actionsRouter } from './routes/correctiveActions.js';
 import { esignRouter, reviewRouter } from './routes/contractReview.js';
 import { contractLibraryRouter, contractsAdminRouter, contractsRouter, partiesRouter } from './routes/contracts.js';
 import { invoicesAdminRouter, invoicesRouter } from './routes/invoices.js';
+import { algorithmsRouter } from './routes/algorithms.js';
+import { inboundMailRouter } from './routes/inboundMail.js';
 import { apiKeysRouter } from './routes/apiKeys.js';
 import { invoicesOn } from './services/invoices/config.js';
 import { hasFeature } from './services/limits.js';
@@ -78,6 +80,8 @@ export function createApp() {
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => !req.url?.startsWith('/api') || req.url === '/api/health' } }));
   // E-signature provider webhooks and signers coming back from the provider: raw body, before JSON parsing and CSRF.
   app.use('/api/esign', esignRouter);
+  // Invoices emailed in (mail provider webhook): its own body parsing, before JSON parsing and CSRF; the secret is in the path.
+  app.use('/api/inbound/email', inboundMailRouter);
   // Email provider webhooks (bounces, complaints, deliveries): raw body for the signature check, before JSON parsing and CSRF.
   app.post('/api/webhooks/resend', express.raw({ type: '*/*', limit: '256kb' }), async (req, res) => {
     const secret = env.int.RESEND_WEBHOOK_SECRET;
@@ -141,6 +145,7 @@ export function createApp() {
   app.use('/api/admin/sourcing', sourcingAdminRouter);
   app.use('/api/admin/contracts', contractsAdminRouter);
   app.use('/api/admin/invoices', invoicesAdminRouter);
+  app.use('/api/admin/algorithms', algorithmsRouter);
   // API keys for the ERP: Purchasing setup has them too; here for workspaces whose ERP talks to VendorGate for invoices.
   app.use('/api/admin/api-keys', (req, _res, next) => { const t = req.staff?.tenant; if (t && !hasFeature(t, 'collab') && !invoicesOn(t)) return next(new HttpError(404, 'Not found')); next(); }, apiKeysRouter);
   app.use('/api/admin', adminRouter);

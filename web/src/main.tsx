@@ -79,6 +79,7 @@ import { ApInvoices, ApPayments, ApReady } from './pages/invoices/Invoices';
 import { ApInvoiceDetail } from './pages/invoices/InvoiceDetail';
 import { ApReports } from './pages/invoices/Reports';
 import { InvoiceCodes } from './pages/invoices/Codes';
+import { InvoiceInbox } from './pages/invoices/Inbox';
 import { InvoicesSettings } from './pages/admin/Invoices';
 import { LangGate } from './i18n/LangGate';
 
@@ -118,6 +119,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="ap/invoices" element={<ApInvoices />} />
               <Route path="ap/invoices/:id" element={<ApInvoiceDetail />} />
               <Route path="ap/ready" element={<ApReady />} />
+              <Route path="ap/inbox" element={<InvoiceInbox />} />
               <Route path="ap/payments" element={<ApPayments />} />
               <Route path="ap/reports" element={<ApReports />} />
               <Route path="contracts" element={<ContractsList />} />

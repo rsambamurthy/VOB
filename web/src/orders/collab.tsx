@@ -15,12 +15,12 @@ export interface Shipment {
   vehicleNo: string | null; ewayBill: string | null; packages: number | null; notes: string | null; cancelReason: string | null; createdAt: string; createdBy?: string;
   lines: { id: string; lineId: string; lineNo: number; itemCode: string | null; description: string; uom: string | null; quantity: number; receivedQty: number; batchNo: string | null }[];
 }
-export type InvoiceStatus = 'SUBMITTED' | 'EXCEPTION' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'PARTLY_PAID' | 'PAID';
+export type InvoiceStatus = 'DRAFT' | 'SUBMITTED' | 'EXCEPTION' | 'IN_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'PARTLY_PAID' | 'PAID';
 export interface InvoiceRow {
   id: string; invoiceNumber: string; invoiceDate: string; currency: string; subtotal: number; taxAmount: number; total: number; paidAmount: number; status: InvoiceStatus; dueDate: string | null;
   poId: string; shipmentId: string | null; createdAt: string; decidedAt: string | null; warnings: number; poNumber: string; vendorName: string; vendorCode: string;
 }
-export type Check = { code: string; level: 'error' | 'warning' | 'ok'; message: string };
+export type Check = { code: string; level: 'error' | 'warning' | 'ok'; message: string; rule?: string; refs?: { id: string; number: string }[] };
 export interface InvoiceDetailData {
   invoice: InvoiceRow & { checks: Check[]; einvoice: { irn?: string; ackNo?: string; ackDate?: string; qr: boolean } | null; notes: string | null; submittedBy: string; decidedBy: string | null; decisionNote: string | null; erpInvoiceId: string | null; documentId: string | null };
   po: { id: string; poNumber: string; currency: string; paymentTerms: string | null; buyerName: string | null };
@@ -34,8 +34,8 @@ export interface Payment { id: string; reference: string; paymentDate: string; m
 
 const SHIP: Record<Shipment['status'], [string, string]> = { SHIPPED: ['In transit', 'badge-under_review'], PARTLY_RECEIVED: ['Partly received', 'badge-in_progress'], RECEIVED: ['Received', 'badge-approved'], CANCELLED: ['Cancelled', 'badge-invited'] };
 export const ShipmentBadge = ({ s }: { s: Shipment['status'] }) => <span className={`badge sm ${SHIP[s][1]}`}>{t(`ship.${s}`)}</span>;
-const INV: Record<InvoiceStatus, [string, string]> = { SUBMITTED: ['In review', 'badge-under_review'], EXCEPTION: ['Exception', 'badge-sent_back'], APPROVED: ['Approved', 'badge-approved'], REJECTED: ['Rejected', 'badge-rejected'], CANCELLED: ['Withdrawn', 'badge-invited'], PARTLY_PAID: ['Partly paid', 'badge-in_progress'], PAID: ['Paid', 'badge-auto'] };
-export const InvoiceBadge = ({ s }: { s: InvoiceStatus }) => <span className={`badge sm ${INV[s][1]}`}>{t(`inv.${s}`)}</span>;
+const INV: Record<InvoiceStatus, [string, string]> = { DRAFT: ['Draft', 'badge-invited'], IN_APPROVAL: ['In approval', 'flag-medium'], SUBMITTED: ['In review', 'badge-under_review'], EXCEPTION: ['Exception', 'badge-sent_back'], APPROVED: ['Approved', 'badge-approved'], REJECTED: ['Rejected', 'badge-rejected'], CANCELLED: ['Withdrawn', 'badge-invited'], PARTLY_PAID: ['Partly paid', 'badge-in_progress'], PAID: ['Paid', 'badge-auto'] };
+export const InvoiceBadge = ({ s }: { s: InvoiceStatus }) => <span className={`badge sm ${INV[s]?.[1] ?? ''}`}>{INV[s] ? t(`inv.${s}`) : s}</span>;
 export const MESSAGE_KIND: Record<string, string> = { ACCEPTANCE: 'Acceptance', ASN: 'Shipment notice', ASN_CANCEL: 'Shipment notice cancelled', INVOICE: 'Approved invoice' };
 const today = () => new Date().toISOString().slice(0, 10);
 const r2 = (n: number) => Math.round(n * 100) / 100;

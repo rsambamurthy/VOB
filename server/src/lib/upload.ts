@@ -27,3 +27,6 @@ export const bulkContractUpload = multer({
   limits: { fileSize: 50 * 1024 * 1024, files: 25 },
   fileFilter: (_req, file, cb) => ([...ALLOWED_MIME, DOCX_MIME, 'application/zip', 'application/x-zip-compressed'].includes(file.mimetype) || /\.(docx|pdf|png|jpe?g|zip)$/i.test(file.originalname) ? cb(null, true) : cb(new HttpError(400, 'Only Word (.docx), PDF, PNG, JPG or .zip files are allowed'))),
 });
+
+/** Inbound email webhooks (multipart from Mailgun / SendGrid): up to 30 attachments, 25 MB each. */
+export const inboundMailUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 30, fieldSize: 30 * 1024 * 1024 } });

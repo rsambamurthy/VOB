@@ -57,6 +57,7 @@ export function StaffShell() {
     ]),
     group('ap', 'Invoices', 'invoices', [
       { to: '/staff/ap/invoices', label: 'All invoices', icon: 'invoices', end: true, show: ap },
+      { to: '/staff/ap/inbox', label: 'Email inbox', icon: 'mail', show: ap && !!me.invoices?.emailInbox && (can('invoices.capture') || can('invoices.manage')) },
       { to: '/staff/ap/ready', label: 'Ready for ERP', icon: 'erp', show: ap && (can('invoices.capture') || can('invoices.manage')) },
       { to: '/staff/ap/payments', label: 'Payments', icon: 'payments', show: ap },
       { to: '/staff/parties', label: 'Suppliers', icon: 'parties', show: ap && !contracts },

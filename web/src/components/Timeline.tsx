@@ -19,6 +19,7 @@ export function ApprovalTimeline({ steps, levels = [] }: { steps: Step[]; levels
                   <div className="tl-top"><strong>{s.label}</strong><StepBadge status={s.status} /></div>
                   <div className="muted small">{s.assigneeName ? t('timeline.assignedTo', { name: s.assigneeName }) : s.roleName}{s.actedBy ? ` · ${s.actedBy.name}` : ''}{s.actedAt ? ` · ${fmtDateTime(s.actedAt)}` : ''}</div>
                   {s.status === 'PENDING' && s.dueAt && <div className={`small ${s.overdue ? 'overdue' : 'muted'}`}>{s.overdue ? t('timeline.overdueWasDue') : t('timeline.due')}{fmtDateTime(s.dueAt)}</div>}
+                  {s.forwarded && <div className="small muted">{t('timeline.forwarded', { name: s.forwarded.by, note: s.forwarded.note ?? '' })}</div>}
                   {s.remarks && <div className="tl-remarks">“{s.remarks}”</div>}
                 </div>
               </li>

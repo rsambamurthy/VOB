@@ -15,7 +15,7 @@ import { HttpError } from '../../lib/http.js';
 import { audit } from '../../lib/audit.js';
 import { logger } from '../../lib/logger.js';
 import { nextYearlyNumber } from '../../lib/numbering.js';
-import { cancelFlow, flowView, registerFlowSubject, startFlow } from '../approvalFlow.js';
+import { cancelFlow, flowView, forwardFlow, registerFlowSubject, startFlow } from '../approvalFlow.js';
 import { applicableFlowLevels } from '../approvalFlow.js';
 import { APPROVED, checkInvoice, dueDateFrom, isClean, LIVE, termDays, type CheckInput, type CheckSubject, type InvoiceKind } from './checks.js';
 import { BASIS_LABEL, assertBasisOn, assertInvoicesOn, basisOn, invoiceApprovalLevels, invoiceRules, invoicesOn, optionOn, type Basis } from './config.js';
@@ -62,7 +62,7 @@ export type ApInvoiceInput = z.input<typeof apInvoiceInput>;
 export function basisOf(inv: { poId: string | null; contractId: string | null }): Basis { return inv.poId ? 'po' : inv.contractId ? 'contract' : 'nonPo'; }
 
 /** Load the PO, contract, party and supplier facts the checks need. */
-export async function subjectFor(t: Tenant, inv: { poId: string | null; contractId: string | null; partyId: string | null; vendorId: string | null; relatedInvoiceId?: string | null; entityCode?: string | null }, excludeInvoiceId?: string): Promise<CheckSubject> {
+export async function subjectFor(t: Tenant, inv: { poId: string | null; contractId: string | null; partyId: string | null; vendorId: string | null; relatedInvoiceId?: string | null; entityCode?: string | null; duplicateCleared?: { invoiceId: string }[] }, excludeInvoiceId?: string): Promise<CheckSubject> {
   let basisSrc: { poId: string | null; contractId: string | null } = inv;
   if (inv.relatedInvoiceId) {
     const rel = await db.query.supplierInvoices.findFirst({ where: and(eq(supplierInvoices.tenantId, t.id), eq(supplierInvoices.id, inv.relatedInvoiceId)), columns: { poId: true, contractId: true } });
@@ -78,6 +78,7 @@ export async function subjectFor(t: Tenant, inv: { poId: string | null; contract
   return {
     tenant: t, basis: basisOf(basisSrc), po: po ?? null, contract: contract ?? null, party: party ?? null, vendorId: inv.vendorId,
     supplierGstin: gstin, supplierHold: vendor?.blockedAt ? vendor.blockedReason ?? 'held by your team' : null, entityCode: inv.entityCode ?? null, excludeInvoiceId,
+    cleared: (inv.duplicateCleared ?? []).map((c) => c.invoiceId),
   };
 }
 
@@ -124,7 +125,7 @@ async function checkLinks(t: Tenant, input: z.output<typeof apInvoiceInput>, par
 const withDefaults = (lines: z.output<typeof lineInput>[], p: Party, coded: boolean) => (coded ? lines.map((l) => ({ ...l, glAccount: l.glAccount ?? p.ap?.defaultAccount ?? null, costCentre: l.costCentre ?? p.ap?.defaultCostCentre ?? null })) : lines);
 
 /** Create or update an AP draft (invoice, credit note or debit note). Checks run and are shown; nothing is decided yet. */
-export async function saveDraft(t: Tenant, id: string | null, raw: unknown, by: By & { source?: 'AP' | 'BULK' | 'EXCEL' }) {
+export async function saveDraft(t: Tenant, id: string | null, raw: unknown, by: By & { source?: 'AP' | 'BULK' | 'EXCEL' | 'EMAIL' }) {
   assertInvoicesOn(t);
   const input = apInvoiceInput.parse(raw);
   // A credit or debit note follows its invoice's operating unit and currency unless given.
@@ -139,8 +140,8 @@ export async function saveDraft(t: Tenant, id: string | null, raw: unknown, by: 
   if (existing && existing.source === 'PORTAL') throw new HttpError(409, 'Invoices from the supplier portal are changed by the supplier');
   const coded = !po;
   const lines = withDefaults(input.lines, party, coded);
-  const subject = await subjectFor(t, { poId: po?.id ?? null, contractId: contract?.id ?? null, partyId: party.id, vendorId: party.vendorId, relatedInvoiceId: input.relatedInvoiceId, entityCode: input.entityCode }, existing?.id);
-  const m = await checkInvoice(subject, { ...input, invoiceNumber: input.invoiceNumber || 'DRAFT', lines });
+  const subject = await subjectFor(t, { poId: po?.id ?? null, contractId: contract?.id ?? null, partyId: party.id, vendorId: party.vendorId, relatedInvoiceId: input.relatedInvoiceId, entityCode: input.entityCode, duplicateCleared: existing?.duplicateCleared }, existing?.id);
+  const m = await checkInvoice(subject, { ...input, invoiceNumber: input.invoiceNumber || 'DRAFT', lines, fileSha256: existing?.file?.sha256 ?? null });
   const due = input.dueDate ?? dueDateFrom(input.invoiceDate, dueDays(t, subject));
   return db.transaction(async (tx) => {
     let number = input.invoiceNumber;
@@ -175,10 +176,38 @@ async function storedInput(inv: SupplierInvoice): Promise<CheckInput> {
   const lines = await db.select().from(supplierInvoiceLines).where(eq(supplierInvoiceLines.invoiceId, inv.id)).orderBy(supplierInvoiceLines.lineNo);
   return {
     kind: inv.kind as InvoiceKind, invoiceNumber: inv.invoiceNumber, invoiceDate: inv.invoiceDate, currency: inv.currency, total: Number(inv.total), shipmentId: inv.shipmentId,
-    einvoice: inv.einvoice, relatedInvoiceId: inv.relatedInvoiceId,
+    einvoice: inv.einvoice, relatedInvoiceId: inv.relatedInvoiceId, fileSha256: inv.file?.sha256 ?? null,
     lines: lines.map((l) => ({ lineId: l.lineId, itemCode: l.itemCode, description: l.description, uom: l.uom, hsn: l.hsn, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice),
       taxRate: l.taxRate === null ? null : Number(l.taxRate), taxAmount: Number(l.taxAmount), glAccount: l.glAccount, costCentre: l.costCentre, project: l.project, task: l.task })),
   };
+}
+
+/** Run the checks again on a stored invoice and keep them (arrivals by email or bulk, “not a duplicate”). */
+export async function recheckInvoice(t: Tenant, inv: SupplierInvoice) {
+  const subject = await subjectFor(t, inv, inv.id);
+  const m = await checkInvoice(subject, await storedInput(inv));
+  const [row] = await db.update(supplierInvoices).set({ checks: m.checks }).where(eq(supplierInvoices.id, inv.id)).returning();
+  return row;
+}
+
+/**
+ * “Not a duplicate”: clear the earlier invoices the duplicate check matched as a warning (blocks can't be cleared), recorded with
+ * who, when and why. An exception left with no warnings goes back to Submitted.
+ */
+export async function clearDuplicates(t: Tenant, id: string, note: string, by: By) {
+  assertInvoicesOn(t);
+  const inv = await getInvoice(t, id);
+  if (!['DRAFT', 'SUBMITTED', 'EXCEPTION', 'IN_APPROVAL'].includes(inv.status)) throw new HttpError(409, 'This invoice has already been decided');
+  if (!note.trim()) throw new HttpError(400, 'Say why it isn’t a duplicate');
+  const found = inv.checks.filter((c) => c.level === 'warning' && c.refs?.length && c.rule);
+  if (!found.length) throw new HttpError(409, 'No possible duplicates to clear');
+  const at = new Date().toISOString();
+  const add = found.flatMap((c) => c.refs!.map((r) => ({ invoiceId: r.id, number: r.number, rule: c.rule!, by: by.name, at, note: note.trim() })));
+  await db.update(supplierInvoices).set({ duplicateCleared: [...inv.duplicateCleared, ...add] }).where(eq(supplierInvoices.id, inv.id));
+  let row = await recheckInvoice(t, { ...inv, duplicateCleared: [...inv.duplicateCleared, ...add] });
+  if (row.status === 'EXCEPTION' && !row.checks.some((c) => c.level === 'warning')) [row] = await db.update(supplierInvoices).set({ status: 'SUBMITTED' }).where(eq(supplierInvoices.id, inv.id)).returning();
+  await audit({ tenantId: t.id, vendorId: inv.vendorId, actor: by.name, action: 'INVOICE_NOT_DUPLICATE', detail: { subjectId: inv.id, invoice: inv.invoiceNumber, of: add.map((a) => `${a.number} (${a.rule})`).join(', '), note: note.trim() }, ip: by.ip });
+  return row;
 }
 
 /** Submit an AP draft: final checks (errors stop it), then the approval matrix or touchless. */
@@ -250,6 +279,31 @@ function touchlessAllowed(t: Tenant, inv: SupplierInvoice) {
   const allowed = r.touchlessBasis === 'all' ? true : r.touchlessBasis === 'poContract' ? basis !== 'nonPo' : basis === 'po';
   const upTo = r.touchlessUpTo === null || r.touchlessUpTo === undefined ? null : Number(r.touchlessUpTo);
   return allowed && (upTo === null || Number(inv.total) <= upTo);
+}
+
+/**
+ * Forward for approval (AP assistant / manager → Procurement, the requesting department, the buyer…). In the matrix the
+ * forwarded step goes in front of the pending level; waiting for one decision, the forwarded step comes first and then the
+ * decision — by the person who forwarded when they may decide, else by an invoice approver.
+ */
+export async function forwardInvoice(t: Tenant, id: string, raw: unknown, by: By & { id: string; canDecide: boolean }) {
+  assertInvoicesOn(t);
+  const input = z.object({ userId: z.string().max(40).optional().nullable(), roleId: z.string().max(40).optional().nullable(), note: z.string().trim().min(1, 'Say what you need them to look at').max(1000) }).parse(raw);
+  const inv = await getInvoice(t, id);
+  if (!['SUBMITTED', 'EXCEPTION', 'IN_APPROVAL'].includes(inv.status)) throw new HttpError(409, 'Only invoices waiting for approval can be forwarded');
+  let returnTo: { userId: string | null; roleId: string; label: string } | undefined;
+  if (inv.status !== 'IN_APPROVAL') {
+    const self = by.canDecide && inv.createdById !== by.id ? (await db.select({ roleId: schema.userRoles.roleId }).from(schema.userRoles).where(eq(schema.userRoles.userId, by.id)).limit(1))[0] : undefined;
+    if (self) returnTo = { userId: by.id, roleId: self.roleId, label: `AP decision — ${by.name}` };
+    else {
+      const role = await db.query.roles.findFirst({ where: and(eq(schema.roles.tenantId, t.id), inArray(schema.roles.key, ['INVOICE_APPROVER', 'FINANCE_MANAGER'])), orderBy: (r, { desc }) => [desc(r.key)] });
+      if (!role) throw new HttpError(409, 'No invoice approver role to return the invoice to');
+      returnTo = { userId: null, roleId: role.id, label: 'AP decision' };
+    }
+  }
+  const step = await forwardFlow(t, 'invoice', inv.id, { userId: input.userId ?? null, roleId: input.roleId ?? null, note: input.note }, { id: by.id, name: by.name, ip: by.ip }, { returnTo, allowed: true });
+  if (inv.status !== 'IN_APPROVAL') await db.update(supplierInvoices).set({ status: 'IN_APPROVAL' }).where(eq(supplierInvoices.id, inv.id));
+  return step;
 }
 
 /* ---------------- decisions ---------------- */

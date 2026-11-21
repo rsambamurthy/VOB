@@ -7,7 +7,7 @@
  *
  * Each subject type registers a handler that describes the subject and reacts to the outcome.
  */
-import { and, asc, eq, inArray, isNull, lt, max } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, max, sql } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import type { FlowStep, Tenant } from '../db/schema.js';
 import type { WorkflowLevel } from '../config/types.js';
@@ -19,7 +19,7 @@ import { addWorkingHours, calendarFor, formatDeadline } from '../lib/calendar.js
 import { approverIds, directApprovers, emailsFor, usersWithPermission } from './approvers.js';
 import { logger } from '../lib/logger.js';
 
-const { flowSteps, roles, users, tenants } = schema;
+const { flowSteps, roles, users, tenants, userRoles } = schema;
 
 export type FlowSubject = 'sourcing_event' | 'sourcing_award' | 'contract' | 'invoice';
 export type FlowDecision = 'APPROVE' | 'SEND_BACK' | 'REJECT';
@@ -49,9 +49,10 @@ export const applicableFlowLevels = (levels: WorkflowLevel[], ctx: EvalContext) 
 async function notify(step: FlowStep, info: SubjectInfo, prefix = 'Approval needed') {
   const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, step.tenantId) });
   const due = step.dueAt ? `\nPlease act by ${formatDeadline(step.dueAt, tenant ?? null)}.` : '';
+  const asked = step.note ? `\n\nThe question: “${step.note}”` : '';
   for (const u of await emailsFor(await approverIds(step))) {
     await sendMail({ tenantId: step.tenantId, to: u.email, subject: `${prefix}: ${step.label} for ${info.ref}`,
-      body: `Hello ${u.name},\n\n${info.kind} ${info.ref} “${info.title}” is waiting for ${step.label}.${due}\nOpen it to approve, send back or reject.`, link: info.link });
+      body: `Hello ${u.name},\n\n${info.kind} ${info.ref} “${info.title}” is waiting for ${step.label}.${asked}${due}\nOpen it to approve, send back or reject.`, link: info.link });
   }
 }
 
@@ -102,14 +103,15 @@ export async function flowView(tenantId: string, type: FlowSubject, id: string, 
   const { cycle, steps } = await cycleSteps(tenantId, type, id);
   if (!steps.length) return { cycle, steps: [], current: null, canAct: false };
   const roleRows = await db.select({ id: roles.id, name: roles.name }).from(roles).where(inArray(roles.id, steps.map((s) => s.roleId)));
-  const ids = [...new Set(steps.flatMap((s) => [s.actedById, s.assigneeUserId]).filter(Boolean) as string[])];
+  const ids = [...new Set(steps.flatMap((s) => [s.actedById, s.assigneeUserId, s.forwardedById]).filter(Boolean) as string[])];
   const people = ids.length ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids)) : [];
   const nameOf = (x: string | null) => (x ? people.find((p) => p.id === x)?.name ?? null : null);
   const current = steps.find((s) => s.status === 'PENDING') ?? null;
   return {
     cycle,
     // Same shape as supplier approval steps, so the screens reuse ApprovalTimeline.
-    steps: steps.map((s) => ({ id: s.id, cycle: s.cycle, level: s.level, label: s.label, status: s.status, roleName: roleRows.find((r) => r.id === s.roleId)?.name ?? '', assigneeName: nameOf(s.assigneeUserId), actedBy: nameOf(s.actedById) ? { name: nameOf(s.actedById)! } : null, actedAt: s.actedAt, remarks: s.remarks, dueAt: s.dueAt, overdue: !!s.dueAt && s.status === 'PENDING' && s.dueAt < new Date() })),
+    steps: steps.map((s) => ({ id: s.id, cycle: s.cycle, level: s.level, label: s.label, status: s.status, roleName: s.forwardedById && s.assigneeUserId ? '' : roleRows.find((r) => r.id === s.roleId)?.name ?? '', assigneeName: nameOf(s.assigneeUserId), actedBy: nameOf(s.actedById) ? { name: nameOf(s.actedById)! } : null, actedAt: s.actedAt, remarks: s.remarks, dueAt: s.dueAt, overdue: !!s.dueAt && s.status === 'PENDING' && s.dueAt < new Date(),
+      ...(s.forwardedById ? { forwarded: { by: nameOf(s.forwardedById) ?? '', note: s.note } } : {}) })),
     current: current && { id: current.id, label: current.label },
     canAct: !!current && !!userId && (await approverIds(current)).has(userId) && !(await handler(type).blockedFor?.(tenantId, id, userId)),
   };
@@ -140,6 +142,59 @@ export async function decideFlow(tenantId: string, type: FlowSubject, id: string
   await db.update(flowSteps).set({ status: 'CANCELLED' }).where(and(eq(flowSteps.subjectType, type), eq(flowSteps.subjectId, id), eq(flowSteps.status, 'WAITING')));
   await h.returned(tenantId, id, action, remarks.trim(), actor);
   return { status: status as 'SENT_BACK' | 'REJECTED' };
+}
+
+/**
+ * Forward for approval: ask someone else — a person, or everyone with a role (Procurement, the requesting department,
+ * the buyer…) — to approve before the flow goes on. Their approval sends it back to where it was; their rejection or
+ * send-back ends the cycle like any level's.
+ *   - A step is pending: the forwarded step goes in front of it; the pending step waits and comes back afterwards.
+ *   - Nothing is pending (the subject waits for one decision): a cycle starts with the forwarded step, then
+ *     `returnTo` (the person who forwarded) decides.
+ */
+export async function forwardFlow(tenant: Pick<Tenant, 'id'>, type: FlowSubject, id: string, to: { userId?: string | null; roleId?: string | null; note: string },
+  by: { id: string; name: string; ip?: string }, opts: { returnTo?: { userId: string | null; roleId: string; label: string }; slaHours?: number | null; /** The caller has checked this person may forward (e.g. AP staff); otherwise only whoever can act on the pending step. */ allowed?: boolean } = {}) {
+  if (!to.userId === !to.roleId) throw new HttpError(400, 'Choose a person or a role to forward to');
+  if (!to.note.trim()) throw new HttpError(400, 'Say what you need them to look at');
+  if (to.userId === by.id) throw new HttpError(400, 'Forward it to someone else');
+  let roleId = to.roleId ?? null, label: string;
+  if (to.userId) {
+    const u = await db.query.users.findFirst({ where: and(eq(users.id, to.userId), eq(users.tenantId, tenant.id), eq(users.status, 'ACTIVE')) });
+    if (!u) throw new HttpError(400, 'That person isn’t an active user in this workspace');
+    const ur = await db.select({ roleId: userRoles.roleId }).from(userRoles).where(eq(userRoles.userId, u.id)).limit(1);
+    if (!ur.length) throw new HttpError(400, `${u.name} has no role yet — give them one in Administration → Users first`);
+    roleId = ur[0].roleId; label = `Forwarded to ${u.name}`;
+  } else {
+    const r = await db.query.roles.findFirst({ where: and(eq(roles.id, roleId!), eq(roles.tenantId, tenant.id)) });
+    if (!r) throw new HttpError(400, 'That role doesn’t exist in this workspace');
+    label = `Forwarded to ${r.name}`;
+  }
+  const h = handler(type);
+  const info = await h.describe(tenant.id, id);
+  if (!info) throw new HttpError(404, 'Not found');
+  const { cycle, steps } = await cycleSteps(tenant.id, type, id);
+  const pending = steps.find((s) => s.status === 'PENDING');
+  const base = { tenantId: tenant.id, subjectType: type, subjectId: id, roleId: roleId!, label, slaHours: opts.slaHours ?? null, assigneeUserId: to.userId ?? null, forwardedById: by.id, note: to.note.trim() };
+  let step: FlowStep;
+  if (pending) {
+    if (!opts.allowed && !(await approverIds(pending)).has(by.id)) throw new HttpError(403, 'Only someone who can act on the current step can forward it');
+    await db.transaction(async (tx) => {
+      await tx.update(flowSteps).set({ level: sql`${flowSteps.level} + 1` }).where(and(eq(flowSteps.subjectType, type), eq(flowSteps.subjectId, id), eq(flowSteps.cycle, cycle), gte(flowSteps.level, pending.level)));
+      await tx.update(flowSteps).set({ status: 'WAITING', activatedAt: null, dueAt: null }).where(eq(flowSteps.id, pending.id));
+      [step] = await tx.insert(flowSteps).values({ ...base, cycle, level: pending.level, status: 'WAITING' }).returning();
+    });
+  } else {
+    if (!opts.returnTo) throw new HttpError(409, 'Nothing is waiting for a decision');
+    const next = cycle + 1;
+    const created = await db.insert(flowSteps).values([
+      { ...base, cycle: next, level: 1, status: 'WAITING' as const },
+      { tenantId: tenant.id, subjectType: type, subjectId: id, cycle: next, level: 2, roleId: opts.returnTo.roleId, label: opts.returnTo.label, status: 'WAITING' as const, assigneeUserId: opts.returnTo.userId },
+    ]).returning();
+    step = created[0];
+  }
+  step = await activate(step!, info);
+  await audit({ tenantId: tenant.id, actor: by.name, action: 'FLOW_FORWARDED', detail: { subject: type, subjectId: id, ref: info.ref, to: label.replace('Forwarded to ', ''), note: to.note.trim() }, ip: by.ip });
+  return step;
 }
 
 /** Withdrawn by its owner (or the subject was cancelled): close whatever is still open. */

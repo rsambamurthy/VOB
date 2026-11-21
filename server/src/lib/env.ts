@@ -41,6 +41,10 @@ const schema = z.object({
   SMTP_SECURE: z.enum(['true', 'false']).default('false'),
   SENDGRID_API_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
+  /** Invoices add-on email inbox: the domain inbound mail arrives on (invoices-<workspace>-<token>@this domain), and the secret in the
+   *  inbound webhook URL (/api/inbound/email/<secret>) your mail provider posts to. Both optional — without them, use a mailbox (IMAP). */
+  INBOUND_EMAIL_DOMAIN: z.string().optional(),
+  INBOUND_EMAIL_SECRET: z.string().min(16).optional(),
   /** Resend webhook signing secret (whsec_…) for bounce / complaint / delivery events at /api/webhooks/resend */
   RESEND_WEBHOOK_SECRET: z.string().optional(),
 

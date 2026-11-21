@@ -98,6 +98,8 @@ export interface TenantSettings {
   contracts?: import('../lib/moduleConfig.js').ModuleSettings;
   /** Invoices add-on (accounts payable): read through services/invoices/config.ts. */
   invoices?: import('../lib/moduleConfig.js').ModuleSettings;
+  /** Configurable algorithms (lib/algorithms.ts), by key: parameters and each rule's action. */
+  algorithms?: Record<string, import('../lib/algorithms.js').AlgoSettings>;
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
   reKycMonths?: number;
   sessionHours?: number;
@@ -788,8 +790,10 @@ export const supplierInvoices = pgTable('supplier_invoices', {
   kind: text('kind').notNull().default('INVOICE'),
   /** The invoice a credit or debit note corrects. */
   relatedInvoiceId: text('related_invoice_id'),
-  /** PORTAL · AP · BULK · EXCEL */
+  /** PORTAL · AP · BULK · EXCEL · EMAIL */
   source: text('source').notNull().default('PORTAL'),
+  /** The email it arrived in (invoice_mails). */
+  mailId: text('mail_id'),
   /** Operating unit / company in the ERP (ORG_ID). */
   entityCode: text('entity_code'),
   glDate: date('gl_date'),
@@ -803,7 +807,9 @@ export const supplierInvoices = pgTable('supplier_invoices', {
   subtotal: qty('subtotal').notNull(), taxAmount: qty('tax_amount').notNull(), total: qty('total').notNull(),
   status: text('status').notNull().default('SUBMITTED'),
   /** Match result: problems (blocking) and notes (for the reviewer). */
-  checks: jsonb('checks').$type<{ code: string; level: 'error' | 'warning' | 'ok'; message: string }[]>().notNull().default([]),
+  checks: jsonb('checks').$type<{ code: string; level: 'error' | 'warning' | 'ok'; message: string; rule?: string; refs?: { id: string; number: string }[] }[]>().notNull().default([]),
+  /** “Not a duplicate” decisions: earlier invoices a person said this isn't a duplicate of (duplicate check). */
+  duplicateCleared: jsonb('duplicate_cleared').$type<{ invoiceId: string; number: string; rule: string; by: string; at: string; note: string }[]>().notNull().default([]),
   /** Country rules (e.g. India e-invoice IRN / signed QR, supplier GSTIN). */
   einvoice: jsonb('einvoice').$type<Record<string, string>>(),
   documentId: text('document_id'),
@@ -824,7 +830,8 @@ export const supplierInvoices = pgTable('supplier_invoices', {
   dueDate: date('due_date'),
   createdAt: createdAt(),
 }, (t) => [index('supplier_invoices_number_idx').on(t.tenantId, t.vendorId, t.invoiceNumber), index('supplier_invoices_po_idx').on(t.poId), index('supplier_invoices_status_idx').on(t.tenantId, t.status, t.createdAt),
-  index('supplier_invoices_party_idx').on(t.tenantId, t.partyId, t.invoiceNumber), index('supplier_invoices_erp_idx').on(t.tenantId, t.erpStatus), index('supplier_invoices_related_idx').on(t.relatedInvoiceId)]);
+  index('supplier_invoices_party_idx').on(t.tenantId, t.partyId, t.invoiceNumber), index('supplier_invoices_erp_idx').on(t.tenantId, t.erpStatus), index('supplier_invoices_related_idx').on(t.relatedInvoiceId),
+  index('supplier_invoices_date_idx').on(t.tenantId, t.kind, t.invoiceDate), index('supplier_invoices_file_idx').on(t.tenantId, sql`(${t.file}->>'sha256')`), index('supplier_invoices_irn_idx').on(t.tenantId, sql`lower(${t.einvoice}->>'irn')`)]);
 
 export const supplierInvoiceLines = pgTable('supplier_invoice_lines', {
   id: id(), tenantId: tenantId(),
@@ -1583,6 +1590,9 @@ export const flowSteps = pgTable('flow_steps', {
   remarks: text('remarks'),
   actedById: text('acted_by_id').references(() => users.id),
   actedAt: timestamp('acted_at', { withTimezone: true }),
+  /** A step added by forwarding (forwardFlow): who forwarded it and what they asked. */
+  forwardedById: text('forwarded_by_id').references(() => users.id),
+  note: text('note'),
   createdAt: createdAt(),
 }, (t) => [index('flow_steps_subject_idx').on(t.subjectType, t.subjectId, t.cycle), index('flow_steps_pending_idx').on(t.tenantId, t.status, t.roleId)]);
 export type FlowStep = typeof flowSteps.$inferSelect;
@@ -1985,3 +1995,27 @@ export const invoiceCodes = pgTable('invoice_codes', {
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('invoice_codes_uq').on(t.tenantId, t.kind, t.code), index('invoice_codes_kind_idx').on(t.tenantId, t.kind, t.enabled)]);
 export type InvoiceCode = typeof invoiceCodes.$inferSelect;
+
+/**
+ * Emails received at a workspace's invoices address (Invoices add-on): one row per message, the drafts made from its
+ * attachments, or why nothing was made. The message text is kept (first 10,000 characters); attachments become the invoices' files.
+ */
+export const invoiceMails = pgTable('invoice_mails', {
+  id: id(), tenantId: tenantId(),
+  /** Message-ID (or a hash of the message) — the same email is processed once. */
+  messageId: text('message_id').notNull(),
+  /** WEBHOOK · IMAP */
+  via: text('via').notNull(),
+  fromAddress: text('from_address'), fromName: text('from_name'), subject: text('subject'),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
+  partyId: text('party_id').references(() => parties.id, { onDelete: 'set null' }),
+  /** PROCESSED · NO_ATTACHMENT · IGNORED · FAILED */
+  status: text('status').notNull(),
+  reason: text('reason'),
+  invoiceIds: jsonb('invoice_ids').$type<string[]>().notNull().default([]),
+  attachments: jsonb('attachments').$type<{ fileName: string; size: number; result: string; invoiceId?: string }[]>().notNull().default([]),
+  toAddress: text('to_address'),
+  body: text('body'),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('invoice_mails_uq').on(t.tenantId, t.messageId), index('invoice_mails_tenant_idx').on(t.tenantId, t.receivedAt)]);
+export type InvoiceMail = typeof invoiceMails.$inferSelect;

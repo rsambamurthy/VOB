@@ -1615,13 +1615,36 @@ Contracts → **Reports** shows what watch achieved over 12 months: decisions ma
 - **Contract invoices** are checked against the contract's agreed prices, value and term.
 - **Invoices without a PO or contract** (rent, utilities, services): each line is coded to a **GL account** and **cost centre** (and project, if used) from the code lists. Empty lines take the supplier's default coding.
 
+**Getting invoices in**: enter them (below), **Upload PDFs**, **Import from Excel**, or let suppliers email them to your invoices address — see *Email inbox*.
+
 **Entering an invoice**: **+ New invoice** → supplier, what it is against, number, date, total and lines → **Save draft**. VendorGate checks it straight away (totals, coding, duplicates, supplier on hold, India e-invoice and GST type). Attach the supplier's PDF, then **Save and submit**. You can also **Upload PDFs** (a PO number in the file name links the order; the same file twice is skipped) or **Import from Excel** — both make drafts to finish.
+
+**Possible duplicates**: every invoice is compared with earlier ones from the same supplier (and the same PAN under other supplier codes): the same number is blocked; the same number written differently, a number one slip apart, the same amount a few days apart, the same PDF or the same IRN are flagged. The invoice shows which ones it matched. If it isn't a duplicate, press **Not a duplicate…** and say why — that pair is not raised again. Your administrator decides which rules block, warn or are off (Administration → Invoices → *Invoice duplicate check*).
+
+**Forward for approval**: on an invoice waiting for approval, **Forward for approval…** asks a person or everyone with a role (Procurement, the department that asked for it, the buyer) to approve first, with your question. When they approve, it comes back to where it was; if they reject it, the invoice is rejected.
 
 **Approval**: a submitted invoice goes through the **approval matrix** — for example the cost-centre owner for invoices without a PO, AP review for exceptions, finance above an amount. The person who entered an invoice can't approve it. When no level applies, a **clean** invoice can be approved **touchless** (if switched on); otherwise someone with invoice management approves it.
 
 **To the ERP**: approved invoices are sent to Oracle Payables automatically, or wait in **Ready for ERP** until you choose them and press **Send** — your administrator decides. If Payables rejects one it shows under **Import failed** with the reason; holds placed in Oracle show on the invoice. Payments reported by the ERP settle the invoice.
 
 **Credit and debit notes**: a **credit note** from the supplier reduces an invoice; a **debit note** is raised by you (numbered DN-…, with a PDF) for short supply, price differences or rejected goods, and can be emailed to the supplier's accounts address. Both reduce the net payable.`,
+  },
+  {
+    id: 'ap-inbox', title: 'Email inbox (invoices)', audience: ['staff'], perms: ['invoices.capture'], feature: 'invoices',
+    summary: 'Invoices emailed to your invoices address become drafts — the supplier, PO and invoice details found where possible.',
+    screens: ['^/staff/ap/inbox'], contexts: ['ap-inbox'],
+    keywords: 'email inbox invoices address mailbox imap forward attachment pdf draft supplier unknown sender already received',
+    related: ['ap-invoices', 'invoices-settings'],
+    body: `Each email that reaches your invoices address (or the mailbox VendorGate reads) is listed here once.
+
+- **Each PDF** (also PDFs inside a .zip, and scanned images if allowed) becomes a **draft**. Logos and signatures are skipped.
+- **The supplier** is found from the sender's address (supplier email, accounts email, contacts), then the sender's domain, then a GSTIN printed on the invoice, then the purchase order. If none matches, the draft has no supplier — choose it when you open the draft (or your administrator can have such emails ignored).
+- **The purchase order** is found from a PO number in the file name, subject, email text or PDF.
+- **From the PDF**: the invoice number, date, total and IRN are read from the text (scans have no text). Always check them before you submit.
+- **Already received**: the same PDF sent again doesn't make a second draft.
+- The draft shows where it came from (the email's sender and subject) and the duplicate check runs at once, so possible duplicates are flagged before anyone opens it.
+
+Nothing is sent back to the sender.`,
   },
   {
     id: 'ap-codes', title: 'Invoice code lists', audience: ['staff'], perms: ['tenant.settings'], feature: 'invoices',
@@ -1664,8 +1687,10 @@ What you keep in VendorGate:
 3. **Options**: bulk PDF upload, Excel import, touchless approval, credit notes, debit notes.
 4. **Rules**: price tolerance; whether a cost centre is required; which invoices may go through **touchless** and up to what amount; **push to the ERP** automatic or manual; whether debit notes are **emailed** to suppliers always, when AP chooses, or never; default days to pay.
 5. **Approval matrix**: levels top to bottom, each with a rule. A level can go to the **owner of the invoice's cost centre** (set on Code lists). The default: budget owner for invoices without a PO, AP review for exceptions, finance above 10 lakh, director above 1 crore.
-6. **Account in Oracle**: how a line's coding joins into the account combination, e.g. *{entity}.{costCentre}.{account}.000*.
-7. **API keys** for the ERP or middleware: code lists, import results and payments.`,
+6. **Invoice duplicate check**: how earlier invoices are compared — the look-back, the date window, the amount tolerance, short numbers, look-alike characters — and whether each rule **blocks**, **warns** or is **off** (the same-IRN rule is fixed). *How it works* explains every rule with examples; **Download as a document** gives the same text to share. Changes are recorded in the audit log.
+7. **Email inbox** (when the option is on): your invoices address — forward your AP mailbox to it — and/or a mailbox VendorGate reads every 5 minutes (IMAP; use an app password). *Email inbox: matching and reading* sets whether unknown senders make drafts, matching by email domain, reading the PDF, scanned images and limits.
+8. **Account in Oracle**: how a line's coding joins into the account combination, e.g. *{entity}.{costCentre}.{account}.000*.
+9. **API keys** for the ERP or middleware: code lists, import results and payments.`,
   },
 ];
 

@@ -34,7 +34,7 @@ export const OPTIONS = {
   creditNotes: { area: 'notes', label: 'Credit notes', help: 'Credit notes from suppliers, linked to the invoice they correct.', default: true, available: true },
   debitNotes: { area: 'notes', label: 'Debit notes', help: 'Debit notes raised by AP (short supply, rejected goods, price difference, penalty) with a PDF.', default: true, available: true },
   readInvoices: { area: 'ai', label: 'Read uploaded invoices', help: 'Suggest the header, lines and tax from the PDF, masked before any AI.', default: false, available: false, requires: 'ai' },
-  emailInbox: { area: 'capture', label: 'Email inbox', help: 'Invoices emailed to the workspace’s invoices address arrive as drafts.', default: false, available: false },
+  emailInbox: { area: 'capture', label: 'Email inbox', help: 'Invoices emailed to the workspace’s invoices address (or a mailbox VendorGate reads) arrive as drafts.', default: false, available: true },
 } as const satisfies Record<string, InvoiceOptionDef>;
 export type InvoiceOption = keyof typeof OPTIONS;
 
@@ -52,7 +52,7 @@ export type InvoiceRule = keyof typeof RULES;
 const M = defineModule({
   name: 'Invoices', feature: 'invoices', settingsKey: 'invoices', kindsKey: 'bases', kindNoun: 'invoice basis',
   kinds: BASES, options: OPTIONS, areas: AREA_LABELS, rules: RULES as Record<InvoiceRule, RuleDef>,
-  keep: ['approval', 'erp'],
+  keep: ['approval', 'erp', 'inbox'],
 });
 
 export const invoicesLicensed = M.licensed;
@@ -70,7 +70,7 @@ export function invoicesConfig(t: Tenant) {
 export function invoicesSummary(t: Tenant) {
   const s = M.summary(t);
   return { on: s.on, bases: s.kinds, creditNotes: s.on && optionOn(t, 'creditNotes'), debitNotes: s.on && optionOn(t, 'debitNotes'), pushMode: s.on ? String(invoiceRules(t).pushMode ?? 'manual') : 'manual',
-    bulkUpload: s.on && optionOn(t, 'bulkUpload'), excelImport: s.on && optionOn(t, 'excelImport') };
+    bulkUpload: s.on && optionOn(t, 'bulkUpload'), excelImport: s.on && optionOn(t, 'excelImport'), emailInbox: s.on && optionOn(t, 'emailInbox') };
 }
 
 /** Price tolerance (%) for PO and contract price checks: the add-on's rule, else the purchasing setting (portal invoices). */

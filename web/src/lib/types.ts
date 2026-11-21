@@ -41,7 +41,7 @@ export interface Me {
   /** Sourcing (RFQs and e-auctions): on for this workspace, and the formats switched on. */
   sourcing?: { on: boolean; formats: string[] };
   /** Invoices add-on (accounts payable): on, the bases switched on and options the AP screens need. */
-  invoices?: { on: boolean; bases: string[]; creditNotes: boolean; debitNotes: boolean; pushMode: string; bulkUpload: boolean; excelImport: boolean };
+  invoices?: { on: boolean; bases: string[]; creditNotes: boolean; debitNotes: boolean; pushMode: string; bulkUpload: boolean; excelImport: boolean; emailInbox: boolean };
   contracts?: { on: boolean; types: { key: string; label: string; directions: ('BUY' | 'SELL')[] }[]; directions: ('BUY' | 'SELL')[]; linkSuppliers: boolean };
   /** Read-only support session opened from the platform console. */
   support?: { by: string; reason: string | null; endsAt: string };
@@ -58,6 +58,8 @@ export interface Step {
   id: string; cycle: number; level: number; roleId?: string; roleName?: string; label: string; status: StepStatus;
   remarks?: string | null; actedAt?: string | null; actedBy?: { name: string } | null;
   assigneeName?: string | null; dueAt?: string | null; overdue?: boolean; slaHours?: number | null;
+  /** A step added by forwarding (approval flows other than suppliers). */
+  forwarded?: { by: string; note: string | null };
 }
 export interface AuditRow { id: string; actor: string; action: string; detail: Record<string, unknown> | null; createdAt: string }
 

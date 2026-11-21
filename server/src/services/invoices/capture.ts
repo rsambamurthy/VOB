@@ -1,6 +1,6 @@
 /**
  * Getting invoices in (Invoices add-on): the PDF on an AP draft, bulk upload (PDFs or a .zip → one draft each, linked to the
- * PO named in the file name), and Excel (one row per line, grouped into drafts). Every draft is finished, checked and
+ * PO named in the file name), the email inbox (inbox.ts, through draftFromFile), and Excel (one row per line, grouped into drafts). Every draft is finished, checked and
  * submitted the same way (record.ts).
  */
 import { and, eq, sql } from 'drizzle-orm';
@@ -13,7 +13,9 @@ import { readSheet, sheetTemplate, type RowError, type SheetColumn } from '../..
 import { packFor } from '../../countries/registry.js';
 import { unpack } from '../contracts/migration.js';
 import { assertInvoicesOn, optionOn } from './config.js';
-import { getInvoice, partyOfVendor, saveDraft, type By } from './record.js';
+import { getInvoice, partyOfVendor, recheckInvoice, saveDraft, type By } from './record.js';
+import { DUPLICATES } from './duplicates.js';
+import type { InvoiceFacts } from './reading.js';
 import { norm } from './checks.js';
 
 const { supplierInvoices, purchaseOrders, parties } = schema;
@@ -35,6 +37,48 @@ export async function attachFile(t: Tenant, id: string, file: Upload | undefined
   return row;
 }
 
+/** Finds the one purchase order named in a text (file name, email subject, PDF text): PO numbers of 4+ characters, ignoring punctuation. */
+export async function poFinder(t: Tenant) {
+  const pos = await db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId, currency: purchaseOrders.currency }).from(purchaseOrders).where(eq(purchaseOrders.tenantId, t.id)).limit(50000);
+  const keyed = pos.filter((p) => p.poNumber.length >= 4).map((p) => ({ ...p, key: norm(p.poNumber).replace(/[^A-Z0-9]/g, '') }));
+  return (...texts: (string | null | undefined)[]) => {
+    for (const text of texts) {
+      if (!text) continue;
+      const n = norm(text).replace(/[^A-Z0-9]/g, '');
+      const hits = keyed.filter((p) => n.includes(p.key));
+      if (hits.length === 1) return hits[0];
+    }
+    return null;
+  };
+}
+export type FoundPo = NonNullable<ReturnType<Awaited<ReturnType<typeof poFinder>>>>;
+
+/** A file already stored by an earlier draft (duplicate check H3; skipped unless that rule is off). */
+export async function sameFile(t: Tenant, sha256: string) {
+  if (DUPLICATES.resolve(t).rules.H3 === 'off') return null;
+  return db.query.supplierInvoices.findFirst({ where: and(eq(supplierInvoices.tenantId, t.id), sql`${supplierInvoices.file}->>'sha256' = ${sha256}`, sql`${supplierInvoices.status} not in ('CANCELLED','REJECTED')`), columns: { id: true, invoiceNumber: true } });
+}
+
+/**
+ * One draft from one stored file — bulk upload and the email inbox. What is known goes on the draft (supplier, PO, and what
+ * was read from the PDF); the checks run straight away so possible duplicates show before anyone opens it.
+ */
+export async function draftFromFile(t: Tenant, stored: Awaited<ReturnType<typeof storeUpload>>, o: {
+  source: 'BULK' | 'EMAIL'; by: By; po?: FoundPo | null; partyId?: string | null; guess?: string; facts?: InvoiceFacts | null; mailId?: string | null;
+}) {
+  const party = o.partyId ? { id: o.partyId } : o.po?.vendorId ? await partyOfVendor(t, o.po.vendorId, o.by) : null;
+  const vendorId = o.po?.vendorId ?? (o.partyId ? (await db.query.parties.findFirst({ where: eq(parties.id, o.partyId), columns: { vendorId: true } }))?.vendorId ?? null : null);
+  const f = o.facts ?? {};
+  const [row] = await db.insert(supplierInvoices).values({
+    tenantId: t.id, kind: 'INVOICE', status: 'DRAFT', source: o.source, invoiceNumber: f.invoiceNumber ?? (o.guess ?? 'NEW').slice(0, 60), invoiceDate: f.invoiceDate ?? today(), currency: o.po?.currency ?? workspaceCurrency(t),
+    subtotal: '0', taxAmount: '0', total: String(f.total ?? 0), poId: o.po?.id ?? null, vendorId, partyId: party?.id ?? null, mailId: o.mailId ?? null,
+    einvoice: f.irn ? { irn: f.irn } : null,
+    file: { fileName: stored.fileName, mimeType: stored.mimeType, size: stored.size, storagePath: stored.storagePath, storageDriver: stored.storageDriver, sha256: stored.sha256 },
+    submittedBy: o.by.name, createdById: o.by.id ?? null, ownerId: o.by.id ?? null, checks: [],
+  }).returning();
+  return recheckInvoice(t, row);
+}
+
 /**
  * Bulk upload: each PDF (or each file in a .zip) becomes a draft for AP to finish. A PO number in the file name links the draft
  * to that order and its supplier; the same file twice is skipped. `commit` false = only say what would happen.
@@ -43,26 +87,17 @@ export async function bulkUpload(t: Tenant, files: Upload[], by: By, commit: boo
   assertInvoicesOn(t);
   if (!optionOn(t, 'bulkUpload')) throw new HttpError(400, 'Bulk upload is switched off in Administration → Invoices.');
   const { files: list, skipped } = unpack(files as never);
-  const pos = await db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId, currency: purchaseOrders.currency }).from(purchaseOrders).where(eq(purchaseOrders.tenantId, t.id)).limit(50000);
+  const find = await poFinder(t);
   const plan = (list as Upload[]).map((f) => {
     const name = f.originalname.replace(/\.[a-z0-9]+$/i, '');
-    const n = norm(name).replace(/[^A-Z0-9]/g, '');
-    const hits = pos.filter((p) => p.poNumber.length >= 4 && n.includes(norm(p.poNumber).replace(/[^A-Z0-9]/g, '')));
-    return { file: f, fileName: f.originalname, po: hits.length === 1 ? hits[0] : null, guess: name.slice(0, 60) };
+    return { file: f, fileName: f.originalname, po: find(name), guess: name.slice(0, 60) };
   });
   const out = { files: plan.map((p) => ({ fileName: p.fileName, poNumber: p.po?.poNumber ?? null })), skipped, created: [] as { id: string; fileName: string; poNumber: string | null }[], duplicates: [] as string[] };
   if (!commit) return out;
   for (const p of plan) {
     const stored = await storeUpload(t.id, 'invoices', p.file);
-    const dup = await db.query.supplierInvoices.findFirst({ where: and(eq(supplierInvoices.tenantId, t.id), sql`${supplierInvoices.file}->>'sha256' = ${stored.sha256}`), columns: { id: true } });
-    if (dup) { out.duplicates.push(p.fileName); continue; }
-    const party = p.po?.vendorId ? await partyOfVendor(t, p.po.vendorId, by) : null;
-    const [row] = await db.insert(supplierInvoices).values({
-      tenantId: t.id, kind: 'INVOICE', status: 'DRAFT', source: 'BULK', invoiceNumber: p.guess, invoiceDate: today(), currency: p.po?.currency ?? workspaceCurrency(t),
-      subtotal: '0', taxAmount: '0', total: '0', poId: p.po?.id ?? null, vendorId: p.po?.vendorId ?? null, partyId: party?.id ?? null,
-      file: { fileName: stored.fileName, mimeType: stored.mimeType, size: stored.size, storagePath: stored.storagePath, storageDriver: stored.storageDriver, sha256: stored.sha256 },
-      submittedBy: by.name, createdById: by.id ?? null, ownerId: by.id ?? null, checks: [],
-    }).returning();
+    if (await sameFile(t, stored.sha256)) { out.duplicates.push(p.fileName); continue; }
+    const row = await draftFromFile(t, stored, { source: 'BULK', by, po: p.po, guess: p.guess });
     out.created.push({ id: row.id, fileName: p.fileName, poNumber: p.po?.poNumber ?? null });
   }
   if (out.created.length) await audit({ tenantId: t.id, actor: by.name, action: 'INVOICES_BULK_UPLOADED', detail: { files: out.created.length, duplicates: out.duplicates.length }, ip: by.ip });

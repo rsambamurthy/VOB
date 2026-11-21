@@ -65,7 +65,7 @@ supplierCollabRouter.get('/orders/:id', ah(async (req, res) => {
   const c = vendorCtx(req);
   const po = await supplierPo(req, req.params.id);
   const [ship, inv, list, asn] = await Promise.all([shippableLines(po.id), invoiceableLines(po.id), shipmentsFor(po.id), asnRequiredFor(po)]);
-  res.json({ shippable: ship, invoiceable: inv, shipments: list.map(({ createdBy: _b, ...s }) => s), invoices: (await listInvoices({ tenantId: c.tenant.id, vendorId: c.vendorId, poId: po.id })).rows, asnRequired: asn,
+  res.json({ shippable: ship, invoiceable: inv, shipments: list.map(({ createdBy: _b, ...s }) => s), invoices: (await listInvoices({ tenantId: c.tenant.id, vendorId: c.vendorId, poId: po.id, portal: true })).rows, asnRequired: asn,
     priceTolerancePct: c.tenant.settings.priceTolerancePct ?? 2, einvoice: c.tenant.country === 'IN' });
 }));
 
@@ -160,7 +160,8 @@ staffCollabRouter.use(['/invoices', '/payments', '/shipments'], (req, _res, next
 staffCollabRouter.get('/invoices', requireStaff('orders.view'), ah(async (req, res) => {
   const s = staffCtx(req);
   const q = z.object({ status: z.enum(['REVIEW', 'UNPAID', 'SUBMITTED', 'EXCEPTION', 'APPROVED', 'REJECTED', 'CANCELLED', 'PARTLY_PAID', 'PAID']).optional(), q: z.string().max(100).optional(), vendorId: z.string().optional(), poId: z.string().optional(), page: z.coerce.number().int().min(1).optional() }).parse(req.query);
-  res.json({ ...(await listInvoices({ tenantId: s.tenant.id, ...q })), counts: await invoiceCounts(s.tenant.id, q.vendorId), canDecide: s.permissions.has('invoices.manage') });
+  // Purchasing's own list: submitted purchase-order invoices (AP drafts, notes and non-PO invoices live in the Invoices add-on).
+  res.json({ ...(await listInvoices({ tenantId: s.tenant.id, ...q, portal: true, basis: 'po' })), counts: await invoiceCounts(s.tenant.id, q.vendorId, { portal: true }), canDecide: s.permissions.has('invoices.manage') });
 }));
 
 staffCollabRouter.get('/invoices/:id', requireStaff('orders.view'), ah(async (req, res) => {

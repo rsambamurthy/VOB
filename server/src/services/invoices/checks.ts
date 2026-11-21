@@ -6,12 +6,13 @@
  *   contract  contract active, invoice date within the term, agreed prices (item code), invoices to date vs the value
  *   non-PO    every line coded; codes known and open; the account combination valid in the ERP (when that list is loaded)
  *   notes     linked to an invoice of the same supplier; notes never more than the invoice
- *   all       totals, currency, future dates, duplicates, India e-invoice IRN / QR and GST type, supplier archived / on hold
+ *   all       totals, currency, future dates, duplicates (duplicates.ts, configurable), India e-invoice IRN / QR and GST type, supplier archived / on hold
  */
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db, schema } from '../../lib/db.js';
 import type { Contract, Party, PurchaseOrder, SupplierInvoice, Tenant } from '../../db/schema.js';
 import { concatenatedAccount, invoiceRules, invoicesOn, priceTolerance, type Basis } from './config.js';
+import { duplicateChecks } from './duplicates.js';
 
 const { poLines, shipments, shipmentLines, supplierInvoices, supplierInvoiceLines, contractPrices, invoiceCodes } = schema;
 const DAY = 86_400_000;
@@ -22,7 +23,8 @@ export const LIVE = ['SUBMITTED', 'EXCEPTION', 'IN_APPROVAL', 'APPROVED', 'PARTL
 export const APPROVED = ['APPROVED', 'PARTLY_PAID', 'PAID'];
 const ACCEPTED = ['ACCEPTED', 'AUTO_ACCEPTED'];
 
-export type Check = { code: string; level: 'error' | 'warning' | 'ok'; message: string };
+/** `rule` / `refs`: the duplicate-check rule and the invoices it matched (duplicates.ts). */
+export type Check = { code: string; level: 'error' | 'warning' | 'ok'; message: string; rule?: string; refs?: { id: string; number: string }[] };
 export type InvoiceKind = 'INVOICE' | 'CREDIT' | 'DEBIT';
 export const KIND_LABEL: Record<InvoiceKind, string> = { INVOICE: 'Invoice', CREDIT: 'Credit note', DEBIT: 'Debit note' };
 
@@ -123,11 +125,15 @@ export interface CheckLine {
 export interface CheckInput {
   kind?: InvoiceKind; invoiceNumber: string; invoiceDate: string; currency?: string; total: number; shipmentId?: string | null;
   einvoice?: EInvoiceInput | null; taxType?: 'IGST' | 'CGST_SGST' | null; relatedInvoiceId?: string | null; lines: CheckLine[];
+  /** SHA-256 of the invoice's PDF (duplicate check H3). */
+  fileSha256?: string | null;
 }
 /** What the invoice is against. `vendorId` / `partyId` identify the supplier for duplicates. */
 export interface CheckSubject {
   tenant: Tenant; basis: Basis; po?: PurchaseOrder | null; contract?: Contract | null; party?: Party | null; vendorId?: string | null;
   supplierGstin?: string | null; supplierHold?: string | null; entityCode?: string | null; excludeInvoiceId?: string;
+  /** Earlier invoices a person said this is not a duplicate of. */
+  cleared?: string[];
 }
 export type PricedLine = CheckLine & { amount: number; taxRate: number; taxAmount: number };
 
@@ -224,15 +230,8 @@ export async function checkInvoice(s: CheckSubject, input: CheckInput) {
     }
   }
 
-  // Duplicates (same supplier, same kind).
-  const who = s.vendorId ? eq(supplierInvoices.vendorId, s.vendorId) : s.party ? eq(supplierInvoices.partyId, s.party.id) : null;
-  if (who) {
-    const same = await db.select({ id: supplierInvoices.id, number: supplierInvoices.invoiceNumber, total: supplierInvoices.total, date: supplierInvoices.invoiceDate }).from(supplierInvoices)
-      .where(and(eq(supplierInvoices.tenantId, tenant.id), who, eq(supplierInvoices.kind, kind), inArray(supplierInvoices.status, LIVE), ...(s.excludeInvoiceId ? [ne(supplierInvoices.id, s.excludeInvoiceId)] : [])));
-    if (same.some((x) => norm(x.number) === norm(input.invoiceNumber))) err('DUPLICATE', `${KIND_LABEL[kind]} ${input.invoiceNumber} has already been submitted`);
-    const lookalike = same.find((x) => norm(x.number) !== norm(input.invoiceNumber) && x.date === input.invoiceDate && Math.abs(Number(x.total) - total) < 0.01);
-    if (lookalike) warn('POSSIBLE_DUPLICATE', `Same date and amount as ${KIND_LABEL[kind].toLowerCase()} ${lookalike.number}`);
-  }
+  // Duplicates: the configurable duplicate-check algorithm (duplicates.ts).
+  checks.push(...await duplicateChecks(s, input, total, kind));
 
   // Supplier.
   if (s.party?.status === 'ARCHIVED') warn('PARTY_ARCHIVED', `${s.party.name} is archived`);

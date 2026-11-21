@@ -16,6 +16,7 @@ import { Facts, qty } from '../../orders/common';
 import { ApStatus, ErpBadge, KIND_LABEL, SOURCE_LABEL, useInvoiceSetup, type ApDetail, type InvKind } from '../../components/Invoices';
 import { draftBody, draftFrom, InvoiceForm, type Draft } from './InvoiceForm';
 import { AP_BASE, NewInvoiceModal } from './Invoices';
+import { DuplicatesCard, ForwardModal } from './Duplicates';
 
 export function ApInvoiceDetail() {
   useHelpContext('ap-invoices');
@@ -30,6 +31,7 @@ export function ApInvoiceDetail() {
   const [decide, setDecide] = useState<'APPROVE' | 'REJECT'>();
   const [cancel, setCancel] = useState(false);
   const [note, setNote] = useState<InvKind>();
+  const [forward, setForward] = useState(false);
   const take = useCallback((x: ApDetail) => { setD(x); setDraft(x.can.edit ? draftFrom(x) : undefined); }, []);
   const load = useCallback(() => api<ApDetail>(`/staff/invoices/${id}`).then(take).catch((e) => setError(e.message)), [id, take]);
   useEffect(() => { load(); }, [load]);
@@ -62,6 +64,7 @@ export function ApInvoiceDetail() {
         <div className="head-actions">
           {d.can.creditNote && setup.settings.creditNotes && <button className="btn btn-secondary" onClick={() => setNote('CREDIT')}>Credit note</button>}
           {d.can.debitNote && setup.settings.debitNotes && <button className="btn btn-secondary" onClick={() => setNote('DEBIT')}>Debit note</button>}
+          {d.can.forward && <button className="btn btn-secondary" onClick={() => setForward(true)}>Forward for approval…</button>}
           {d.can.cancel && <button className="btn btn-ghost" onClick={() => setCancel(true)}>Cancel {KIND_LABEL[i.kind].toLowerCase()}</button>}
         </div>
       </header>
@@ -69,10 +72,11 @@ export function ApInvoiceDetail() {
       {flash && <Alert kind="success">{flash}</Alert>}
       {i.decisionNote && <Alert kind={i.status === 'REJECTED' ? 'error' : 'info'}>{i.status === 'REJECTED' ? 'Rejected' : i.status === 'CANCELLED' ? 'Cancelled' : 'Approved'}{i.decidedBy ? ` by ${i.decidedBy}` : ''}{i.decidedAt ? ` on ${fmtDate(i.decidedAt)}` : ''}: “{i.decisionNote}”</Alert>}
 
+      <DuplicatesCard d={d} base={AP_BASE} onDone={take} />
       {draft && (
         <section className="card pad section-card" aria-label="Draft">
           <h3>Draft — finish and submit</h3>
-          <ChecksList checks={i.checks.filter((c) => c.level !== 'ok')} />
+          <ChecksList checks={i.checks.filter((c) => c.level !== 'ok' && !c.rule)} />
           <InvoiceForm value={draft} onChange={setDraft} setup={setup} />
           <div className="field"><label htmlFor="inv-file">{i.kind === 'DEBIT' ? 'Supporting document (optional — the debit note PDF is made for you)' : 'The supplier’s PDF'}</label>
             {d.file && <div className="small">Attached: <a href={`/api/staff/invoices/${i.id}/file`} target="_blank" rel="noreferrer">{d.file}</a></div>}
@@ -115,7 +119,7 @@ export function ApInvoiceDetail() {
 
       <div className="detail-grid">
         <div>
-          {!draft && <section className="card pad"><h3 className="card-title">Checks</h3>{i.checks.length ? <ChecksList checks={i.checks} /> : <p className="muted small">No checks yet.</p>}
+          {!draft && <section className="card pad"><h3 className="card-title">Checks</h3>{i.checks.length ? <ChecksList checks={i.checks.filter((c) => !c.rule)} /> : <p className="muted small">No checks yet.</p>}
             {errors.length > 0 && i.status === 'DRAFT' && <p className="err-text small">Fix these before it can be submitted.</p>}</section>}
           {d.priceCheck && <PriceCheckCard check={d.priceCheck} currency={i.currency} lines={d.lines.map((l) => ({ key: l.id, label: `${l.lineNo ?? ''} ${l.itemCode ?? ''} ${l.description ?? ''}`.trim(), unitPrice: l.unitPrice }))} />}
           {(d.flow.steps.length > 0 || i.status === 'IN_APPROVAL') && (
@@ -149,7 +153,7 @@ export function ApInvoiceDetail() {
           <section className="card pad">
             <h3 className="card-title">Details</h3>
             <Facts items={[
-              ['Came from', SOURCE_LABEL[i.source] ?? i.source], ['Entered by', i.submittedBy], ['Operating unit', i.entityCode], ['GL date', i.glDate ? fmtDate(i.glDate) : null], ['Due', i.dueDate ? fmtDate(i.dueDate) : null],
+              ['Came from', d.mail ? <span key="m">Email from {d.mail.fromName ?? d.mail.fromAddress}<div className="muted small">“{d.mail.subject ?? '(no subject)'}” · {fmtDateTime(d.mail.receivedAt)}</div></span> : SOURCE_LABEL[i.source] ?? i.source], ['Entered by', i.submittedBy], ['Operating unit', i.entityCode], ['GL date', i.glDate ? fmtDate(i.glDate) : null], ['Due', i.dueDate ? fmtDate(i.dueDate) : null],
               ['Payment terms', d.po?.paymentTerms ?? d.party?.ap?.paymentTerms ?? null], ['Supplier in the ERP', d.party?.ap?.erpSupplierCode ? `${d.party.ap.erpSupplierCode}${d.party.ap.erpSiteCode ? ` / ${d.party.ap.erpSiteCode}` : ''}` : null],
               ['Tax number', d.party?.taxNo ?? null], ['Paid so far', i.paidAmount ? money(i.paidAmount, i.currency) : null], ['Net payable', i.netPayable !== null && i.netPayable !== i.total ? money(i.netPayable, i.currency) : null],
               ['IRN', i.einvoice?.irn ? <span className="mono small break">{i.einvoice.irn}</span> : null],
@@ -174,6 +178,7 @@ export function ApInvoiceDetail() {
           <button className="btn btn-danger" disabled={busy} onClick={async () => { if (await act('/cancel', { reason: 'Cancelled by AP' }, 'Cancelled.')) setCancel(false); }}>Cancel it</button></>}>
           <p>It stays in the list as cancelled and can’t be submitted again.</p></Modal>
       )}
+      {forward && <ForwardModal id={i.id} onClose={() => setForward(false)} onDone={(x) => { take(x); setFlash('Forwarded.'); }} />}
       {note && <NewInvoiceModal kind={note} setup={setup} related={{ id: i.id, partyId: i.partyId ?? '' }} onClose={() => setNote(undefined)} onCreated={(nid) => { setNote(undefined); nav(`${AP_BASE}/${nid}`); }} />}
     </div>
   );

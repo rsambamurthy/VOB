@@ -13,7 +13,7 @@ export type InvKind = 'INVOICE' | 'CREDIT' | 'DEBIT';
 export type Basis = 'po' | 'contract' | 'nonPo';
 export const KIND_LABEL: Record<InvKind, string> = { INVOICE: 'Invoice', CREDIT: 'Credit note', DEBIT: 'Debit note' };
 export const BASIS_LABEL: Record<Basis, string> = { po: 'Purchase order', contract: 'Contract', nonPo: 'Without a PO or contract' };
-export const SOURCE_LABEL: Record<string, string> = { PORTAL: 'Supplier portal', AP: 'Entered by AP', BULK: 'Bulk upload', EXCEL: 'Excel import' };
+export const SOURCE_LABEL: Record<string, string> = { PORTAL: 'Supplier portal', AP: 'Entered by AP', BULK: 'Bulk upload', EXCEL: 'Excel import', EMAIL: 'Email inbox' };
 
 export interface ApRow {
   id: string; kind: InvKind; invoiceNumber: string; invoiceDate: string; currency: string; total: number; paidAmount: number; status: string; statusLabel: string;
@@ -40,8 +40,11 @@ export interface ApDetail {
   payments: { id: string; reference: string; paymentDate: string; method: string | null; currency: string; amount: number; withheld: number }[];
   flow: FlowViewData; messages: { id: string; status: string; connector: string; error: string | null; sentAt: string | null; createdAt: string }[];
   file: string | null; debitNoteTo: string | null;
-  can: { edit: boolean; submit: boolean; decide: boolean; cancel: boolean; push: boolean; email: boolean; creditNote: boolean; debitNote: boolean };
+  duplicateCleared: { invoiceId: string; number: string; rule: string; by: string; at: string; note: string }[];
+  mail: { id: string; fromAddress: string | null; fromName: string | null; subject: string | null; receivedAt: string } | null;
+  can: { edit: boolean; submit: boolean; decide: boolean; cancel: boolean; push: boolean; email: boolean; creditNote: boolean; debitNote: boolean; forward: boolean; clearDuplicate: boolean };
 }
+export type DupCheck = Check & { rule?: string; refs?: { id: string; number: string }[] };
 export interface CodeOption { code: string; name: string; parent: string | null }
 export interface InvoiceSetup {
   codes: Record<'ENTITY' | 'ACCOUNT' | 'COST_CENTRE' | 'PROJECT' | 'TASK' | 'TAX', CodeOption[]>;

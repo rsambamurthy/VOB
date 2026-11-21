@@ -13,6 +13,8 @@ export default defineConfig({
       DEV_SHOW_OTP: 'true',
       UPLOAD_DIR: './uploads-test',
       APP_BASE_URL: 'http://app.test',
+      INBOUND_EMAIL_DOMAIN: 'in.vendorgate.test',
+      INBOUND_EMAIL_SECRET: 'test-inbound-secret-0123456789',
     },
   },
 });
