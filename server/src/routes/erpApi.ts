@@ -36,11 +36,23 @@ erpApiRouter.use(ah(async (req: Request, _res: Response, next: NextFunction) => 
   if (!key) throw new HttpError(401, 'This API key is not valid or has been revoked');
   const t = await db.query.tenants.findFirst({ where: eq(tenants.id, key.tenantId) });
   if (!t || t.status !== 'ACTIVE') throw new HttpError(403, 'This workspace is not active');
-  if (!hasFeature(t, 'collab')) throw new HttpError(403, 'Supplier collaboration isn’t included in this workspace’s plan', undefined, 'PLAN_LIMIT');
+  // Purchase orders (collab) and the Invoices add-on both use this API; order endpoints check collab below.
+  const { invoicesOn } = await import('../services/invoices/config.js');
+  if (!hasFeature(t, 'collab') && !invoicesOn(t)) throw new HttpError(403, 'Supplier collaboration isn’t included in this workspace’s plan', undefined, 'PLAN_LIMIT');
   if (!key.lastUsedAt || Date.now() - key.lastUsedAt.getTime() > 60_000) await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, key.id));
   req.apiTenant = t; req.apiKeyName = key.name;
   next();
 }));
+
+/** Order endpoints need purchase orders in the plan (invoice results, code lists and payments work with the Invoices add-on alone). */
+erpApiRouter.use(['/purchase-orders', '/acknowledgements', '/receipts', '/shipments'], (req: Request, _res: Response, next: NextFunction) => {
+  if (!hasFeature(req.apiTenant!, 'collab')) return next(new HttpError(403, 'Supplier collaboration isn’t included in this workspace’s plan', undefined, 'PLAN_LIMIT'));
+  next();
+});
+erpApiRouter.get('/invoices', (req: Request, _res: Response, next: NextFunction) => {
+  if (!hasFeature(req.apiTenant!, 'collab')) return next(new HttpError(403, 'Supplier collaboration isn’t included in this workspace’s plan', undefined, 'PLAN_LIMIT'));
+  next();
+});
 
 erpApiRouter.post('/purchase-orders', ah(async (req, res) => {
   const t = req.apiTenant!;
@@ -101,6 +113,7 @@ erpApiRouter.get('/invoices', ah(async (req, res) => {
   const t = req.apiTenant!;
   const q = z.object({ since: z.string().datetime({ offset: true }), status: z.enum(['SUBMITTED', 'EXCEPTION', 'APPROVED', 'REJECTED', 'PARTLY_PAID', 'PAID']).default('APPROVED') }).parse(req.query);
   const since = new Date(q.since);
+  // Portal (PO) invoices; Invoices add-on invoices reach the ERP as messages (services/invoices/erp.ts).
   const rows = await db.select({ i: supplierInvoices, po: purchaseOrders, vendorCode: vendors.code }).from(supplierInvoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, supplierInvoices.poId)).innerJoin(vendors, eq(vendors.id, supplierInvoices.vendorId))
     .where(and(eq(supplierInvoices.tenantId, t.id), eq(supplierInvoices.status, q.status), ['SUBMITTED', 'EXCEPTION'].includes(q.status) ? gt(supplierInvoices.createdAt, since) : gt(supplierInvoices.decidedAt, since))).orderBy(asc(supplierInvoices.createdAt)).limit(1000);
   const lines = rows.length ? await db.select({ il: supplierInvoiceLines, l: poLines }).from(supplierInvoiceLines).innerJoin(poLines, eq(poLines.id, supplierInvoiceLines.lineId)).where(inArray(supplierInvoiceLines.invoiceId, rows.map((r) => r.i.id))) : [];
@@ -115,6 +128,23 @@ erpApiRouter.put('/invoices/:id', ah(async (req, res) => {
   const [row] = await db.update(supplierInvoices).set(b).where(and(eq(supplierInvoices.tenantId, t.id), eq(supplierInvoices.id, req.params.id))).returning();
   if (!row) throw new HttpError(404, 'No invoice with that id');
   res.json({ id: row.id, erpInvoiceId: row.erpInvoiceId, dueDate: row.dueDate });
+}));
+
+/** Oracle import results for invoices sent from VendorGate (Invoices add-on): imported (with the ERP invoice id and holds) or rejected (with reasons). */
+erpApiRouter.post('/invoices/results', ah(async (req, res) => {
+  const { recordErpResults, resultInput } = await import('../services/invoices/erp.js');
+  const items = z.array(resultInput).min(1, 'Send one result, an array, or { "results": [ … ] }').max(500).parse(listOf(req.body, 'results'));
+  res.json(await recordErpResults(req.apiTenant!, items));
+}));
+
+/** Code lists for coding invoices, pushed by the ERP (instead of the nightly Oracle pull). `full` closes codes of that list that weren't sent. */
+erpApiRouter.post('/invoice-codes', ah(async (req, res) => {
+  const { CODE_KIND_KEYS, upsertCodes } = await import('../services/invoices/codes.js');
+  const { invoicesOn } = await import('../services/invoices/config.js');
+  if (!invoicesOn(req.apiTenant!)) throw new HttpError(404, 'Invoices isn’t switched on for this workspace');
+  const b = z.object({ kind: z.enum(CODE_KIND_KEYS as [string, ...string[]]), full: z.boolean().default(false),
+    codes: z.array(z.object({ code: z.string().trim().min(1).max(120), name: z.string().trim().max(200).default(''), parent: z.string().trim().max(120).optional().nullable(), enabled: z.boolean().default(true) })).max(20000) }).parse(req.body);
+  res.json(await upsertCodes(req.apiTenant!, b.kind as never, b.codes, 'ERP', { full: b.full }));
 }));
 
 erpApiRouter.post('/payments', ah(async (req, res) => {

@@ -13,17 +13,19 @@ import { checkLevels } from '../lib/moduleConfig.js';
 const roleRows = (tenantId: string) => db.select({ key: schema.roles.key, name: schema.roles.name }).from(schema.roles).where(eq(schema.roles.tenantId, tenantId));
 
 /** What the LevelsEditor needs. */
-export async function approvalSetupFor(tenantId: string, levels: WorkflowLevel[], catalog: { id: string; label: string; type: string; options?: string[] }[], kind?: string) {
-  return { ...(kind ? { kind } : {}), levels, catalog, roles: await roleRows(tenantId) };
+/** `assignees`: people a level can be given to that the subject works out (e.g. the cost-centre owner); empty for most flows. */
+export type FlowAssignee = { key: string; label: string };
+export async function approvalSetupFor(tenantId: string, levels: WorkflowLevel[], catalog: { id: string; label: string; type: string; options?: string[] }[], kind?: string, assignees: FlowAssignee[] = []) {
+  return { ...(kind ? { kind } : {}), levels, catalog, roles: await roleRows(tenantId), ...(assignees.length ? { assignees } : {}) };
 }
 
 /**
  * Check levels against the catalogue and the workspace's roles, store them under settings[settingsKey][field] and
  * audit the change. Returns the tenant with the new settings.
  */
-export async function saveFlowLevels(t: Tenant, input: unknown, opts: { catalog: { id: string }[]; settingsKey: 'sourcing' | 'contracts'; field: string; auditAction: string; flow?: string; actor: string; ip?: string }) {
+export async function saveFlowLevels(t: Tenant, input: unknown, opts: { catalog: { id: string }[]; settingsKey: 'sourcing' | 'contracts' | 'invoices'; field: string; auditAction: string; flow?: string; actor: string; ip?: string; assignees?: FlowAssignee[] }) {
   const roleKeys = (await roleRows(t.id)).map((r) => r.key);
-  const { levels, issues } = checkLevels(input, opts.catalog.map((c) => c.id), roleKeys);
+  const { levels, issues } = checkLevels(input, opts.catalog.map((c) => c.id), roleKeys, (opts.assignees ?? []).map((a) => a.key));
   if (issues.length) throw new HttpError(400, issues[0].message, issues);
   const settings = { ...t.settings, [opts.settingsKey]: { ...((t.settings as Record<string, unknown>)[opts.settingsKey] as object ?? {}), [opts.field]: { levels } } } as TenantSettings;
   await db.update(schema.tenants).set({ settings }).where(eq(schema.tenants.id, t.id));

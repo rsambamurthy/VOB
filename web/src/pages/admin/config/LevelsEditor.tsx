@@ -9,8 +9,10 @@ import { ConditionEditor, move, toKey, type CatalogEntry } from './shared';
 
 export type EditLevels = (fn: (levels: WorkflowLevel[]) => void) => void;
 
-export function LevelsEditor({ levels, edit, roles, catalog, issues = [], issuePath = 'workflow.levels', subject, newCondition, minLevels = 1, intro }: {
+export function LevelsEditor({ levels, edit, roles, catalog, issues = [], issuePath = 'workflow.levels', subject, newCondition, minLevels = 1, intro, assignees = [] }: {
   levels: WorkflowLevel[]; edit: EditLevels; roles: { key: string; name: string }[]; catalog: CatalogEntry[]; issues?: ConfigIssue[];
+  /** People a level can go to that the subject works out (invoices: the cost-centre owner). Empty = role only. */
+  assignees?: { key: string; label: string }[];
   /** Prefix of the issue paths for a level, e.g. "workflow.levels" → "workflow.levels.<id>". */
   issuePath?: string;
   /** Plural noun for what is approved: "vendors", "events". */
@@ -38,6 +40,11 @@ export function LevelsEditor({ levels, edit, roles, catalog, issues = [], issueP
                       {!roles.some((r) => r.key === l.roleKey) && <option value={l.roleKey}>⚠ {l.roleKey} (missing)</option>}
                       {roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
                     </select></div>
+                  {assignees.length > 0 && <div className="field"><label htmlFor={`la-${l.id}`}>Goes to</label>
+                    <select id={`la-${l.id}`} value={l.assignee ?? ''} onChange={(e) => edit((ls) => { if (e.target.value) ls[i].assignee = e.target.value; else delete ls[i].assignee; })}>
+                      <option value="">Everyone with the role</option>
+                      {assignees.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+                    </select>{l.assignee && <div className="field-help">If there is none, everyone with the role.</div>}</div>}
                   <div className="field"><label htmlFor={`ls-${l.id}`}>Deadline (hours, optional)</label>
                     <input id={`ls-${l.id}`} inputMode="numeric" value={l.slaHours ?? ''} placeholder="e.g. 48" onChange={(e) => edit((ls) => { const n = parseInt(e.target.value, 10); if (Number.isNaN(n)) delete ls[i].slaHours; else ls[i].slaHours = Math.min(1440, Math.max(1, n)); })} /></div>
                 </div>

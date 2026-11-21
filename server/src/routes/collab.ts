@@ -124,8 +124,8 @@ supplierCollabRouter.post('/orders/:id/invoices', ah(async (req, res) => {
 supplierCollabRouter.get('/invoices', ah(async (req, res) => {
   const c = vendorCtx(req);
   const q = z.object({ status: z.enum(['REVIEW', 'UNPAID', 'SUBMITTED', 'EXCEPTION', 'APPROVED', 'REJECTED', 'CANCELLED', 'PARTLY_PAID', 'PAID']).optional(), q: z.string().max(100).optional(), page: z.coerce.number().int().min(1).optional() }).parse(req.query);
-  const list = await listInvoices({ tenantId: c.tenant.id, vendorId: c.vendorId, ...q });
-  res.json({ ...list, counts: await invoiceCounts(c.tenant.id, c.vendorId) });
+  const list = await listInvoices({ tenantId: c.tenant.id, vendorId: c.vendorId, portal: true, ...q });
+  res.json({ ...list, counts: await invoiceCounts(c.tenant.id, c.vendorId, { portal: true }) });
 }));
 
 supplierCollabRouter.get('/invoices/:id', ah(async (req, res) => {
@@ -176,7 +176,7 @@ staffCollabRouter.post('/invoices/:id/decide', requireStaff('invoices.manage'), 
   const { decision, note } = z.object({ decision: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(1000).optional() }).parse(req.body);
   const inv = await db.query.supplierInvoices.findFirst({ where: and(eq(supplierInvoices.tenantId, s.tenant.id), eq(supplierInvoices.id, req.params.id)) });
   if (!inv) throw new HttpError(404, 'Invoice not found');
-  const row = await decideInvoice(s.tenant, inv, decision, note || null, { name: s.user.name, email: s.user.email }, req.ip);
+  const row = await decideInvoice(s.tenant, inv, decision, note || null, { id: s.user.id, name: s.user.name, email: s.user.email }, req.ip);
   res.json({ status: row.status });
 }));
 

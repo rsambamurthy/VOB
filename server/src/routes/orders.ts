@@ -11,6 +11,7 @@ import { audit } from '../lib/audit.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { requireStaff, staffCtx } from '../auth/session.js';
 import { hasFeature } from '../services/limits.js';
+import { apiKeysRouter } from './apiKeys.js';
 import { importPurchaseOrders, mapSupplierCode } from '../services/orders/importer.js';
 import { acceptPurchaseOrder, retimeGroup } from '../services/orders/acceptance.js';
 import { loadSamplePurchaseOrders, pullFromOracle } from '../services/orders/pull.js';
@@ -223,25 +224,5 @@ ordersRouter.patch('/purchasing/vendors/:id/contacts/:contactId', requireStaff('
   res.json(row);
 }));
 
-/* ---------- API keys (for ERPs and middleware) ---------- */
-
-ordersRouter.get('/purchasing/api-keys', requireStaff('tenant.settings'), ah(async (req, res) => {
-  const rows = await db.select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, lastUsedAt: apiKeys.lastUsedAt, revokedAt: apiKeys.revokedAt, createdAt: apiKeys.createdAt })
-    .from(apiKeys).where(eq(apiKeys.tenantId, staffCtx(req).tenant.id)).orderBy(desc(apiKeys.createdAt));
-  res.json(rows);
-}));
-ordersRouter.post('/purchasing/api-keys', requireStaff('tenant.settings'), ah(async (req, res) => {
-  const s = staffCtx(req);
-  const { name } = z.object({ name: z.string().trim().min(2).max(80) }).parse(req.body);
-  const key = `vg_${randomToken(30)}`;
-  await db.insert(apiKeys).values({ tenantId: s.tenant.id, name, prefix: key.slice(0, 10), keyHash: sha256(key), createdById: s.user.id });
-  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'API_KEY_CREATED', detail: { name, prefix: key.slice(0, 10) }, ip: req.ip });
-  res.status(201).json({ key, name }); // shown once
-}));
-ordersRouter.delete('/purchasing/api-keys/:id', requireStaff('tenant.settings'), ah(async (req, res) => {
-  const s = staffCtx(req);
-  const [row] = await db.update(apiKeys).set({ revokedAt: new Date() }).where(and(eq(apiKeys.tenantId, s.tenant.id), eq(apiKeys.id, req.params.id), isNull(apiKeys.revokedAt))).returning();
-  if (!row) throw new HttpError(404, 'Key not found or already revoked');
-  await audit({ tenantId: s.tenant.id, actor: s.user.name, action: 'API_KEY_REVOKED', detail: { name: row.name, prefix: row.prefix }, ip: req.ip });
-  res.json({ ok: true });
-}));
+/* ---------- API keys (for ERPs and middleware): one router, also at /api/admin/api-keys for the Invoices add-on ---------- */
+ordersRouter.use('/purchasing/api-keys', apiKeysRouter);

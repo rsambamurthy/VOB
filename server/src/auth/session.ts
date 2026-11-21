@@ -172,6 +172,18 @@ export function requireStaff(...perms: Permission[]) {
   };
 }
 
+/** At least one of these permissions (e.g. parties: contracts.view or invoices.view). */
+export function requireAnyStaff(...perms: Permission[]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const s = req.staff;
+    if (!s) return next(new HttpError(401, 'Please sign in'));
+    if (s.mfaPending) return next(new HttpError(401, 'Two-factor verification required', undefined, 'MFA_PENDING'));
+    if (s.mfaSetupRequired) return next(new HttpError(403, 'Your workspace requires two-factor authentication. Set it up to continue.', undefined, 'MFA_SETUP_REQUIRED'));
+    if (!perms.some((p) => s.permissions.has(p))) return next(new HttpError(403, 'You don’t have permission to do this'));
+    next();
+  };
+}
+
 export function requireVendor(req: Request, _res: Response, next: NextFunction) {
   if (!req.vendor) return next(new HttpError(401, 'Your session has expired. Open the invitation link again.'));
   next();

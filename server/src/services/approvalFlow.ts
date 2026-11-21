@@ -21,7 +21,7 @@ import { logger } from '../lib/logger.js';
 
 const { flowSteps, roles, users, tenants } = schema;
 
-export type FlowSubject = 'sourcing_event' | 'sourcing_award' | 'contract';
+export type FlowSubject = 'sourcing_event' | 'sourcing_award' | 'contract' | 'invoice';
 export type FlowDecision = 'APPROVE' | 'SEND_BACK' | 'REJECT';
 export interface SubjectInfo { title: string; ref: string; link: string; kind: string }
 export interface FlowHandler {
@@ -32,6 +32,8 @@ export interface FlowHandler {
   returned(tenantId: string, id: string, decision: 'SEND_BACK' | 'REJECT', remarks: string, by: { id: string; name: string }): Promise<void>;
   /** A reason this user may not decide (e.g. nobody approves their own event); null = no objection. */
   blockedFor?(tenantId: string, id: string, userId: string): Promise<string | null>;
+  /** The person a level with `assignee` goes to (e.g. the cost-centre owner); null = the role holders. */
+  assigneeFor?(tenantId: string, id: string, assignee: string): Promise<string | null>;
 }
 const handlers = new Map<FlowSubject, FlowHandler>();
 export function registerFlowSubject(type: FlowSubject, h: FlowHandler) { handlers.set(type, h); }
@@ -75,12 +77,14 @@ export async function startFlow(tenant: Pick<Tenant, 'id'>, type: FlowSubject, i
     if (!role) throw new HttpError(409, `Approval level “${l.label}” refers to a role that no longer exists. Ask your administrator to check the approval flow.`);
     return { ...l, roleId: role.id };
   });
+  const h = handler(type);
+  const assignees = await Promise.all(resolved.map((l) => (l.assignee && h.assigneeFor ? h.assigneeFor(tenant.id, id, l.assignee) : Promise.resolve(null))));
   const [{ last }] = await db.select({ last: max(flowSteps.cycle) }).from(flowSteps).where(and(eq(flowSteps.subjectType, type), eq(flowSteps.subjectId, id)));
   const cycle = (last ?? 0) + 1;
   const steps = await db.insert(flowSteps).values(resolved.map((l, i) => ({
-    tenantId: tenant.id, subjectType: type, subjectId: id, cycle, level: i + 1, roleId: l.roleId, label: l.label, slaHours: l.slaHours ?? null, status: 'WAITING' as const,
+    tenantId: tenant.id, subjectType: type, subjectId: id, cycle, level: i + 1, roleId: l.roleId, label: l.label, slaHours: l.slaHours ?? null, status: 'WAITING' as const, assigneeUserId: assignees[i],
   }))).returning();
-  const info = await handler(type).describe(tenant.id, id);
+  const info = await h.describe(tenant.id, id);
   await audit({ tenantId: tenant.id, actor: by.name, action: 'FLOW_STARTED', detail: { subject: type, subjectId: id, ref: info?.ref, levels: resolved.map((l) => l.label) }, ip: by.ip });
   if (info) steps[0] = await activate(steps[0], info);
   return { cycle, steps };

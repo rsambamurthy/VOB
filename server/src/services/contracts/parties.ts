@@ -42,6 +42,12 @@ export const partyInput = z.object({
   website: z.string().trim().max(300).nullable().optional().or(z.literal('')).transform((v) => v || null).refine((v) => !v || /^https?:\/\//i.test(v), 'The website must start with http:// or https://'),
   contacts: z.array(contactSchema).max(20).default([]),
   notes: text(2000),
+  /** Accounts payable (Invoices add-on): ERP supplier and site, payment terms, coding defaults, who gets debit notes. Left out = unchanged. */
+  ap: z.object({
+    erpSupplierCode: z.string().trim().max(60), erpSiteCode: z.string().trim().max(60), paymentTerms: z.string().trim().max(60),
+    defaultAccount: z.string().trim().max(60), defaultCostCentre: z.string().trim().max(60),
+    accountsEmail: z.string().trim().toLowerCase().email('Enter a valid accounts email').max(200).or(z.literal('')),
+  }).partial().optional().transform((a) => (a ? Object.fromEntries(Object.entries(a).filter(([, v]) => v)) : undefined)),
   /** Confirm creating a party that looks like an existing one. */
   confirmDuplicate: z.boolean().optional(),
 });
@@ -126,6 +132,14 @@ export async function linkVendor(t: Tenant, partyId: string, vendorId: string | 
 /** A supplier party for an onboarded supplier (the contract screen offers suppliers too). Reuses an existing link. */
 export async function partyForVendor(t: Tenant, vendorId: string, by: By) {
   if (!onboardingOn(t) || !optionOn(t, 'linkSuppliers')) throw new HttpError(400, 'Linking parties to suppliers is switched off.');
+  return vendorParty(t, vendorId, by);
+}
+
+/**
+ * The party of an onboarded supplier, created and linked the first time (no option check: invoices from the supplier portal
+ * always belong to the supplier's party).
+ */
+export async function vendorParty(t: Tenant, vendorId: string, by: By) {
   const linked = await db.query.parties.findFirst({ where: and(eq(P.tenantId, t.id), eq(P.vendorId, vendorId)) });
   if (linked) return linked;
   const v = await db.query.vendors.findFirst({ where: and(eq(V.tenantId, t.id), eq(V.id, vendorId)) });
@@ -191,7 +205,7 @@ async function vendorSummaries(t: Tenant, ids: string[]) {
 
 export const partyOut = (p: Party) => ({
   id: p.id, kind: p.kind, code: p.code, name: p.name, legalName: p.legalName, country: p.country, registrationNo: p.registrationNo, taxNo: p.taxNo,
-  address: p.address, email: p.email, phone: p.phone, website: p.website, contacts: p.contacts, vendorId: p.vendorId, status: p.status, notes: p.notes,
+  address: p.address, email: p.email, phone: p.phone, website: p.website, contacts: p.contacts, vendorId: p.vendorId, status: p.status, notes: p.notes, ap: p.ap,
   createdByName: p.createdByName, createdAt: p.createdAt, updatedAt: p.updatedAt,
 });
 

@@ -18,7 +18,7 @@ export interface HelpArticle {
   /** Staff only: shown when the user has ANY of these permissions. */
   perms?: Permission[];
   /** Hidden when the workspace's plan doesn't include the feature. */
-  feature?: 'erp' | 'ai' | 'kyc' | 'collab' | 'sourcing' | 'contracts';
+  feature?: 'erp' | 'ai' | 'kyc' | 'collab' | 'sourcing' | 'contracts' | 'invoices';
   /** Regexes on the URL path; the first matching article is the screen's main topic. */
   screens?: string[];
   /** In-page contexts (set by a screen with useHelpContext), e.g. a configuration tab. */
@@ -1602,6 +1602,70 @@ Contracts → **Reports** shows what watch achieved over 12 months: decisions ma
 5. **Review the values found.** What reading found that the contract doesn't have yet. **Use these** fills them in. On an active contract only empty details (end date, value) and the renewal terms can be filled in this way — once set, dates and value change through an amendment.
 6. **Obligations from Excel**, for many contracts at once (each row names its contract by number or reference).
 7. **What is still missing**: active contracts with no signed copy, no owner, no end date or no notice period, and drafts waiting to be marked as signed — each opens the contract.`,
+  },
+  {
+    id: 'ap-invoices', title: 'Invoices (accounts payable)', audience: ['staff'], perms: ['invoices.view'], feature: 'invoices',
+    summary: 'Enter, check and approve supplier invoices against a purchase order, a contract or neither, and send them to the ERP.',
+    screens: ['^/staff/ap/invoices', '^/staff/ap/ready', '^/staff/ap/payments'], contexts: ['ap-invoices'],
+    keywords: 'invoice accounts payable ap non-po credit note debit note approval matrix touchless push erp oracle payables ready bulk upload excel coding gl account cost centre',
+    related: ['invoices-settings', 'ap-codes', 'ap-reports'],
+    body: `**Invoices** is an add-on: every supplier invoice in one list, whatever it is against.
+
+- **Purchase order invoices** are matched to the order lines, receipts and earlier invoices (the same checks as invoices suppliers submit in the portal, which also appear here).
+- **Contract invoices** are checked against the contract's agreed prices, value and term.
+- **Invoices without a PO or contract** (rent, utilities, services): each line is coded to a **GL account** and **cost centre** (and project, if used) from the code lists. Empty lines take the supplier's default coding.
+
+**Entering an invoice**: **+ New invoice** → supplier, what it is against, number, date, total and lines → **Save draft**. VendorGate checks it straight away (totals, coding, duplicates, supplier on hold, India e-invoice and GST type). Attach the supplier's PDF, then **Save and submit**. You can also **Upload PDFs** (a PO number in the file name links the order; the same file twice is skipped) or **Import from Excel** — both make drafts to finish.
+
+**Approval**: a submitted invoice goes through the **approval matrix** — for example the cost-centre owner for invoices without a PO, AP review for exceptions, finance above an amount. The person who entered an invoice can't approve it. When no level applies, a **clean** invoice can be approved **touchless** (if switched on); otherwise someone with invoice management approves it.
+
+**To the ERP**: approved invoices are sent to Oracle Payables automatically, or wait in **Ready for ERP** until you choose them and press **Send** — your administrator decides. If Payables rejects one it shows under **Import failed** with the reason; holds placed in Oracle show on the invoice. Payments reported by the ERP settle the invoice.
+
+**Credit and debit notes**: a **credit note** from the supplier reduces an invoice; a **debit note** is raised by you (numbered DN-…, with a PDF) for short supply, price differences or rejected goods, and can be emailed to the supplier's accounts address. Both reduce the net payable.`,
+  },
+  {
+    id: 'ap-codes', title: 'Invoice code lists', audience: ['staff'], perms: ['tenant.settings'], feature: 'invoices',
+    summary: 'The operating units, GL accounts, cost centres, projects and tax codes AP codes invoices to — refreshed from the ERP.',
+    screens: ['^/staff/admin/invoice-codes'], contexts: ['ap-codes'],
+    keywords: 'code lists gl account cost centre owner project task operating unit tax code combination refresh oracle excel',
+    related: ['ap-invoices', 'invoices-settings'],
+    body: `Code lists come from the ERP: with Oracle E-Business Suite they are **refreshed every night** (and with **Refresh from the ERP**) from the code lists URL under ERP integration; other ERPs send them through the API; or **import them from Excel**. A code the ERP no longer sends is closed, and closed codes can't be used on new invoices.
+
+What you keep in VendorGate:
+- **AP may use it** — untick codes AP shouldn't pick.
+- **Owner** of each cost centre — the budget owner the approval matrix sends invoices to. A cost centre without an owner goes to everyone with the level's role.
+- Codes the ERP doesn't send can be **added here**.`,
+  },
+  {
+    id: 'ap-reports', title: 'Invoice reports', audience: ['staff'], perms: ['invoices.view'], feature: 'invoices',
+    summary: 'Ageing of unpaid invoices, what is owed per supplier, cycle time, the touchless rate, exceptions and spend.',
+    screens: ['^/staff/ap/reports'], contexts: ['ap-reports'],
+    keywords: 'invoice reports ageing overdue owed cycle time touchless exceptions spend gl account cost centre excel',
+    related: ['ap-invoices'],
+    body: `- **Ageing**: approved invoices not yet paid (less credit and debit notes), by how long past the due date.
+- **Owed to suppliers**: the largest open amounts, with what is overdue.
+- **Cycle time**: from entry to approval, and from approval to payment (12 months).
+- **Touchless**: the share of approved invoices that needed no one.
+- **Exceptions**: which checks failed most in 90 days and how those invoices ended.
+- **Spend** by supplier, GL account, cost centre and basis.
+
+**Download Excel** gives the same figures. They refresh every minute.`,
+  },
+  {
+    id: 'invoices-settings', title: 'Invoices settings', audience: ['staff'], perms: ['tenant.settings'], feature: 'invoices',
+    summary: 'Switch Invoices on, choose bases and options, touchless and ERP push rules, the approval matrix and the Oracle account format.',
+    screens: ['^/staff/admin/invoices'], contexts: ['invoices-settings'],
+    keywords: 'invoices settings add-on touchless push automatic manual approval matrix cost centre owner debit note email account format oracle api key',
+    related: ['ap-invoices', 'ap-codes'],
+    body: `Administration → **Invoices**:
+
+1. **Your plan or licence** includes the Invoices add-on (any plan). Switch it on for the workspace; invoices from the supplier portal then join the AP list.
+2. **What invoices are against**: purchase orders, contracts, neither.
+3. **Options**: bulk PDF upload, Excel import, touchless approval, credit notes, debit notes.
+4. **Rules**: price tolerance; whether a cost centre is required; which invoices may go through **touchless** and up to what amount; **push to the ERP** automatic or manual; whether debit notes are **emailed** to suppliers always, when AP chooses, or never; default days to pay.
+5. **Approval matrix**: levels top to bottom, each with a rule. A level can go to the **owner of the invoice's cost centre** (set on Code lists). The default: budget owner for invoices without a PO, AP review for exceptions, finance above 10 lakh, director above 1 crore.
+6. **Account in Oracle**: how a line's coding joins into the account combination, e.g. *{entity}.{costCentre}.{account}.000*.
+7. **API keys** for the ERP or middleware: code lists, import results and payments.`,
   },
 ];
 

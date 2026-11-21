@@ -42,6 +42,10 @@ import { riskRouter } from './routes/risk.js';
 import { actionsRouter } from './routes/correctiveActions.js';
 import { esignRouter, reviewRouter } from './routes/contractReview.js';
 import { contractLibraryRouter, contractsAdminRouter, contractsRouter, partiesRouter } from './routes/contracts.js';
+import { invoicesAdminRouter, invoicesRouter } from './routes/invoices.js';
+import { apiKeysRouter } from './routes/apiKeys.js';
+import { invoicesOn } from './services/invoices/config.js';
+import { hasFeature } from './services/limits.js';
 import { sourcingAdminRouter, sourcingRouter } from './routes/sourcing.js';
 import { applicationsRouter, applyRouter, registrationLinksRouter } from './routes/applications.js';
 import { configRouter } from './routes/config.js';
@@ -124,6 +128,7 @@ export function createApp() {
   app.use('/api/staff/sourcing', sourcingRouter);
   app.use('/api/staff/contracts', contractsRouter);
   app.use('/api/staff/parties', partiesRouter);
+  app.use('/api/staff/invoices', invoicesRouter);
   app.use('/api/staff/contract-library', contractLibraryRouter);
   app.use('/api/review', reviewRouter);
   app.use('/api/staff/registration-links', registrationLinksRouter);
@@ -135,6 +140,9 @@ export function createApp() {
   app.use('/api/admin/billing', billingRouter);
   app.use('/api/admin/sourcing', sourcingAdminRouter);
   app.use('/api/admin/contracts', contractsAdminRouter);
+  app.use('/api/admin/invoices', invoicesAdminRouter);
+  // API keys for the ERP: Purchasing setup has them too; here for workspaces whose ERP talks to VendorGate for invoices.
+  app.use('/api/admin/api-keys', (req, _res, next) => { const t = req.staff?.tenant; if (t && !hasFeature(t, 'collab') && !invoicesOn(t)) return next(new HttpError(404, 'Not found')); next(); }, apiKeysRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/v1', erpApiRouter);
   app.use('/api/vendor/orders', supplierOrdersRouter);

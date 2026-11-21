@@ -86,7 +86,7 @@ export async function seed() {
   const { tenant: acme, role } = await makeTenant('acme', 'Acme Industries Ltd', { productName: 'VendorGate', primaryColor: '#1f2758' },
     [{ key: 'COMPLIANCE', name: 'Compliance Officer', description: 'Extra checks for foreign vendors', permissions: ['vendors.view'] }], acmeConfig);
   // Demo workspace includes the Sourcing and Contracts add-ons (switched off until the administrator turns them on).
-  await db.update(schema.tenants).set({ limits: { features: { sourcing: true, contracts: true } } }).where(eq(schema.tenants.id, acme.id));
+  await db.update(schema.tenants).set({ limits: { features: { sourcing: true, contracts: true, invoices: true } } }).where(eq(schema.tenants.id, acme.id));
   const admin = await makeUser(acme, 'Anita Rao', 'admin@acme.test', [role('ADMIN')], hash);
   await makeUser(acme, 'Deepak Menon', 'vendoradmin@acme.test', [role('VENDOR_ADMIN')], hash);
   const tax = await makeUser(acme, 'Suresh Iyer', 'tax@acme.test', [role('TAX_MANAGER')], hash);

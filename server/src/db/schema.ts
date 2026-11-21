@@ -96,6 +96,8 @@ export interface TenantSettings {
   sourcing?: import('../services/sourcing/config.js').SourcingSettings;
   /** Contracts: workspace switch, contract types, options, rule defaults and locks. See services/contracts/config.ts. */
   contracts?: import('../lib/moduleConfig.js').ModuleSettings;
+  /** Invoices add-on (accounts payable): read through services/invoices/config.ts. */
+  invoices?: import('../lib/moduleConfig.js').ModuleSettings;
   /** Months between automatic re-verifications of approved vendors (0 = off). Default 12. */
   reKycMonths?: number;
   sessionHours?: number;
@@ -521,6 +523,8 @@ export const emailOutbox = pgTable('email_outbox', {
   link: text('link'),
   status: deliveryStatusEnum('status').notNull().default('TEST'),
   provider: text('provider').notNull().default('test'),
+  /** Files to attach, rebuilt at send time from `ref` (e.g. "debitNote:<invoice id>") by a registered builder. */
+  attachments: jsonb('attachments').$type<{ fileName: string; contentType: string; ref: string }[]>(),
   providerMessageId: text('provider_message_id'),
   error: text('error'),
   attempts: integer('attempts').notNull().default(0),
@@ -767,13 +771,31 @@ export const shipmentLines = pgTable('shipment_lines', {
 }, (t) => [index('shipment_lines_shipment_idx').on(t.shipmentId), index('shipment_lines_line_idx').on(t.lineId)]);
 
 /**
- * Supplier invoice raised from a PO (and optionally a shipment), matched against the order, receipts and
- * earlier invoices. status: SUBMITTED · EXCEPTION · APPROVED · REJECTED · CANCELLED · PARTLY_PAID · PAID
+ * Every supplier invoice, credit note and debit note — raised by the supplier in the portal against a PO, or entered by AP
+ * (Invoices add-on) against a party with a PO, a contract or neither. One record, one set of checks (services/invoices).
+ * status: DRAFT · SUBMITTED · EXCEPTION · IN_APPROVAL · APPROVED · REJECTED · CANCELLED · PARTLY_PAID · PAID
+ * erpStatus (Invoices add-on): READY (manual push) · SENT · IMPORTED · FAILED
  */
 export const supplierInvoices = pgTable('supplier_invoices', {
   id: id(), tenantId: tenantId(),
-  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
-  poId: text('po_id').notNull().references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  /** The onboarded supplier (portal invoices; AP invoices when the party is linked to one). */
+  vendorId: text('vendor_id').references(() => vendors.id, { onDelete: 'cascade' }),
+  /** The party (supplier) — every AP invoice has one; portal invoices get one through the vendor's party. */
+  partyId: text('party_id').references(() => parties.id, { onDelete: 'set null' }),
+  poId: text('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  contractId: text('contract_id').references(() => contracts.id, { onDelete: 'set null' }),
+  /** INVOICE · CREDIT (credit note from the supplier) · DEBIT (debit note raised by us) */
+  kind: text('kind').notNull().default('INVOICE'),
+  /** The invoice a credit or debit note corrects. */
+  relatedInvoiceId: text('related_invoice_id'),
+  /** PORTAL · AP · BULK · EXCEL */
+  source: text('source').notNull().default('PORTAL'),
+  /** Operating unit / company in the ERP (ORG_ID). */
+  entityCode: text('entity_code'),
+  glDate: date('gl_date'),
+  description: text('description'),
+  ownerId: text('owner_id'),
+  createdById: text('created_by_id'),
   shipmentId: text('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
   invoiceNumber: text('invoice_number').notNull(),
   invoiceDate: date('invoice_date').notNull(),
@@ -785,27 +807,43 @@ export const supplierInvoices = pgTable('supplier_invoices', {
   /** Country rules (e.g. India e-invoice IRN / signed QR, supplier GSTIN). */
   einvoice: jsonb('einvoice').$type<Record<string, string>>(),
   documentId: text('document_id'),
+  /** AP invoices (Invoices add-on): the invoice PDF, stored on the invoice (the supplier may not be onboarded). */
+  file: jsonb('file').$type<{ fileName: string; mimeType: string; size: number; storagePath: string; storageDriver: string; sha256?: string }>(),
   notes: text('notes'),
   submittedBy: text('submitted_by').notNull(),
   decidedBy: text('decided_by'), decidedAt: timestamp('decided_at', { withTimezone: true }), decisionNote: text('decision_note'),
   erpInvoiceId: text('erp_invoice_id'),
+  erpStatus: text('erp_status'),
+  /** Why the ERP refused it (import rejection) or what is holding it there. */
+  erpError: text('erp_error'),
+  erpHolds: jsonb('erp_holds').$type<{ code: string; reason?: string }[]>(),
+  erpSentAt: timestamp('erp_sent_at', { withTimezone: true }),
+  /** Debit notes: when it was emailed to the supplier. */
+  emailedAt: timestamp('emailed_at', { withTimezone: true }),
   paidAmount: qty('paid_amount').notNull().default('0'),
   dueDate: date('due_date'),
   createdAt: createdAt(),
-}, (t) => [index('supplier_invoices_number_idx').on(t.tenantId, t.vendorId, t.invoiceNumber), index('supplier_invoices_po_idx').on(t.poId), index('supplier_invoices_status_idx').on(t.tenantId, t.status, t.createdAt)]);
+}, (t) => [index('supplier_invoices_number_idx').on(t.tenantId, t.vendorId, t.invoiceNumber), index('supplier_invoices_po_idx').on(t.poId), index('supplier_invoices_status_idx').on(t.tenantId, t.status, t.createdAt),
+  index('supplier_invoices_party_idx').on(t.tenantId, t.partyId, t.invoiceNumber), index('supplier_invoices_erp_idx').on(t.tenantId, t.erpStatus), index('supplier_invoices_related_idx').on(t.relatedInvoiceId)]);
 
 export const supplierInvoiceLines = pgTable('supplier_invoice_lines', {
   id: id(), tenantId: tenantId(),
   invoiceId: text('invoice_id').notNull().references(() => supplierInvoices.id, { onDelete: 'cascade' }),
-  lineId: text('line_id').notNull().references(() => poLines.id, { onDelete: 'cascade' }),
+  /** The PO line (PO invoices only). */
+  lineId: text('line_id').references(() => poLines.id, { onDelete: 'cascade' }),
+  lineNo: integer('line_no'),
+  itemCode: text('item_code'), description: text('description'), uom: text('uom'), hsn: text('hsn'),
   quantity: qty('quantity').notNull(), unitPrice: qty('unit_price').notNull(), amount: qty('amount').notNull(),
   taxRate: qty('tax_rate'), taxAmount: qty('tax_amount').notNull().default('0'),
+  /** Coding (non-PO and contract invoices): codes from invoice_codes. */
+  glAccount: text('gl_account'), costCentre: text('cost_centre'), project: text('project'), task: text('task'),
 }, (t) => [index('supplier_invoice_lines_invoice_idx').on(t.invoiceId), index('supplier_invoice_lines_line_idx').on(t.lineId)]);
 
 /** Payments the ERP made to a supplier (remittance advice), allocated to invoices. */
 export const supplierPayments = pgTable('supplier_payments', {
   id: id(), tenantId: tenantId(),
-  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+  vendorId: text('vendor_id').references(() => vendors.id, { onDelete: 'cascade' }),
+  partyId: text('party_id').references(() => parties.id, { onDelete: 'set null' }),
   erpId: text('erp_id').notNull(),
   reference: text('reference').notNull(),
   paymentDate: date('payment_date').notNull(),
@@ -1573,6 +1611,8 @@ export const parties = pgTable('parties', {
   /** People at the party: who to contact and who signs. */
   contacts: jsonb('contacts').$type<{ name: string; email?: string; phone?: string; role?: string; signatory?: boolean }[]>().notNull().default([]),
   vendorId: text('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+  /** Accounts payable (Invoices add-on): the supplier in the ERP, payment terms, coding defaults, who gets debit notes. */
+  ap: jsonb('ap').$type<{ erpSupplierCode?: string; erpSiteCode?: string; paymentTerms?: string; defaultAccount?: string; defaultCostCentre?: string; accountsEmail?: string }>().notNull().default({}),
   /** ACTIVE or ARCHIVED */
   status: text('status').notNull().default('ACTIVE'),
   notes: text('notes'),
@@ -1920,3 +1960,28 @@ export const contractSuggestions = pgTable('contract_suggestions', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('contract_suggestions_uq').on(t.contractId, t.kind, t.key), index('contract_suggestions_open_idx').on(t.tenantId, t.status, t.severity)]);
 export type ContractSuggestion = typeof contractSuggestions.$inferSelect;
+
+
+/**
+ * Code lists for coding invoices (Invoices add-on): kept in VendorGate, refreshed from the ERP (Oracle EBS) or imported from Excel.
+ * kind: ENTITY · ACCOUNT · COST_CENTRE · PROJECT · TASK (parent = project) · TAX · TERMS · COMBINATION (valid account combinations).
+ * Codes closed in the ERP are switched off (enabled = false), never deleted. `ownerId` = the cost-centre owner (approval).
+ */
+export const invoiceCodes = pgTable('invoice_codes', {
+  id: id(), tenantId: tenantId(),
+  kind: text('kind').notNull(),
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  parent: text('parent'),
+  enabled: boolean('enabled').notNull().default(true),
+  /** ERP · EXCEL · MANUAL */
+  source: text('source').notNull().default('MANUAL'),
+  /** Whether AP may use it (switched off here without touching the ERP). */
+  usable: boolean('usable').notNull().default(true),
+  ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
+  /** e.g. a tax code's rate, payment terms' days. */
+  meta: jsonb('meta').$type<Record<string, string | number | null>>().notNull().default({}),
+  refreshedAt: timestamp('refreshed_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('invoice_codes_uq').on(t.tenantId, t.kind, t.code), index('invoice_codes_kind_idx').on(t.tenantId, t.kind, t.enabled)]);
+export type InvoiceCode = typeof invoiceCodes.$inferSelect;

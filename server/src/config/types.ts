@@ -68,6 +68,11 @@ export interface WorkflowLevel {
   rule?: Rule;
   /** Hours allowed before the step is overdue and reminders/escalation fire. */
   slaHours?: number;
+  /**
+   * Flows other than suppliers: a person worked out from the subject (e.g. `costCentreOwner` for invoices). When the
+   * subject names nobody, everyone holding the role can act.
+   */
+  assignee?: string;
 }
 /**
  * After approval, vendors change details through change requests. Each rule says which approval

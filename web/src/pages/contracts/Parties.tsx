@@ -11,7 +11,7 @@ import { Pager } from '../../components/Pager';
 import { RiskBadge } from '../../components/Risk';
 import { ExcelImportModal } from '../../components/ExcelImport';
 import { HistoryCard } from '../../components/HistoryCard';
-import { ContractStatus, KIND_LABEL, NewPartyModal, PartyForm, partyBody, typeLabel, useContractSetup, type PartyData } from '../../components/Contracts';
+import { ContractStatus, KIND_LABEL, NewPartyModal, PartyForm, partyBody, usePartySetup, type PartyData } from '../../components/Contracts';
 import type { VendorStatus } from '../../lib/types';
 
 interface Supplier { id: string; code: string; name: string; status: string; riskBand: string | null }
@@ -20,7 +20,7 @@ interface PartyRow extends PartyData { id: string; code: string; status: string;
 export function PartiesList() {
   useHelpContext('contract-parties');
   const { me, can } = useSession();
-  const setup = useContractSetup();
+  const setup = usePartySetup();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const kind = params.get('kind') ?? '';
@@ -45,8 +45,8 @@ export function PartiesList() {
   return (
     <div className="page">
       <header className="page-head">
-        <div><h1>Parties</h1><p className="muted">The {customers ? 'suppliers and customers' : 'suppliers'} you have contracts with.</p></div>
-        {can('contracts.manage') && setup && <div className="head-actions">
+        <div><h1>{me?.contracts?.on ? 'Parties' : 'Suppliers'}</h1><p className="muted">{me?.contracts?.on ? `The ${customers ? 'suppliers and customers' : 'suppliers'} you have contracts with.` : 'The suppliers you receive invoices from.'}</p></div>
+        {(can('contracts.manage') || can('invoices.capture') || can('invoices.manage')) && setup && <div className="head-actions">
           <button className="btn btn-secondary" onClick={() => setImporting(true)}>Import from Excel</button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>+ New party</button></div>}
       </header>
@@ -57,12 +57,12 @@ export function PartiesList() {
         <div className="toolbar"><input className="search" placeholder="Search name, code, tax or registration number…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search parties" /></div>
         {!data ? <div className="pad"><div className="spinner" /></div> : data.parties.length === 0 ? <Empty>{q ? 'No parties match.' : 'No parties yet.'}</Empty> : (
           <div className="table-wrap"><table className="table">
-            <thead><tr><th>Party</th><th>Type</th><th>Country</th><th>Tax number</th><th className="num">Contracts</th>{me?.contracts?.linkSuppliers && <th>Supplier record</th>}</tr></thead>
+            <thead><tr><th>Party</th><th>Type</th><th>Country</th><th>Tax number</th>{me?.contracts?.on && <th className="num">Contracts</th>}{me?.contracts?.linkSuppliers && <th>Supplier record</th>}</tr></thead>
             <tbody>{data.parties.map((p) => (
               <tr key={p.id} onClick={() => nav(`/staff/parties/${p.id}`)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && nav(`/staff/parties/${p.id}`)}>
                 <td><div className="strong"><Link to={`/staff/parties/${p.id}`} onClick={(e) => e.stopPropagation()}>{p.name}</Link></div><div className="muted small mono">{p.code}</div></td>
                 <td>{KIND_LABEL[p.kind]}</td><td>{p.country}</td><td className="mono small">{p.taxNo ?? '—'}</td>
-                <td className="num">{p.activeContracts} active{p.contracts > p.activeContracts ? ` · ${p.contracts} in all` : ''}</td>
+                {me?.contracts?.on && <td className="num">{p.activeContracts} active{p.contracts > p.activeContracts ? ` · ${p.contracts} in all` : ''}</td>}
                 {me?.contracts?.linkSuppliers && <td>{p.supplier ? <><StatusBadge status={p.supplier.status as VendorStatus} />{p.supplier.riskBand && <RiskBadge band={p.supplier.riskBand} />}</> : <span className="muted small">—</span>}</td>}
               </tr>))}</tbody>
           </table><Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} /></div>
@@ -90,8 +90,9 @@ const ACTIONS: Record<string, string> = { PARTY_CREATED: 'Created', PARTY_UPDATE
 export function PartyDetail() {
   useHelpContext('contract-parties');
   const { id } = useParams();
-  const { can } = useSession();
-  const setup = useContractSetup();
+  const { me, can } = useSession();
+  const setup = usePartySetup();
+  const typeLabel = (k: string) => (k === 'amendment' ? 'Amendment' : me?.contracts?.types.find((x) => x.key === k)?.label ?? k);
   const [d, setD] = useState<PartyDetailData>();
   const [form, setForm] = useState<PartyData>();
   const [editing, setEditing] = useState(false);
@@ -104,7 +105,7 @@ export function PartyDetail() {
   const run = async (fn: () => Promise<PartyDetailData>, ok: string) => { setFlash(undefined); try { take(await fn()); setFlash({ kind: 'success', text: ok }); return true; } catch (e: any) { setFlash({ kind: 'error', text: e.message }); return false; } };
   if (!d || !form) return <div className="page">{flash ? <Alert kind="error">{flash.text}</Alert> : <div className="spinner" />}</div>;
   const p = d.party;
-  const manage = can('contracts.manage');
+  const manage = can('contracts.manage') || can('invoices.capture') || can('invoices.manage');
   async function save() {
     setFlash(undefined);
     try { take(await api<PartyDetailData>(`/staff/parties/${p.id}`, { method: 'PATCH', body: partyBody(form!, dup) })); setEditing(false); setDup(false); setFlash({ kind: 'success', text: 'Saved.' }); }
@@ -112,7 +113,7 @@ export function PartyDetail() {
   }
   return (
     <div className="page">
-      <nav className="breadcrumb"><Link to="/staff/parties">Parties</Link> › {p.code}</nav>
+      <nav className="breadcrumb"><Link to="/staff/parties">{me?.contracts?.on ? 'Parties' : 'Suppliers'}</Link> › {p.code}</nav>
       <header className="page-head">
         <div><h1>{p.name}</h1><p className="muted"><span className="mono">{p.code}</span> · {KIND_LABEL[p.kind]} · {p.country}{p.status === 'ARCHIVED' && <> · <span className="badge sm">Archived</span></>}</p></div>
         {manage && <div className="head-actions">
@@ -138,15 +139,19 @@ export function PartyDetail() {
                 {p.website && <><dt>Website</dt><dd><a href={p.website} target="_blank" rel="noreferrer noopener">{p.website}</a></dd></>}
                 <dt>Contacts</dt><dd>{p.contacts.length ? <ul className="plain-list">{p.contacts.map((c, i) => <li key={i}>{c.name}{c.role ? `, ${c.role}` : ''}{c.email ? ` · ${c.email}` : ''}{c.phone ? ` · ${c.phone}` : ''}{c.signatory && <span className="badge sm badge-approved" style={{ marginInlineStart: 6 }}>Signs</span>}</li>)}</ul> : '—'}</dd>
                 {p.notes && <><dt>Notes</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{p.notes}</dd></>}
+                {me?.invoices?.on && p.kind === 'SUPPLIER' && <><dt>In the ERP</dt><dd className="mono">{p.ap?.erpSupplierCode ? `${p.ap.erpSupplierCode}${p.ap.erpSiteCode ? ` / ${p.ap.erpSiteCode}` : ''}` : '—'}</dd>
+                  <dt>Payment terms</dt><dd>{p.ap?.paymentTerms ?? '—'}</dd>
+                  <dt>Default coding</dt><dd className="mono">{[p.ap?.defaultAccount, p.ap?.defaultCostCentre].filter(Boolean).join(' · ') || '—'}</dd>
+                  <dt>Accounts email</dt><dd>{p.ap?.accountsEmail ?? '—'}</dd></>}
               </dl>
             )}
           </section>
-          <section className="card pad section-card">
+          {me?.contracts?.on && <section className="card pad section-card">
             <h3>Contracts</h3>
             {d.contracts.length ? <table className="table static compact"><thead><tr><th>Number</th><th>Title</th><th>Type</th><th>Status</th><th className="num">Value</th><th>Ends</th></tr></thead>
-              <tbody>{d.contracts.map((c) => <tr key={c.id}><td className="mono"><Link to={`/staff/contracts/${c.id}`}>{c.number}</Link></td><td>{c.title}</td><td className="small">{typeLabel(setup, c.type)}</td><td><ContractStatus status={c.status} /></td>
+              <tbody>{d.contracts.map((c) => <tr key={c.id}><td className="mono"><Link to={`/staff/contracts/${c.id}`}>{c.number}</Link></td><td>{c.title}</td><td className="small">{typeLabel(c.type)}</td><td><ContractStatus status={c.status} /></td>
                 <td className="num">{c.value === null ? '—' : money(c.value, c.currency)}</td><td className="small">{c.endDate ? fmtDate(c.endDate) : '—'}</td></tr>)}</tbody></table> : <p className="muted small">No contracts with {p.name} yet.</p>}
-          </section>
+          </section>}
         </div>
         <div>
           {d.canLink && (

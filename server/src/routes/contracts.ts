@@ -9,7 +9,8 @@ import { Router, type Request, type Response } from 'express';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../lib/db.js';
 import { ah, HttpError } from '../lib/http.js';
-import { requireStaff, staffCtx } from '../auth/session.js';
+import { requireAnyStaff, requireStaff, staffCtx } from '../auth/session.js';
+import { invoicesOn } from '../services/invoices/config.js';
 import { audit } from '../lib/audit.js';
 import { env } from '../lib/env.js';
 import { effectiveLimits } from '../lib/plans.js';
@@ -323,26 +324,38 @@ contractLibraryRouter.post('/templates/:id/archive', lib('contracts.templates'),
 /* ---------------- parties ---------------- */
 
 export const partiesRouter = Router();
-partiesRouter.use(requireStaff(), (req, _res, next) => { try { assertContractsOn(staffCtx(req).tenant); next(); } catch (e) { next(e); } });
-partiesRouter.get('/', requireStaff('contracts.view'), ah(async (req, res) => { res.json(await listParties(staffCtx(req).tenant, req.query as Record<string, string>)); }));
-partiesRouter.get('/options', requireStaff('contracts.view'), ah(async (req, res) => { res.json({ parties: await partyOptions(staffCtx(req).tenant, String(req.query.kind ?? '')) }); }));
-partiesRouter.post('/', requireStaff('contracts.manage'), ah(async (req, res) => { res.status(201).json({ party: await createParty(staffCtx(req).tenant, req.body, by(req)) }); }));
+// Parties are shared by Contracts and Invoices: open when either is on, to people of either.
+const PARTY_VIEW = requireAnyStaff('contracts.view', 'invoices.view');
+const PARTY_MANAGE = requireAnyStaff('contracts.manage', 'invoices.capture', 'invoices.manage');
+partiesRouter.use(requireStaff(), (req, _res, next) => {
+  const t = staffCtx(req).tenant;
+  if (invoicesOn(t)) return next();
+  try { assertContractsOn(t); next(); } catch (e) { next(e); }
+});
+partiesRouter.get('/', PARTY_VIEW, ah(async (req, res) => { res.json(await listParties(staffCtx(req).tenant, req.query as Record<string, string>)); }));
+/** What the party screens need without the Contracts module (Invoices-only workspaces): countries and the home country. */
+partiesRouter.get('/setup', PARTY_VIEW, ah(async (req, res) => {
+  const { tenant } = staffCtx(req);
+  res.json({ country: tenant.country, countries: homeCountries().map((c) => ({ code: c.code, name: c.name })) });
+}));
+partiesRouter.get('/options', PARTY_VIEW, ah(async (req, res) => { res.json({ parties: await partyOptions(staffCtx(req).tenant, String(req.query.kind ?? '')) }); }));
+partiesRouter.post('/', PARTY_MANAGE, ah(async (req, res) => { res.status(201).json({ party: await createParty(staffCtx(req).tenant, req.body, by(req)) }); }));
 /** The supplier party for an onboarded supplier (created and linked the first time). */
 partiesRouter.post('/from-supplier', requireStaff('contracts.manage'), ah(async (req, res) => {
   res.json({ party: await partyForVendor(staffCtx(req).tenant, String(req.body?.vendorId ?? ''), by(req)) });
 }));
-partiesRouter.get('/import-template.xlsx', requireStaff('contracts.manage'), ah(async (req, res) => { await sendXlsx(res, 'parties-import.xlsx', await partiesTemplate(staffCtx(req).tenant.country)); }));
-partiesRouter.post('/import', requireStaff('contracts.manage'), excelUpload.single('file'), ah(async (req, res) => {
+partiesRouter.get('/import-template.xlsx', PARTY_MANAGE, ah(async (req, res) => { await sendXlsx(res, 'parties-import.xlsx', await partiesTemplate(staffCtx(req).tenant.country)); }));
+partiesRouter.post('/import', PARTY_MANAGE, excelUpload.single('file'), ah(async (req, res) => {
   if (!req.file) throw new HttpError(400, 'Choose the Excel file to upload');
   res.json(await importParties(staffCtx(req).tenant, req.file.buffer, by(req), req.query.commit === '1'));
 }));
-partiesRouter.get('/:id', requireStaff('contracts.view'), ah(async (req, res) => { res.json(await partyDetail(staffCtx(req).tenant, req.params.id)); }));
-partiesRouter.patch('/:id', requireStaff('contracts.manage'), ah(async (req, res) => {
+partiesRouter.get('/:id', PARTY_VIEW, ah(async (req, res) => { res.json(await partyDetail(staffCtx(req).tenant, req.params.id)); }));
+partiesRouter.patch('/:id', PARTY_MANAGE, ah(async (req, res) => {
   const s = staffCtx(req);
   await updateParty(s.tenant, req.params.id, req.body ?? {}, by(req));
   res.json(await partyDetail(s.tenant, req.params.id));
 }));
-partiesRouter.post('/:id/archive', requireStaff('contracts.manage'), ah(async (req, res) => {
+partiesRouter.post('/:id/archive', PARTY_MANAGE, ah(async (req, res) => {
   const s = staffCtx(req);
   await setPartyArchived(s.tenant, req.params.id, req.body?.archived !== false, by(req));
   res.json(await partyDetail(s.tenant, req.params.id));

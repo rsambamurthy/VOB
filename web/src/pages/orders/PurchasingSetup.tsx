@@ -5,12 +5,12 @@ import { fmtDateTime } from '../../lib/format';
 import { Alert, Empty, Modal } from '../../components/ui';
 import { useHelpContext } from '../../help/HelpPanel';
 import { TabStrip } from '../../components/TabStrip';
+import { ApiKeysCard } from '../../components/ApiKeys';
 
 interface Entity { id: string; code: string; name: string; active: boolean }
 interface Site { id: string; code: string; name: string; entityId: string | null; active: boolean }
 interface Group { id: string; code: string; name: string; autoAcceptDays: number | null; asnRequired: boolean; active: boolean; orders: number }
 interface Setup { entities: Entity[]; sites: Site[]; groups: Group[]; invoicing: { priceTolerancePct: number; einvoiceRequired: boolean; india: boolean } }
-interface ApiKey { id: string; name: string; prefix: string; lastUsedAt: string | null; revokedAt: string | null; createdAt: string }
 
 type Tab = 'groups' | 'entities' | 'invoicing' | 'keys';
 
@@ -43,7 +43,9 @@ export function PurchasingSetup() {
       {d && tab === 'groups' && <Groups groups={d.groups} manage={manage} onDone={done} onError={setError} />}
       {d && tab === 'entities' && <Entities d={d} manage={manage} onDone={done} onError={setError} />}
       {d && tab === 'invoicing' && can('tenant.settings') && <Invoicing v={d.invoicing} onDone={done} onError={setError} />}
-      {tab === 'keys' && can('tenant.settings') && <Keys onError={setError} />}
+      {tab === 'keys' && can('tenant.settings') && <ApiKeysCard endpoint="/purchasing/api-keys" onError={setError} purpose="Let your ERP or middleware push purchase orders and read acceptances."
+        endpoints={[['POST /purchase-orders', <>Send one order or <span className="icode">{'{ "orders": [...] }'}</span>. Add <span className="icode">?format=oracle</span> to send Oracle EBS rows (PO_HEADERS_ALL, PO_LINES_ALL, shipments) as they are.</>],
+          ['GET /purchase-orders/:poNumber', 'The order with its acceptance status per line.'], ['GET /acknowledgements?since=…', 'Acceptances since a time (ISO date), for ERPs that poll instead of receiving a push.']]} />}
     </div>
   );
 }
@@ -160,48 +162,6 @@ function CodeNameModal({ kind, entities, onClose, onDone }: { kind: 'entity' | '
       <div className="field"><label htmlFor="cn-name">Name</label><input id="cn-name" value={name} onChange={(e) => setName(e.target.value)} /></div>
       {kind === 'site' && <div className="field"><label htmlFor="cn-ent">Company</label><select id="cn-ent" value={entityId} onChange={(e) => setEntityId(e.target.value)}><option value="">—</option>{entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>}
     </Modal>
-  );
-}
-
-function Keys({ onError }: { onError: (m: string) => void }) {
-  const [keys, setKeys] = useState<ApiKey[]>();
-  const [name, setName] = useState('');
-  const [created, setCreated] = useState<{ key: string; name: string }>();
-  const [revoke, setRevoke] = useState<ApiKey>();
-  const [copied, setCopied] = useState(false);
-  const load = useCallback(() => api<ApiKey[]>('/purchasing/api-keys').then(setKeys).catch((e) => onError(e.message)), [onError]);
-  useEffect(() => { load(); }, [load]);
-  const base = `${window.location.origin}/api/v1`;
-  return (
-    <>
-      <section className="card section-card">
-        <div className="toolbar"><div><h3>API keys</h3><p className="muted small">Let your ERP or middleware push purchase orders and read acceptances. Send the key in the <span className="icode">Authorization: Bearer …</span> header.</p></div></div>
-        <form className="inline-form pad" onSubmit={async (e) => { e.preventDefault(); try { setCreated(await api('/purchasing/api-keys', { body: { name } })); setName(''); setCopied(false); load(); } catch (er: any) { onError(er.message); } }}>
-          <input aria-label="Key name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. Oracle EBS production" />
-          <button className="btn btn-primary btn-sm" disabled={name.trim().length < 2}>Create key</button>
-        </form>
-        {created && (
-          <div className="pad"><Alert kind="success"><strong>Copy this key now — it won’t be shown again.</strong>
-            <div className="key-row"><span className="icode break">{created.key}</span><button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard?.writeText(created.key).then(() => setCopied(true)).catch(() => {}); }}>{copied ? 'Copied' : 'Copy'}</button></div></Alert></div>
-        )}
-        {keys?.length ? (
-          <table className="table static"><thead><tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th /></tr></thead>
-            <tbody>{keys.map((k) => <tr key={k.id} className={k.revokedAt ? 'muted' : ''}><td>{k.name}</td><td className="mono small">{k.prefix}…</td><td className="small">{fmtDateTime(k.createdAt)}</td><td className="small">{k.lastUsedAt ? fmtDateTime(k.lastUsedAt) : 'Never'}</td>
-              <td className="actions">{k.revokedAt ? <span className="badge badge-invited sm">revoked</span> : <button className="link-btn small danger" onClick={() => setRevoke(k)}>Revoke</button>}</td></tr>)}</tbody></table>
-        ) : keys && <Empty>No API keys yet.</Empty>}
-      </section>
-      <section className="card section-card">
-        <div className="toolbar"><h3>Endpoints</h3></div>
-        <table className="table static compact"><tbody>
-          <tr><td className="mono small nowrap">POST {base}/purchase-orders</td><td className="small">Send one order or <span className="icode">{'{ "orders": [...] }'}</span>. Add <span className="icode">?format=oracle</span> to send Oracle EBS rows (PO_HEADERS_ALL, PO_LINES_ALL, shipments) as they are.</td></tr>
-          <tr><td className="mono small nowrap">GET {base}/purchase-orders/:poNumber</td><td className="small">The order with its acceptance status per line.</td></tr>
-          <tr><td className="mono small nowrap">GET {base}/acknowledgements?since=…</td><td className="small">Acceptances since a time (ISO date), for ERPs that poll instead of receiving a push.</td></tr>
-        </tbody></table>
-      </section>
-      {revoke && <Modal title={`Revoke “${revoke.name}”?`} onClose={() => setRevoke(undefined)} footer={<><button className="btn btn-ghost" onClick={() => setRevoke(undefined)}>Cancel</button>
-        <button className="btn btn-danger" onClick={async () => { try { await api(`/purchasing/api-keys/${revoke.id}`, { method: 'DELETE' }); setRevoke(undefined); load(); } catch (e: any) { onError(e.message); } }}>Revoke key</button></>}>
-        <p>Anything using this key will stop working straight away. This can’t be undone.</p></Modal>}
-    </>
   );
 }
 

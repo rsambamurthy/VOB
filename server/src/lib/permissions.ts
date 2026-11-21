@@ -17,7 +17,9 @@ export const PERMISSIONS = {
   'audit.view': 'View the audit log',
   'orders.view': 'View purchase orders and supplier acknowledgements',
   'orders.manage': 'Pull and import purchase orders, set up buying groups, manage supplier portal access',
-  'invoices.manage': 'Approve or reject supplier invoices and see supplier payments',
+  'invoices.view': 'View supplier invoices, credit and debit notes, payments and invoice reports',
+  'invoices.capture': 'Enter supplier invoices (upload, bulk upload, Excel), code them and submit them',
+  'invoices.manage': 'Approve or reject supplier invoices, send them to the ERP, raise debit notes and see supplier payments',
   'actions.manage': 'Raise corrective actions on suppliers and review their evidence (approvers can also raise them on suppliers they are reviewing)',
   'sourcing.view': 'View sourcing events (RFQs and auctions) and their results',
   'sourcing.events': 'Create sourcing events, invite bidders and answer their questions',
@@ -31,23 +33,33 @@ export const PERMISSIONS = {
 
 export type Permission = keyof typeof PERMISSIONS;
 
-/** Permissions that only mean something when a plan feature is included; hidden from the Roles screen otherwise. */
-/** The product each permission belongs to. Without that product in the plan, the permission is hidden on the Roles screen and grants nothing (`effectivePermissions`). */
-export const PERMISSION_FEATURE: Partial<Record<Permission, import('./features.js').Feature>> = {
+type Feature = import('./features.js').Feature;
+/**
+ * The product each permission belongs to. Without that product in the plan, the permission is hidden on the Roles screen and
+ * grants nothing (`effectivePermissions`). A list = any of those products (invoices.manage serves portal invoices on purchase
+ * orders and the Invoices add-on).
+ */
+export const PERMISSION_FEATURE: Partial<Record<Permission, Feature | readonly Feature[]>> = {
   'vendors.view': 'onboarding', 'vendors.create': 'onboarding', 'vendors.export': 'onboarding', 'vendors.block': 'onboarding', 'vendors.edit': 'onboarding',
   'config.manage': 'onboarding', 'actions.manage': 'onboarding', 'reports.view': 'onboarding',
-  'orders.view': 'collab', 'orders.manage': 'collab', 'invoices.manage': 'collab',
+  'orders.view': 'collab', 'orders.manage': 'collab', 'invoices.manage': ['collab', 'invoices'],
+  'invoices.view': 'invoices', 'invoices.capture': 'invoices',
   'sourcing.view': 'sourcing', 'sourcing.events': 'sourcing', 'sourcing.open': 'sourcing', 'sourcing.evaluate': 'sourcing', 'sourcing.live': 'sourcing',
   'contracts.view': 'contracts', 'contracts.manage': 'contracts', 'contracts.templates': 'contracts',
 };
 /** The permission list to show for a workspace, given its plan features. */
+/** Whether the plan has the product a permission belongs to. */
+export function permissionInPlan(p: string, features: Record<string, boolean>) {
+  const f = PERMISSION_FEATURE[p as Permission];
+  return !f || (typeof f === 'string' ? !!features[f] : f.some((x) => features[x]));
+}
 export function visiblePermissions(features: Record<string, boolean>) {
-  return Object.fromEntries(Object.entries(PERMISSIONS).filter(([k]) => { const f = PERMISSION_FEATURE[k as Permission]; return !f || features[f]; }));
+  return Object.fromEntries(Object.entries(PERMISSIONS).filter(([k]) => permissionInPlan(k, features)));
 }
 export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[];
 /** What a set of role permissions actually allows in a workspace with these plan features. */
 export function effectivePermissions(perms: Iterable<string>, features: Record<string, boolean>) {
-  return new Set([...perms].filter((p) => { const f = PERMISSION_FEATURE[p as Permission]; return !f || features[f]; }) as Permission[]);
+  return new Set([...perms].filter((p) => permissionInPlan(p, features)) as Permission[]);
 }
 
 /** Roles created for every new tenant. Keys are referenced by the default workflow. */
@@ -62,6 +74,9 @@ export const DEFAULT_ROLES: { key: string; name: string; description: string; pe
   { key: 'CONTRACT_MANAGER', name: 'Contract Manager', description: 'Supplier and customer contracts', permissions: ['contracts.view', 'contracts.manage', 'contracts.templates', 'reports.view'], feature: 'contracts' },
   { key: 'LEGAL', name: 'Legal Counsel', description: 'Contract templates, clause library and legal review', permissions: ['contracts.view', 'contracts.templates'], feature: 'contracts' },
   { key: 'CONTRACT_VIEWER', name: 'Contract Viewer', description: 'Read-only access to contracts, parties and contract reports', permissions: ['contracts.view'], feature: 'contracts' },
+  { key: 'AP_CLERK', name: 'AP Clerk', description: 'Enters, codes and submits supplier invoices; sends approved ones to the ERP when pushing is manual', permissions: ['invoices.view', 'invoices.capture'], feature: 'invoices' },
+  { key: 'INVOICE_APPROVER', name: 'Invoice Approver', description: 'Approves supplier invoices at a level of the approval matrix, raises debit notes', permissions: ['invoices.view', 'invoices.manage'], feature: 'invoices' },
+  { key: 'INVOICE_VIEWER', name: 'Invoice Viewer', description: 'Read-only access to invoices, payments and invoice reports', permissions: ['invoices.view'], feature: 'invoices' },
   { key: 'CONTRACT_APPROVER', name: 'Contract Approver', description: 'Approves contracts at an approval level (choose this role in the contract approval levels)', permissions: ['contracts.view'], feature: 'contracts' },
 ];
 

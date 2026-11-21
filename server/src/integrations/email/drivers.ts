@@ -1,6 +1,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 
-export interface OutgoingEmail { to: string; from: string; replyTo?: string; subject: string; html: string; text: string }
+export interface EmailAttachment { fileName: string; contentType: string; content: Buffer }
+export interface OutgoingEmail { to: string; from: string; replyTo?: string; subject: string; html: string; text: string; attachments?: EmailAttachment[] }
 export interface EmailDriver { name: string; live: boolean; send(m: OutgoingEmail): Promise<{ id?: string }> }
 
 /** Test mode: nothing leaves the server; the message is visible in the dev Mailbox. */
@@ -13,7 +14,8 @@ export function smtpDriver(cfg: { host: string; port: number; secure: boolean; u
   return {
     name: 'smtp', live: true,
     async send(m) {
-      const info = await transport().sendMail({ from: m.from, to: m.to, replyTo: m.replyTo, subject: m.subject, html: m.html, text: m.text });
+      const info = await transport().sendMail({ from: m.from, to: m.to, replyTo: m.replyTo, subject: m.subject, html: m.html, text: m.text,
+        attachments: m.attachments?.map((a) => ({ filename: a.fileName, content: a.content, contentType: a.contentType })) });
       return { id: info.messageId };
     },
   };
@@ -34,6 +36,7 @@ export function sendgridDriver(cfg: { apiKey: string }, fetchImpl: typeof fetch 
           subject: m.subject,
           content: [{ type: 'text/plain', value: m.text }, { type: 'text/html', value: m.html }],
           tracking_settings: { click_tracking: { enable: false } }, // keep one-time links intact
+          ...(m.attachments?.length ? { attachments: m.attachments.map((a) => ({ content: a.content.toString('base64'), filename: a.fileName, type: a.contentType, disposition: 'attachment' })) } : {}),
         }),
       });
       if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -50,7 +53,8 @@ export function resendDriver(cfg: { apiKey: string }, fetchImpl: typeof fetch = 
       const res = await fetchImpl('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: m.from, to: [m.to], subject: m.subject, html: m.html, text: m.text, ...(m.replyTo ? { reply_to: m.replyTo } : {}) }),
+        body: JSON.stringify({ from: m.from, to: [m.to], subject: m.subject, html: m.html, text: m.text, ...(m.replyTo ? { reply_to: m.replyTo } : {}),
+          ...(m.attachments?.length ? { attachments: m.attachments.map((a) => ({ filename: a.fileName, content: a.content.toString('base64') })) } : {}) }),
       });
       const body = await res.json().catch(() => ({})) as { id?: string; message?: string; name?: string };
       if (!res.ok) throw new Error(`Resend ${res.status}: ${(body.message ?? body.name ?? '').slice(0, 300)}`);

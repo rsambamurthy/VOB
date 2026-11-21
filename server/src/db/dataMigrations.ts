@@ -20,7 +20,11 @@ export async function grantNewAdminPermissions() {
   }
   // Roles added to the defaults later are created in workspaces that don't have them yet — only for products the workspace has.
   const { ensureDefaultRoles } = await import('../services/tenants.js');
-  for (const t of await db.select().from(schema.tenants)) await ensureDefaultRoles(t, { keys: ['BUYER', 'CONTRACT_MANAGER', 'LEGAL', 'CONTRACT_VIEWER', 'CONTRACT_APPROVER'] });
+  for (const t of await db.select().from(schema.tenants)) await ensureDefaultRoles(t, { keys: ['BUYER', 'CONTRACT_MANAGER', 'LEGAL', 'CONTRACT_VIEWER', 'CONTRACT_APPROVER', 'AP_CLERK', 'INVOICE_APPROVER', 'INVOICE_VIEWER'] });
+  // Invoices add-on: portal invoices from before it was switched on join their supplier's party.
+  const { invoicesOn } = await import('../services/invoices/config.js');
+  const { linkInvoicesToParties } = await import('../services/invoices/record.js');
+  for (const t of await db.select().from(schema.tenants)) if (invoicesOn(t)) await linkInvoicesToParties(t).catch(() => {});
 }
 
 export async function sealExistingData(force = false) {

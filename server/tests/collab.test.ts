@@ -311,3 +311,39 @@ describe('SAP S/4HANA and Dynamics 365 connectors', () => {
     await db.delete(schema.erpConnections).where(eq(schema.erpConnections.tenantId, acme.id));
   });
 });
+
+describe('with the Invoices add-on', () => {
+  test('a clean portal invoice joins the supplier’s party, goes through touchless and waits for the ERP push', async () => {
+    const admin = await login('admin@acme.test');
+    const was = (await db.query.tenants.findFirst({ where: eq(schema.tenants.id, acme.id) }))!;
+    const before = was.settings;
+    await db.update(schema.tenants).set({ limits: { ...was.limits, features: { ...(was.limits as any).features, invoices: true } } }).where(eq(schema.tenants.id, acme.id));
+    try {
+      const on = await admin.put('/api/admin/invoices', { enabled: true, bases: { po: true, contract: true, nonPo: true }, features: { touchless: true, creditNotes: true, debitNotes: true, bulkUpload: true, excelImport: true }, rules: { pushMode: 'automatic', touchlessBasis: 'po' } });
+      expect(on.status).toBe(200);
+      await admin.put('/api/admin/invoices/approval', { levels: [{ id: 'finance', label: 'Finance approval', roleKey: 'FINANCE_MANAGER', rule: { match: 'all', conditions: [{ field: 'invoice.amount', op: 'gt', value: 1000000 }] } }] });
+      // Switching it on linked the earlier portal invoices to the supplier's party.
+      const earlier = await db.query.supplierInvoices.findFirst({ where: and(eq(schema.supplierInvoices.tenantId, acme.id), eq(schema.supplierInvoices.vendorId, vendor.id)) });
+      expect(earlier?.partyId).toBeTruthy();
+      const r = await api('post', '/purchase-orders').send({ erpId: 'COL-9', poNumber: 'PO-COL-9', supplierCode: 'SUP-COL-1', currency: 'INR', poDate: '2026-09-20', paymentTerms: 'Net 30',
+        lines: [{ erpId: 'COL-9-1', lineNo: 1, itemCode: 'RM-9', description: 'Resin', uom: 'KG', quantity: 10, unitPrice: 50, taxRate: 18 }] });
+      expect(r.status).toBe(200);
+      const po = (await db.query.purchaseOrders.findFirst({ where: and(eq(schema.purchaseOrders.tenantId, acme.id), eq(schema.purchaseOrders.erpId, 'COL-9')) }))!;
+      await db.update(schema.poLines).set({ acceptance: 'ACCEPTED', receivedQty: '10' }).where(eq(schema.poLines.poId, po.id));
+      const line = (await db.query.poLines.findFirst({ where: eq(schema.poLines.poId, po.id) }))!;
+      const s = await supplier();
+      const sub = await s.post(`/api/vendor/collab/orders/${po.id}/invoices`, { invoiceNumber: 'HX/26-27/090', invoiceDate: '2026-10-08', total: 590, lines: [{ lineId: line.id, quantity: 10, unitPrice: 50, taxRate: 18 }] });
+      expect(sub.status).toBe(201);
+      expect(sub.body.status).toBe('APPROVED');
+      const inv = (await db.query.supplierInvoices.findFirst({ where: eq(schema.supplierInvoices.id, sub.body.id) }))!;
+      expect(inv).toMatchObject({ decidedBy: 'VendorGate (touchless)', erpStatus: 'READY', source: 'PORTAL' }); // no ERP connection: waits, with the reason
+      expect(inv.erpError).toMatch(/No ERP connection/);
+      expect(inv.partyId).toBe(earlier?.partyId);
+      expect((await admin.get('/api/staff/invoices?status=READY')).body.rows.map((x: any) => x.id)).toContain(inv.id);
+      // The supplier still sees only their own submitted invoices.
+      expect((await s.get('/api/vendor/collab/invoices')).body.rows.map((x: any) => x.id)).toContain(inv.id);
+    } finally {
+      await db.update(schema.tenants).set({ settings: before, limits: was.limits }).where(eq(schema.tenants.id, acme.id));
+    }
+  });
+});

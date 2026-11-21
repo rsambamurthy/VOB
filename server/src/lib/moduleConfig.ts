@@ -44,7 +44,7 @@ export interface ModuleSpec<K extends string, O extends string, R extends string
   /** The plan / licence feature. */
   feature: Feature;
   /** Where the settings live in tenant.settings, and the stored key for kinds (sourcing keeps its original "formats"). */
-  settingsKey: 'sourcing' | 'contracts';
+  settingsKey: 'sourcing' | 'contracts' | 'invoices';
   kindsKey: string;
   /** "format", "contract type" — in messages. */
   kindNoun: string;
@@ -189,11 +189,12 @@ export const levelSchema = z.object({
   label: z.string().trim().min(2, 'Give each level a name').max(80),
   roleKey: z.string().min(1),
   slaHours: z.number().int().min(1).max(1440).optional(),
+  assignee: z.string().max(40).optional(),
   rule: z.object({ match: z.enum(['all', 'any']), conditions: z.array(z.object({ field: z.string(), op: z.enum(OPS_ALLOWED), value: z.union([z.string(), z.number(), z.array(z.string())]).optional() })).min(1) }).optional(),
 });
 
 /** Check an approval flow (levels like the onboarding flow) before storing it: roles exist, conditions use known fields. */
-export function checkLevels(input: unknown, fieldIds: string[], roleKeys: string[]) {
+export function checkLevels(input: unknown, fieldIds: string[], roleKeys: string[], assignees: string[] = []) {
   const levels = z.array(levelSchema).max(10, 'At most 10 levels').parse(input) as WorkflowLevel[];
   const fields = new Set(fieldIds);
   const issues: { path: string; message: string }[] = [];
@@ -202,6 +203,7 @@ export function checkLevels(input: unknown, fieldIds: string[], roleKeys: string
     if (ids.has(l.id)) issues.push({ path: `levels.${l.id}`, message: 'Two levels have the same id' });
     ids.add(l.id);
     if (!roleKeys.includes(l.roleKey)) issues.push({ path: `levels.${l.id}`, message: `“${l.label}”: choose a role that exists` });
+    if (l.assignee && !assignees.includes(l.assignee)) issues.push({ path: `levels.${l.id}`, message: `“${l.label}”: choose who approves from the list` });
     for (const c of l.rule?.conditions ?? []) if (!fields.has(c.field)) issues.push({ path: `levels.${l.id}`, message: `“${l.label}”: a condition uses an unknown field` });
   }
   return { levels, issues };

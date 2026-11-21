@@ -14,6 +14,8 @@ export const FEATURES = {
   collab: { label: 'Supplier collaboration (purchase orders)', requires: 'onboarding' },
   sourcing: { label: 'Sourcing (RFQs and e-auctions)', addOn: true, requires: 'onboarding' },
   contracts: { label: 'Contracts (supplier and customer)', addOn: true },
+  /** Accounts payable: any supplier invoice (PO, contract or non-PO), approval matrix, ERP push. Works without onboarding. */
+  invoices: { label: 'Invoices (accounts payable)', addOn: true },
 } as const satisfies Record<string, { label: string; addOn?: boolean; requires?: string }>;
 
 export type Feature = keyof typeof FEATURES;

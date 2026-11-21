@@ -30,6 +30,8 @@ export function StaffShell() {
   const onb = me.plan?.features.onboarding !== false;
   const collab = onb && (me.plan?.features.collab ?? false);
   const contracts = !!me.contracts?.on && can('contracts.view');
+  // Invoices add-on: AP owns supplier invoices and payments (the Purchasing entries give way to it).
+  const ap = !!me.invoices?.on && (can('invoices.view') || can('invoices.manage'));
 
   const keep = (items: L[]) => items.filter((i) => i.show).map(({ show: _s, ...l }) => l);
   const group = (key: string, label: string, icon: string, items: L[]): FrameGroup | null => { const k = keep(items); return k.length ? { key, label, icon, items: k } : null; };
@@ -49,9 +51,16 @@ export function StaffShell() {
     ]),
     group('purchasing', 'Purchasing', 'orders', [
       { to: '/staff/orders', label: 'Purchase orders', icon: 'orders', show: collab && can('orders.view') },
-      { to: '/staff/invoices', label: 'Supplier invoices', icon: 'invoices', show: collab && can('orders.view') },
-      { to: '/staff/payments', label: 'Payments', icon: 'payments', show: collab && can('invoices.manage') },
+      { to: '/staff/invoices', label: 'Supplier invoices', icon: 'invoices', show: collab && !ap && can('orders.view') },
+      { to: '/staff/payments', label: 'Payments', icon: 'payments', show: collab && !ap && can('invoices.manage') },
       { to: '/staff/admin/purchasing', label: 'Purchasing setup', icon: 'setup', show: collab && (can('orders.manage') || can('tenant.settings')) },
+    ]),
+    group('ap', 'Invoices', 'invoices', [
+      { to: '/staff/ap/invoices', label: 'All invoices', icon: 'invoices', end: true, show: ap },
+      { to: '/staff/ap/ready', label: 'Ready for ERP', icon: 'erp', show: ap && (can('invoices.capture') || can('invoices.manage')) },
+      { to: '/staff/ap/payments', label: 'Payments', icon: 'payments', show: ap },
+      { to: '/staff/parties', label: 'Suppliers', icon: 'parties', show: ap && !contracts },
+      { to: '/staff/ap/reports', label: 'Reports', icon: 'reports', show: ap },
     ]),
     group('contracts', 'Contracts', 'contracts', [
       { to: '/staff/contracts', label: 'All contracts', icon: 'contracts', end: true, show: contracts },
@@ -75,10 +84,12 @@ export function StaffShell() {
       { to: '/staff/admin/questionnaires', label: 'Questionnaires', icon: 'questionnaire', show: onb && can('config.manage') },
       { to: '/staff/admin/sourcing', label: 'Sourcing', icon: 'sourcing', show: can('tenant.settings') && !!me.plan?.features.sourcing },
       { to: '/staff/admin/contracts', label: 'Contracts', icon: 'contracts', show: can('tenant.settings') && !!me.plan?.features.contracts },
+      { to: '/staff/admin/invoices', label: 'Invoices', icon: 'invoices', show: can('tenant.settings') && !!me.plan?.features.invoices },
+      { to: '/staff/admin/invoice-codes', label: 'Invoice code lists', icon: 'setup', show: !!me.invoices?.on && (can('tenant.settings') || can('invoices.manage')) },
       { to: '/staff/admin/workspace', label: 'Workspace', icon: 'workspace', show: can('tenant.settings') },
       { to: '/staff/admin/sign-in', label: 'Sign-in & SSO', icon: 'signin', show: can('tenant.settings') },
       { to: '/staff/admin/integrations', label: 'Integrations', icon: 'integrations', show: can('tenant.settings') },
-      { to: '/staff/admin/erp', label: 'ERP integration', icon: 'erp', show: onb && can('tenant.settings') },
+      { to: '/staff/admin/erp', label: 'ERP integration', icon: 'erp', show: (onb || !!me.invoices?.on) && can('tenant.settings') },
       { to: '/staff/admin/help-topics', label: 'Help topics', icon: 'help', show: can('tenant.settings') },
       { to: '/staff/admin/billing', label: 'Billing', icon: 'billing', show: can('tenant.settings') && !me.support && me.deployment !== 'onprem' },
       { to: '/staff/admin/licence', label: 'Licence', icon: 'billing', show: can('tenant.settings') && me.deployment === 'onprem' },

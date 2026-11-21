@@ -29,6 +29,12 @@ export function useContractSetup() {
   useEffect(() => { api<Setup>('/staff/contracts/setup').then(setSetup).catch(() => {}); }, []);
   return setup;
 }
+/** Countries for party forms — works with Contracts or the Invoices add-on. */
+export function usePartySetup() {
+  const [setup, setSetup] = useState<{ country: string; countries: { code: string; name: string }[] }>();
+  useEffect(() => { api<NonNullable<typeof setup>>('/staff/parties/setup').then(setSetup).catch(() => {}); }, []);
+  return setup;
+}
 export const typeLabel = (setup: Setup | undefined, key: string) => (key === 'amendment' ? 'Amendment' : setup?.config.types.find((k) => k.key === key)?.label ?? key);
 export const optionOn = (setup: Setup | undefined, key: string) => !!setup?.config.features.find((f) => f.key === key)?.on;
 
@@ -38,6 +44,8 @@ export interface Contact { name: string; email?: string; phone?: string; role?: 
 export interface PartyData {
   id?: string; kind: 'SUPPLIER' | 'CUSTOMER'; name: string; legalName: string | null; country: string; registrationNo: string | null; taxNo: string | null;
   address: { line1?: string; city?: string; region?: string; postalCode?: string }; email: string | null; phone: string | null; website: string | null; contacts: Contact[]; notes: string | null;
+  /** Accounts payable (Invoices add-on). */
+  ap?: Partial<Record<'erpSupplierCode' | 'erpSiteCode' | 'paymentTerms' | 'defaultAccount' | 'defaultCostCentre' | 'accountsEmail', string>> | null;
 }
 export const blankParty = (kind: 'SUPPLIER' | 'CUSTOMER', country: string): PartyData => ({ kind, name: '', legalName: null, country, registrationNo: null, taxNo: null, address: {}, email: null, phone: null, website: null, contacts: [], notes: null });
 
@@ -82,14 +90,28 @@ export function PartyForm({ value, onChange, countries, kindFixed }: { value: Pa
       ))}
       <button className="link-btn small" onClick={() => onChange({ ...value, contacts: [...value.contacts, { name: '' }] })}>+ Add contact</button>
       <div className="field" style={{ marginTop: 12 }}><label htmlFor="pf-notes">Notes</label><textarea id="pf-notes" rows={2} value={value.notes ?? ''} onChange={set('notes')} /></div>
+      {me?.invoices?.on && value.kind === 'SUPPLIER' && <>
+        <h4 style={{ margin: '14px 0 6px' }}>Accounts payable</h4>
+        <div className="field-grid">
+          {AP_FIELDS.map(([k, label, help]) => (
+            <div key={k} className="field"><label htmlFor={`pf-ap-${k}`}>{label}</label>
+              <input id={`pf-ap-${k}`} type={k === 'accountsEmail' ? 'email' : 'text'} value={value.ap?.[k] ?? ''} onChange={(e) => onChange({ ...value, ap: { ...value.ap, [k]: e.target.value } })} />
+              {help && <div className="field-help">{help}</div>}</div>))}
+        </div>
+      </>}
     </>
   );
 }
 
+const AP_FIELDS: [keyof NonNullable<PartyData['ap']>, string, string?][] = [
+  ['erpSupplierCode', 'Supplier number in the ERP', 'Filled by the nightly refresh when the ERP sends suppliers.'], ['erpSiteCode', 'Supplier site in the ERP'], ['paymentTerms', 'Payment terms', 'e.g. Net 30 — sets the due date of invoices without a PO.'],
+  ['defaultAccount', 'Default GL account', 'Fills empty lines of invoices without a PO.'], ['defaultCostCentre', 'Default cost centre'], ['accountsEmail', 'Accounts email', 'Debit notes are emailed here.'],
+];
+
 /** Body for the server: empty strings as nulls. */
 export const partyBody = (p: PartyData, confirmDuplicate = false) => ({
   kind: p.kind, name: p.name, legalName: p.legalName || null, country: p.country, registrationNo: p.registrationNo || null, taxNo: p.taxNo || null,
-  address: p.address, email: p.email || null, phone: p.phone || null, website: p.website || null, notes: p.notes || null,
+  address: p.address, email: p.email || null, phone: p.phone || null, website: p.website || null, notes: p.notes || null, ...(p.ap ? { ap: p.ap } : {}),
   contacts: p.contacts.filter((c) => c.name.trim()).map((c) => ({ ...c, email: c.email || undefined, phone: c.phone || undefined, role: c.role || undefined })),
   ...(confirmDuplicate ? { confirmDuplicate: true } : {}),
 });

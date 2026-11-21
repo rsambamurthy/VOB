@@ -18,7 +18,7 @@ export interface FieldDef {
 export interface GroupDef { key: string; label: string; fields: FieldDef[]; tr?: { ar?: ArabicText } }
 export interface SectionDef { key: string; label: string; groups: GroupDef[]; tr?: { ar?: ArabicText } }
 export interface DocRequirement { type: string; label: string; help?: string; required?: boolean | Condition; showIf?: Condition; hasExpiry?: boolean; holdOnExpiry?: boolean; isRequired?: boolean; appliesIf?: { field: string; values: string[]; op: string }; notNeeded?: { field: string; values: string[]; op: string; answer: string }; tr?: { ar?: ArabicText } }
-export interface WorkflowLevel { id: string; label: string; roleKey: string; rule?: Rule; slaHours?: number }
+export interface WorkflowLevel { id: string; label: string; roleKey: string; rule?: Rule; slaHours?: number; /** A person the subject works out (e.g. the cost-centre owner); the role covers when there is none. */ assignee?: string }
 export interface ChangeRule { match: string[]; levelIds: string[] }
 export interface ChangeApproval { rules: ChangeRule[]; defaultLevelIds: string[] }
 export interface OnboardingConfig { sections: SectionDef[]; documents: DocRequirement[]; workflow: { levels: WorkflowLevel[]; changes?: ChangeApproval }; guide: { title: string; body: string; tr?: { ar?: ArabicText } }[] }
@@ -27,7 +27,8 @@ export interface ConfigIssue { path: string; message: string }
 
 export type Permission = 'vendors.view' | 'vendors.create' | 'vendors.export' | 'vendors.block' | 'vendors.edit' | 'users.manage' | 'tenant.settings' | 'config.manage' | 'approvals.manage' | 'reports.view' | 'audit.view' | 'orders.view' | 'orders.manage' | 'invoices.manage' | 'actions.manage'
   | 'sourcing.view' | 'sourcing.events' | 'sourcing.open' | 'sourcing.evaluate' | 'sourcing.live'
-  | 'contracts.view' | 'contracts.manage' | 'contracts.templates';
+  | 'contracts.view' | 'contracts.manage' | 'contracts.templates'
+  | 'invoices.view' | 'invoices.capture';
 export interface Branding { productName?: string; primaryColor?: string; logoUrl?: string }
 export interface Me {
   user: { id: string; name: string; email: string; mfaEnabled: boolean };
@@ -36,9 +37,11 @@ export interface Me {
   permissions: Permission[];
   mfaSetupRequired: boolean;
   devMailbox: boolean;
-  plan?: { key: string; label: string; trialEndsAt: string | null; trialExpired: boolean; features: { onboarding: boolean; erp: boolean; ai: boolean; kyc: boolean; collab: boolean; sourcing: boolean; contracts: boolean } };
+  plan?: { key: string; label: string; trialEndsAt: string | null; trialExpired: boolean; features: { onboarding: boolean; erp: boolean; ai: boolean; kyc: boolean; collab: boolean; sourcing: boolean; contracts: boolean; invoices?: boolean } };
   /** Sourcing (RFQs and e-auctions): on for this workspace, and the formats switched on. */
   sourcing?: { on: boolean; formats: string[] };
+  /** Invoices add-on (accounts payable): on, the bases switched on and options the AP screens need. */
+  invoices?: { on: boolean; bases: string[]; creditNotes: boolean; debitNotes: boolean; pushMode: string; bulkUpload: boolean; excelImport: boolean };
   contracts?: { on: boolean; types: { key: string; label: string; directions: ('BUY' | 'SELL')[] }[]; directions: ('BUY' | 'SELL')[]; linkSuppliers: boolean };
   /** Read-only support session opened from the platform console. */
   support?: { by: string; reason: string | null; endsAt: string };

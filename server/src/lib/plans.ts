@@ -25,11 +25,11 @@ export interface PlanDef {
 }
 
 export const PLANS: Record<string, PlanDef> = {
-  trial: { label: 'Trial', maxUsers: 5, maxVendors: 25, emailsPerDay: 200, helpAnswersPerDay: 30, askPerDay: 30, features: { onboarding: true, erp: false, ai: false, kyc: true, collab: true, sourcing: false, contracts: false } },
-  standard: { label: 'Standard', maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 300, features: { onboarding: true, erp: true, ai: true, kyc: true, collab: true, sourcing: false, contracts: false } },
-  enterprise: { label: 'Enterprise', maxUsers: null, maxVendors: null, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: { onboarding: true, erp: true, ai: true, kyc: true, collab: true, sourcing: false, contracts: false } },
+  trial: { label: 'Trial', maxUsers: 5, maxVendors: 25, emailsPerDay: 200, helpAnswersPerDay: 30, askPerDay: 30, features: { onboarding: true, erp: false, ai: false, kyc: true, collab: true, sourcing: false, contracts: false, invoices: false } },
+  standard: { label: 'Standard', maxUsers: 25, maxVendors: 1000, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 300, features: { onboarding: true, erp: true, ai: true, kyc: true, collab: true, sourcing: false, contracts: false, invoices: false } },
+  enterprise: { label: 'Enterprise', maxUsers: null, maxVendors: null, emailsPerDay: null, helpAnswersPerDay: null, askPerDay: null, features: { onboarding: true, erp: true, ai: true, kyc: true, collab: true, sourcing: false, contracts: false, invoices: false } },
   /** Contracts on its own: no supplier onboarding, sourcing or purchase orders. */
-  contracts: { label: 'Contracts', maxUsers: 25, maxVendors: 0, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 0, features: { onboarding: false, erp: true, ai: true, kyc: true, collab: false, sourcing: false, contracts: true } },
+  contracts: { label: 'Contracts', maxUsers: 25, maxVendors: 0, emailsPerDay: 2000, helpAnswersPerDay: 300, askPerDay: 0, features: { onboarding: false, erp: true, ai: true, kyc: true, collab: false, sourcing: false, contracts: true, invoices: false } },
 };
 export const PLAN_KEYS = Object.keys(PLANS) as [string, ...string[]];
 /** Plans that are invoiced (every plan except the trial) — prices, invoices and automatic invoicing use this list. */

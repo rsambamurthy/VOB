@@ -37,7 +37,13 @@ export async function isSuppressed(address: string) {
   return !!(await db.query.emailSuppressions.findFirst({ where: eq(schema.emailSuppressions.address, address.trim().toLowerCase()) }));
 }
 
-export async function sendMail(m: { tenantId: string | null; to: string; subject: string; body: string; link?: string }) {
+/** Builders for attachments, by the kind before ":" in an attachment's ref (e.g. "debitNote:<id>"). Files are rebuilt at send time, never stored twice. */
+type AttachmentBuilder = (id: string) => Promise<Buffer>;
+const builders = new Map<string, AttachmentBuilder>();
+export function registerAttachment(kind: string, build: AttachmentBuilder) { builders.set(kind, build); }
+export type MailAttachment = { fileName: string; contentType: string; ref: string };
+
+export async function sendMail(m: { tenantId: string | null; to: string; subject: string; body: string; link?: string; attachments?: MailAttachment[] }) {
   if (await isSuppressed(m.to)) {
     await db.insert(schema.emailOutbox).values({ tenantId: m.tenantId, to: m.to, subject: m.subject, body: m.body, link: m.link, status: 'FAILED', provider: driver.name, error: 'Not sent: this address bounced or reported our email as spam earlier' });
     logger.warn({ tenantId: m.tenantId, subject: m.subject }, 'email not sent: address suppressed');
@@ -51,7 +57,7 @@ export async function sendMail(m: { tenantId: string | null; to: string; subject
   }
   const [row] = await db.insert(schema.emailOutbox).values({
     tenantId: m.tenantId, to: m.to, subject: m.subject, body: m.body, link: m.link,
-    status: driver.live ? 'QUEUED' : 'TEST', provider: driver.name,
+    status: driver.live ? 'QUEUED' : 'TEST', provider: driver.name, attachments: m.attachments?.length ? m.attachments : null,
   }).returning({ id: schema.emailOutbox.id });
   if (!driver.live) { logger.info({ to: m.to, subject: m.subject }, 'email recorded (test mode)'); return; }
   await enqueue('email.send', { id: row.id });
@@ -64,7 +70,13 @@ defineJob<{ id: string }>('email.send', async ({ id }) => {
   const { html, text } = renderEmail({ subject: row.subject, body: row.body, link: row.link, tenantName: tenant?.name, branding: tenant?.branding });
   const { from, replyTo } = senderFor(tenant);
   try {
-    const r = await driver.send({ to: row.to, from, replyTo, subject: row.subject, html, text });
+    const attachments = await Promise.all((row.attachments ?? []).map(async (a) => {
+      const [kind, ...rest] = a.ref.split(':');
+      const build = builders.get(kind);
+      if (!build) throw new Error(`No attachment builder for ${kind}`);
+      return { fileName: a.fileName, contentType: a.contentType, content: await build(rest.join(':')) };
+    }));
+    const r = await driver.send({ to: row.to, from, replyTo, subject: row.subject, html, text, ...(attachments.length ? { attachments } : {}) });
     await db.update(schema.emailOutbox).set({ status: 'SENT', sentAt: new Date(), providerMessageId: r.id ?? null, error: null, attempts: sql`${schema.emailOutbox.attempts} + 1` }).where(eq(schema.emailOutbox.id, id));
     logger.info({ provider: driver.name, messageId: r.id, to: row.to.replace(/^(.).*(@.*)$/, '$1***$2'), subject: row.subject }, 'email sent');
   } catch (err: any) {
